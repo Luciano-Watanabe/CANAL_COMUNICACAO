@@ -83,6 +83,9 @@ O sistema lê informações vitais do ERP Winthor utilizando as tabelas base (qu
 
 O envio e recebimento de mensagens são o coração do sistema, totalmente dependentes da **Evolution API (EVO API / GO)**, um serviço robusto para controle de instâncias e webhooks do WhatsApp.
 
+> [!NOTE]
+> Para maiores informações, aquisição ou suporte avançado sobre a **Evolution API (EVO GO)** e o servidor de **Webhooks**, entre em contato: **(12) 98137-1613**.
+
 ### 2.1 Fluxo de Integração (Evo API)
 1. **Autenticação e Instâncias**: O backend lê a tabela `CANAL_TOKENS_EVOLUTION` para associar as contas de WhatsApp (Instâncias da Evo API) com os respectivos Vendedores ou Setores.
 2. **Envio (Outbound)**: Quando um vendedor manda uma mensagem pelo painel, o backend salva na `CANAL_MENSAGENS` e faz um POST para a Evo API enviando o texto ou mídia.
