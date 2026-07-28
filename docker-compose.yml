@@ -17,6 +17,7 @@ services:
       - TZ=America/Sao_Paulo
     volumes:
       - ./frontend:/app
+      - /app/node_modules
     networks:
       - canal_network
 
@@ -42,6 +43,7 @@ services:
       - IMAGES_DIR=/app/imagens_produtos
     volumes:
       - ./backend:/app
+      - /app/node_modules
       - ${HOST_IMAGES_DIR:-/mnt/fotos_prod}:/app/imagens_produtos # Diretório real de imagens no host
       
     depends_on:
