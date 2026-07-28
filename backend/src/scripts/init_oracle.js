@@ -152,7 +152,11 @@ async function initializeOracleDatabase() {
         // 2. Criar Views
         const viewsFilePath = path.join(__dirname, '../database/winthor_views.sql');
         if (fs.existsSync(viewsFilePath)) {
-            const viewsSql = fs.readFileSync(viewsFilePath, 'utf8');
+            let viewsSql = fs.readFileSync(viewsFilePath, 'utf8');
+            
+            // Remove comentários SQL de linha dupla (--) e blocos (/* */) para o parser não se perder
+            viewsSql = viewsSql.replace(/--.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
             // Split por ';'
             const statements = viewsSql.split(';').map(s => s.trim()).filter(s => s.length > 0);
             
