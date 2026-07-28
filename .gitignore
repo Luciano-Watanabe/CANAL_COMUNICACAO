@@ -1,0 +1,26 @@
+# Dependências do Node.js
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Logs de Erros e Debugs
+npm-debug.log
+yarn-error.log
+*.log
+
+# Arquivos de Variáveis de Ambiente (Segurança)
+.env
+.env.*
+backend/.env
+frontend/.env
+
+# Uploads e Mídias Dinâmicas (Gerados pela Aplicação)
+backend/uploads/
+backend/imagens_produtos/
+
+# Pastas de Lixo Temporário
+lixo_temp/
+
+# Arquivos de Sistema Operacional
+.DS_Store
+Thumbs.db

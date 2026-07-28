@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "properties": {
+    "caption": {
+      "type": "string"
+    },
+    "delay": {
+      "type": "integer"
+    },
+    "filename": {
+      "type": "string"
+    },
+    "formatJid": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "mentionAll": {
+      "type": "boolean"
+    },
+    "mentionedJid": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "number": {
+      "type": "string"
+    },
+    "quoted": {
+      "$ref": "#/definitions/github_com_EvolutionAPI_evolution-go_pkg_sendMessage_service.QuotedStruct"
+    },
+    "type": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    }
+  }
+}

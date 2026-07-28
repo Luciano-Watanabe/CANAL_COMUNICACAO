@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      shm_size: '1gb'
+    shm_size: '1gb'
+    tty: true
+    stdin_open: true
+    ports:
+      - "3002:5173"
+    environment:
+      - NODE_ENV=development
+      - NEXT_TELEMETRY_DISABLED=1
+      - TZ=America/Sao_Paulo
+    volumes:
+      - ./frontend:/app
+    networks:
+      - canal_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - TZ=America/Sao_Paulo
+      - DB_HOST=db
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - DB_NAME=canal_db
+      # Oracle envs (Winthor)
+      - ORACLE_USER=${ORACLE_USER}
+      - ORACLE_PASS=${ORACLE_PASS}
+      - ORACLE_CONN_STR=${ORACLE_CONN_STR}
+      # Diretório de imagens dos produtos
+      - IMAGES_DIR=/app/imagens_produtos
+    volumes:
+      - ./backend:/app
+      - ${HOST_IMAGES_DIR:-/mnt/fotos_prod}:/app/imagens_produtos # Diretório real de imagens no host
+      
+    depends_on:
+      - db
+    networks:
+      - canal_network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=canal_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - canal_network
+
+volumes:
+  pgdata:
+
+networks:
+  canal_network:
+    driver: bridge
