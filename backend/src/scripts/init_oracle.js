@@ -34,10 +34,13 @@ const TABLES = [
     )`,
     `CREATE TABLE JCWEBHOOK (
         ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        EVENT_TYPE VARCHAR2(100),
-        PAYLOAD CLOB,
-        CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PROCESSADO CHAR(1) DEFAULT 'N'
+        DT_REQUISICAO TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONTEUDO CLOB,
+        ORIGEM VARCHAR2(50) DEFAULT 'whats'
+    )`,
+    `CREATE TABLE CANAL_WEBHOOK_STATE (
+        ID NUMBER PRIMARY KEY,
+        LAST_PROCESSED_ID NUMBER DEFAULT 0
     )`,
     `CREATE TABLE CANAL_CONFIGURACOES (
         CHAVE VARCHAR2(100) PRIMARY KEY,
@@ -53,11 +56,12 @@ const TABLES = [
     )`,
     `CREATE TABLE CANAL_AGENDAMENTO_STATUS (
         ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-        CODCLI NUMBER,
-        CODUSUR VARCHAR2(50),
-        DATA_AGENDADA TIMESTAMP,
-        STATUS VARCHAR2(50),
-        OBSERVACAO VARCHAR2(4000)
+        ARQUIVO_PATH VARCHAR2(255),
+        LEGENDA VARCHAR2(4000),
+        DATA_PROGRAMADA TIMESTAMP,
+        VENDEDORES_DESTINO CLOB,
+        CRIADO_POR VARCHAR2(50),
+        STATUS_ENVIO VARCHAR2(50) DEFAULT 'PENDENTE'
     )`,
     `CREATE TABLE CANAL_LOG_ALTERACAO_VENDEDOR (
         ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -124,6 +128,11 @@ async function initializeOracleDatabase() {
             connectString: process.env.ORACLE_CONN_STR
         });
 
+        // DROP wrong tables from previous bad init (if they exist)
+        try { await conn.execute(`DROP TABLE JCWEBHOOK CASCADE CONSTRAINTS`); } catch(e){}
+        try { await conn.execute(`DROP TABLE CANAL_AGENDAMENTO_STATUS CASCADE CONSTRAINTS`); } catch(e){}
+        try { await conn.execute(`DROP TABLE CANAL_WEBHOOK_STATE CASCADE CONSTRAINTS`); } catch(e){}
+
         // 1. Criar Tabelas
         for (const sql of TABLES) {
             try {
@@ -160,6 +169,12 @@ async function initializeOracleDatabase() {
         } else {
             console.warn('[DB-INIT] Arquivo winthor_views.sql não encontrado.');
         }
+
+        // Initialize state table if empty
+        try {
+            await conn.execute(`INSERT INTO CANAL_WEBHOOK_STATE (ID, LAST_PROCESSED_ID) SELECT 1, 0 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM CANAL_WEBHOOK_STATE WHERE ID = 1)`);
+            await conn.commit();
+        } catch(e) {}
 
         console.log('[DB-INIT] Inicialização do banco de dados Oracle concluída!');
     } catch (err) {
