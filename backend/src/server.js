@@ -10,19 +10,6 @@ try {
     console.error('Erro ao inicializar Oracle Client (Thick mode):', err.message);
 }
 require('dotenv').config();
-const initializeOracleDatabase = require('./scripts/init_oracle');
-initializeOracleDatabase().then(() => {
-    // Carrega os crons apenas após disparar a verificação do banco (assíncrono, mas rápido o suficiente)
-    require('./services/statusCron');
-    require('./services/cleanupCron');
-    require('./services/automacoesCron');
-    require('./services/vendedoresVisitasCron');
-    require('./services/filaCron');
-    require('./services/cnpjCron');
-    require('./services/geradorRotasCron');
-}).catch(console.error);
-
-const WebhookPoller = require('./services/webhookPoller');
 
 const app = express();
 const server = http.createServer(app);
@@ -159,10 +146,26 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
-  
-  // Iniciar o poller
-  const poller = new WebhookPoller(io);
-  poller.start();
+const initializeOracleDatabase = require('./scripts/init_oracle');
+
+initializeOracleDatabase().then(() => {
+    // Carrega os crons apenas após disparar a verificação do banco (assíncrono, mas rápido o suficiente)
+    require('./services/statusCron');
+    require('./services/cleanupCron');
+    require('./services/automacoesCron');
+    require('./services/vendedoresVisitasCron');
+    require('./services/filaCron');
+    require('./services/cnpjCron');
+    require('./services/geradorRotasCron');
+    
+    server.listen(PORT, () => {
+        console.log(`Backend server running on port ${PORT}`);
+        
+        // Iniciar o poller após garantir que o banco está estruturado
+        const WebhookPoller = require('./services/webhookPoller');
+        const poller = new WebhookPoller(io);
+        poller.start();
+    });
+}).catch(err => {
+    console.error('Falha crítica ao inicializar o banco:', err);
 });
