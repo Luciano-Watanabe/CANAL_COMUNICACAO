@@ -11,6 +11,7 @@ yarn-error.log
 # Arquivos de Variáveis de Ambiente (Segurança)
 .env
 .env.*
+!.env.example
 backend/.env
 frontend/.env
 
