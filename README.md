@@ -149,6 +149,14 @@ graph TD
 
 O acesso aos dados (carteira de clientes e mensagens) respeita uma lógica vertical extraída do ERP, com uma entidade especial que controla tudo.
 
+### 3.0 Gestão de Usuários e Login (PCUSUARI)
+A autenticação do sistema é validada diretamente na tabela **`PCUSUARI`** do Winthor ERP. Para que um usuário consiga logar, certifique-se de configurar os seguintes campos no cadastro dele (dentro do ERP):
+*   **Nome de Usuário (Login):** Utiliza o campo `USURFTP` (Nome de Guerra).
+*   **Senha:** Utiliza o campo `SENHAFTP`.
+*   **Status de Acesso:** O campo `BLOQUEIO` deve estar como `N` ou nulo (vazio). Usuários com bloqueio `S` não conseguem acessar o Canal de Comunicação.
+> [!NOTE]
+> Se você precisar criar um usuário para a diretoria, basta cadastrá-lo na `PCUSUARI` e vincular (se necessário) às hierarquias de Gerência ou Supervisão no próprio Winthor. O sistema entenderá o cargo automaticamente verificando as tabelas `PCGERENTE` e `PCSUPERV`.
+
 ### 3.1 BOT_GESTOR (Administrador Global)
 O `BOT_GESTOR` é uma entidade (perfil de acesso) que **não obedece à hierarquia padrão**. Ele possui privilégios de **Super Administrador**.
 *   **O que faz**: Pode ver todas as carteiras, todos os chats, alterar parametrizações e assumir conversas de qualquer vendedor.

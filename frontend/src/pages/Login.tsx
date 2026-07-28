@@ -15,7 +15,7 @@ export default function Login() {
     setError('');
 
     try {
-      // Simulação da chamada para o Backend que vai validar na PCEMPR (Winthor)
+      // Simulação da chamada para o Backend que vai validar na PCUSUARI (Winthor)
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -54,7 +54,7 @@ export default function Login() {
             Canal de Comunicação
           </h1>
           <p className="text-slate-500 mt-2 text-sm animate-slide-up" style={{ animationDelay: '200ms' }}>
-            Entre com suas credenciais do Winthor (PCEMPR)
+            Entre com suas credenciais do Winthor (PCUSUARI)
           </p>
         </div>
 
