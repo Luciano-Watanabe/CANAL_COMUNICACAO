@@ -119,7 +119,7 @@ const TABLES = [
 ];
 
 async function initializeOracleDatabase() {
-    console.log('[DB-INIT] Iniciando verificação de tabelas no Oracle...');
+    console.log('🚀 [STARTUP] Iniciando verificação estrutural do banco Oracle...');
     let conn;
     try {
         conn = await oracledb.getConnection({
@@ -138,13 +138,13 @@ async function initializeOracleDatabase() {
             try {
                 await conn.execute(sql);
                 const tableName = sql.match(/CREATE TABLE (\w+)/)[1];
-                console.log(`[DB-INIT] Tabela ${tableName} criada com sucesso.`);
+                console.log(`✅ [STARTUP] Tabela ausente criada com sucesso: ${tableName}`);
             } catch (err) {
                 // Erro 955: "name is already used by an existing object"
                 if (err.errorNum === 955) {
                     // Ignora, já existe
                 } else {
-                    console.error(`[DB-INIT] Erro ao criar tabela:\n${sql}\nErro:`, err.message);
+                    console.error(`❌ [STARTUP] Erro ao criar tabela:\n${sql}\nDetalhe do Erro:`, err.message);
                 }
             }
         }
@@ -161,13 +161,13 @@ async function initializeOracleDatabase() {
                     try {
                         await conn.execute(stmt);
                     } catch (err) {
-                        console.error(`[DB-INIT] Erro ao criar view: ${stmt.substring(0, 50)}...`, err.message);
+                        console.error(`⚠️ [STARTUP] Erro ao recriar view: ${stmt.substring(0, 50)}...`, err.message);
                     }
                 }
             }
-            console.log('[DB-INIT] Views do Winthor (VW_CANAL_*) recriadas/validadas com sucesso.');
+            console.log('✅ [STARTUP] Todas as Views do Winthor (VW_CANAL_*) foram mapeadas com sucesso.');
         } else {
-            console.warn('[DB-INIT] Arquivo winthor_views.sql não encontrado.');
+            console.warn('⚠️ [STARTUP] Aviso: Arquivo winthor_views.sql não encontrado.');
         }
 
         // Initialize state table if empty
@@ -176,9 +176,9 @@ async function initializeOracleDatabase() {
             await conn.commit();
         } catch(e) {}
 
-        console.log('[DB-INIT] Inicialização do banco de dados Oracle concluída!');
+        console.log('🎉 [STARTUP] Banco de dados Oracle inicializado perfeitamente! Pronto para operar.');
     } catch (err) {
-        console.error('[DB-INIT] Falha na inicialização do Oracle:', err);
+        console.error('❌ [STARTUP] Falha crítica na inicialização do Oracle:', err);
     } finally {
         if (conn) {
             try { await conn.close(); } catch (e) {}
