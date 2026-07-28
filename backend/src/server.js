@@ -10,14 +10,19 @@ try {
     console.error('Erro ao inicializar Oracle Client (Thick mode):', err.message);
 }
 require('dotenv').config();
+const initializeOracleDatabase = require('./scripts/init_oracle');
+initializeOracleDatabase().then(() => {
+    // Carrega os crons apenas após disparar a verificação do banco (assíncrono, mas rápido o suficiente)
+    require('./services/statusCron');
+    require('./services/cleanupCron');
+    require('./services/automacoesCron');
+    require('./services/vendedoresVisitasCron');
+    require('./services/filaCron');
+    require('./services/cnpjCron');
+    require('./services/geradorRotasCron');
+}).catch(console.error);
+
 const WebhookPoller = require('./services/webhookPoller');
-require('./services/statusCron');
-require('./services/cleanupCron');
-require('./services/automacoesCron');
-require('./services/vendedoresVisitasCron');
-require('./services/filaCron');
-require('./services/cnpjCron');
-require('./services/geradorRotasCron');
 
 const app = express();
 const server = http.createServer(app);
