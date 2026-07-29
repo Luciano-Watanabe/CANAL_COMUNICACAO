@@ -159,8 +159,13 @@ app.post('/api/internal/emit', (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 const initializeOracleDatabase = require('./scripts/init_oracle');
+const cacheService = require('./services/cacheService');
 
-initializeOracleDatabase().then(() => {
+initializeOracleDatabase().then(async () => {
+    // Carrega dados de clientes e vendedores pro cache (RAM) antes de abrir a API
+    await cacheService.loadAll();
+    cacheService.startAutoRefresh();
+
     server.listen(PORT, () => {
         console.log(`Backend server running on port ${PORT}`);
         console.log(`(Crons and Pollers are now running in the worker process)`);

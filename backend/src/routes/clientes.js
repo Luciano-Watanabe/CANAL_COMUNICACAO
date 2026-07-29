@@ -23,6 +23,8 @@ try {
     // Pode já estar inicializado
 }
 
+const cacheService = require('../services/cacheService');
+
 router.get('/', async (req, res) => {
     const { codusur, role, vendedor, busca } = req.query;
 
@@ -30,87 +32,59 @@ router.get('/', async (req, res) => {
         return res.status(400).json({ success: false, message: 'codusur é obrigatório' });
     }
 
-    let connection;
     try {
-        connection = await oracledb.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASS,
-            connectString: process.env.ORACLE_CONN_STR
-        });
-
-        // Buscando da view criada com ROW_NUMBER para evitar duplicidades
-        let query = `
-            SELECT TRIM(TO_CHAR(CODCLI)) AS CODCLI, CLIENTE, FANTASIA, CNPJ, TELEFONE, BLOQUEIO, LIMITE_CREDITO
-            FROM (
-                SELECT 
-                    CODCLI,
-                    CODCLI || ' - ' || CASE 
-                        WHEN TRIM(FANTASIA) IS NOT NULL 
-                        THEN TRIM(FANTASIA) || ' (' || CLIENTE || ')' 
-                        ELSE CLIENTE 
-                    END AS CLIENTE,
-                    FANTASIA,
-                    CNPJ,
-                    TELEFONE,
-                    BLOQUEIO,
-                    LIMITE_CREDITO,
-                    ROW_NUMBER() OVER (PARTITION BY CODCLI ORDER BY TELEFONE DESC) as rn
-                FROM VW_CANAL_CLIENTES
-                WHERE 1=1
-        `;
-        let binds = {};
-
-        if (role?.toLowerCase() === 'bot_gestor') {
-            if (vendedor) {
-                query += ` AND VENDEDOR_PRINCIPAL = :vendedor `;
-                binds.vendedor = vendedor;
-            }
-        } else if (role?.toUpperCase() === 'GERENTE') {
-            query += ` AND VENDEDOR_PRINCIPAL IN (
-                SELECT U.CODUSUR 
-                FROM PCUSUARI U
-                JOIN PCSUPERV S ON S.CODSUPERVISOR = U.CODSUPERVISOR
-                WHERE S.CODGERENTE = (SELECT CODGERENTE FROM PCGERENTE WHERE COD_CADRCA = :codusur)
-            ) `;
-            binds.codusur = codusur;
-        } else if (role?.toUpperCase() === 'SUPERVISOR') {
-            query += ` AND VENDEDOR_PRINCIPAL IN (
-                SELECT U.CODUSUR 
-                FROM PCUSUARI U
-                JOIN PCSUPERV S ON S.CODSUPERVISOR = U.CODSUPERVISOR
-                WHERE S.COD_CADRCA = :codusur
-            ) `;
-            binds.codusur = codusur;
-        } else {
-            query += ` AND VENDEDOR_PRINCIPAL = :codusur `;
-            binds.codusur = codusur;
-        }
-
-        if (busca) {
-            query += ` AND (UPPER(CLIENTE) LIKE UPPER(:busca) OR UPPER(FANTASIA) LIKE UPPER(:busca) OR CNPJ LIKE :busca) `;
-            binds.busca = '%' + busca + '%';
-        }
-
-        query += `
-            ) WHERE rn = 1
-        `;
-
-        query = `SELECT * FROM ( ${query} ) ORDER BY CLIENTE ASC`;
+        let todosClientes = cacheService.getClientes();
+        let roleUpper = (role || '').toUpperCase();
+        let filteredClientes = [];
         
-        const result = await connection.execute(query, binds);
-
-        // Mapear os resultados para um array de objetos (usando metadados das colunas)
-        const clientes = result.rows.map(row => {
-            let obj = {};
-            if (Array.isArray(row)) {
-                result.metaData.forEach((meta, index) => {
-                    obj[meta.name.toLowerCase()] = row[index];
-                });
+        // 1. Filtragem de Hierarquia
+        if (roleUpper === 'BOT_GESTOR') {
+            if (vendedor) {
+                filteredClientes = todosClientes.filter(c => c.VENDEDOR_PRINCIPAL === vendedor);
             } else {
-                for (let key in row) {
-                    obj[key.toLowerCase()] = row[key];
-                }
+                filteredClientes = todosClientes;
             }
+        } else if (roleUpper === 'GERENTE') {
+            filteredClientes = todosClientes.filter(c => {
+                if (!c.VENDEDOR_PRINCIPAL) return false;
+                const hier = cacheService.getHierarchy(c.VENDEDOR_PRINCIPAL);
+                return hier.gerente === codusur;
+            });
+        } else if (roleUpper === 'SUPERVISOR') {
+            filteredClientes = todosClientes.filter(c => {
+                if (!c.VENDEDOR_PRINCIPAL) return false;
+                const hier = cacheService.getHierarchy(c.VENDEDOR_PRINCIPAL);
+                return hier.supervisor === codusur;
+            });
+        } else {
+            // Vendedor comum
+            filteredClientes = todosClientes.filter(c => c.VENDEDOR_PRINCIPAL === codusur);
+        }
+
+        // 2. Filtro de Busca
+        if (busca) {
+            const buscaUpper = busca.toUpperCase();
+            filteredClientes = filteredClientes.filter(c => 
+                (c.CLIENTE && c.CLIENTE.toUpperCase().includes(buscaUpper)) ||
+                (c.FANTASIA && c.FANTASIA.toUpperCase().includes(buscaUpper)) ||
+                (c.CNPJ && c.CNPJ.includes(buscaUpper))
+            );
+        }
+
+        // 3. Ordenação
+        filteredClientes.sort((a, b) => (a.CLIENTE || '').localeCompare(b.CLIENTE || ''));
+
+        // Formatar retorno
+        const clientes = filteredClientes.map(row => {
+            let obj = {
+                codcli: row.CODCLI,
+                cliente: row.CLIENTE,
+                fantasia: row.FANTASIA,
+                cnpj: row.CNPJ,
+                telefone: row.TELEFONE,
+                bloqueio: row.BLOQUEIO,
+                limite_credito: row.LIMITE_CREDITO
+            };
             return obj;
         });
 

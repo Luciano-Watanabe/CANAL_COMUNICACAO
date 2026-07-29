@@ -2,69 +2,43 @@ const express = require('express');
 const router = express.Router();
 const oracledb = require('oracledb');
 
+const cacheService = require('../services/cacheService');
+
 // GET /api/vendedores - Listar todos os vendedores
 router.get('/', async (req, res) => {
     const { codusur, role } = req.query;
 
-    let connection;
     try {
-        connection = await oracledb.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASS,
-            connectString: process.env.ORACLE_CONN_STR
-        });
-
-        let sql = `
-            SELECT U.CODUSUR, U.NOME, U.TELEFONE1, U.TELEFONE2, U.BLOQUEIO
-            FROM PCUSUARI U
-            WHERE (U.BLOQUEIO = 'N' OR U.BLOQUEIO IS NULL)
-        `;
-        let binds = {};
-
+        let todosVendedores = cacheService.getVendedores();
         const roleUpper = (role || '').toUpperCase();
+        let filteredVendedores = [];
 
         if (roleUpper === 'BOT_GESTOR') {
             // Pode ver todos
+            filteredVendedores = todosVendedores;
         } else if (roleUpper === 'GERENTE') {
             if (!codusur) return res.status(400).json({ success: false, message: 'codusur obrigatório' });
-            sql += ` AND U.CODUSUR IN (
-                SELECT U2.CODUSUR 
-                FROM PCUSUARI U2
-                JOIN PCSUPERV S ON S.CODSUPERVISOR = U2.CODSUPERVISOR
-                WHERE S.CODGERENTE = (SELECT CODGERENTE FROM PCGERENTE WHERE COD_CADRCA = :codusur)
-            )`;
-            binds.codusur = codusur;
+            filteredVendedores = todosVendedores.filter(v => {
+                const hier = cacheService.getHierarchy(v.CODUSUR);
+                return hier.gerente === codusur;
+            });
         } else if (roleUpper === 'SUPERVISOR') {
             if (!codusur) return res.status(400).json({ success: false, message: 'codusur obrigatório' });
-            sql += ` AND U.CODUSUR IN (
-                SELECT U2.CODUSUR 
-                FROM PCUSUARI U2
-                JOIN PCSUPERV S ON S.CODSUPERVISOR = U2.CODSUPERVISOR
-                WHERE S.COD_CADRCA = :codusur
-            )`;
-            binds.codusur = codusur;
+            filteredVendedores = todosVendedores.filter(v => {
+                const hier = cacheService.getHierarchy(v.CODUSUR);
+                return hier.supervisor === codusur;
+            });
         } else {
             if (!codusur) return res.status(400).json({ success: false, message: 'codusur obrigatório' });
-            sql += ` AND U.CODUSUR = :codusur`;
-            binds.codusur = codusur;
+            filteredVendedores = todosVendedores.filter(v => v.CODUSUR === codusur);
         }
 
-        sql += ` ORDER BY U.NOME ASC`;
-
-        const result = await connection.execute(sql, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+        filteredVendedores.sort((a, b) => (a.NOME || '').localeCompare(b.NOME || ''));
         
-        res.json({ success: true, vendedores: result.rows });
+        res.json({ success: true, vendedores: filteredVendedores });
     } catch (err) {
         console.error('Erro ao buscar vendedores:', err);
         res.status(500).json({ success: false, message: 'Erro ao buscar vendedores' });
-    } finally {
-        if (connection) {
-            try {
-                await connection.close();
-            } catch (err) {
-                console.error('Erro ao fechar conexão:', err);
-            }
-        }
     }
 });
 
