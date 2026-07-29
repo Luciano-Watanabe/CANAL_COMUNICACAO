@@ -4,6 +4,20 @@ Bem-vindo à documentação oficial do **Canal de Comunicação (Homologação)*
 
 ---
 
+## Guia de Instalação Rápida
+> [!TIP]
+> Vai subir o projeto do zero? Elaboramos um guia rápido com os comandos do Docker e as configurações do `.env`!  
+> **👉 [Clique aqui para ler o Guia de Instalação (INSTALL.md)](INSTALL.md)**
+
+## Solução de Problemas Comuns (Troubleshooting)
+Alguns cenários clássicos que você pode enfrentar (e como resolver):
+*   **A tela (Frontend) não atualiza após o `git pull` (Windows):** O Docker utiliza a imagem antiga em cache ignorando os arquivos novos devido a dessincronização de *Volumes*. Resolva forçando um rebuild limpo:
+    `docker compose build --no-cache frontend` seguido de `docker compose up -d --force-recreate frontend`.
+*   **Erro de Banco Oracle NJS-116:** Ocorre porque o ERP usa *Password Verifiers* legados. A solução já está implementada: O backend ativa o *Thick Mode* (`oracledb.initOracleClient`). Certifique-se de não remover a instalação do Oracle Instant Client no Dockerfile do worker/backend.
+*   **Erros ORA-00001 (Restrição Exclusiva) nos Crons:** Tratado usando `MERGE INTO` (Upsert) nos processos automatizados em vez de `INSERT`, evitando duplicidades em caso de concorrência.
+
+---
+
 ## 1. Arquitetura de Banco de Dados
 
 O banco de dados do sistema funciona de forma híbrida: ele consome os dados oficiais do ERP Winthor (somente leitura / views) e gerencia seu próprio estado através de tabelas locais (nativas).
@@ -143,6 +157,11 @@ graph TD
     SocketIO -- "G. Atualiza Chat Real-time" --> Panel
 ```
 
+### 2.2 Tarefas em Segundo Plano (Workers e Crons)
+O backend possui um processo secundário (`worker.js`) inteiramente dedicado a executar rotinas em background de tempos em tempos, preservando a performance e agilidade da API principal.
+*   **Auditoria de CNPJ e I.E. (`cnpjCron.js` / `ieCron.js`):** Robôs que puxam novos clientes do ERP (que possuem CNPJ) e os consultam em background na API `publica.cnpj.ws` respeitando o limite de requisições. As respostas (como situação cadastral e I.Es baixadas) ficam armazenadas no banco local, alimentando as telas de auditoria.
+*   **Fila de Visitas e Automações (`vendedoresVisitasCron.js` / `automacoesCron.js`):** Varrem o banco buscando rotas programadas e gatilhos de tempo para disparar templates automáticos para a carteira, tudo via Evo API.
+
 ---
 
 ## 3. Estrutura de Hierarquia e Permissões
@@ -222,6 +241,7 @@ graph TD
 ## 4. Opções e Funcionalidades do Sistema (Detalhado)
 
 *   **Filtros de Busca Avançada**: Nas telas de Gerentes e Supervisores, a interface não carrega milhares de clientes ao abrir (para economizar recursos). O usuário conta com *Dropdowns* de Vendedores e campos de busca *Live Search* por Razão Social/Fantasia e CNPJ.
+*   **Análise de CNPJ e I.E.:** Interfaces dedicadas (restritas a Gerentes, Supervisores e BOT_GESTOR) para conferir a auditoria fiscal automática que os Crons fizeram. Ajuda a descobrir de imediato se um cliente recém-cadastrado possui Inscrição Estadual divergente (Inativa/Baixada) comparada ao que foi colocado no Winthor, evitando emissão de notas problemáticas.
 *   **Edição de Contatos**: Qualquer nível da hierarquia, dentro da sua limitação de visão, tem autonomia para adicionar ou editar o WhatsApp do cliente na base local (`contatos`), sem necessitar alterar o cadastro rígido do Winthor.
 *   **Catálogo e Cross-sell**: Durante o chat, o vendedor tem atalhos baseados na view de produtos e na tabela de `METRICAS_CROSS_SELL`, sugerindo compras complementares com base no histórico do ERP.
     > [!TIP]
