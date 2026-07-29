@@ -12,6 +12,7 @@ import GestaoVisitas from './pages/GestaoVisitas';
 import Reativacao from './pages/Reativacao';
 import Rotas from './pages/Rotas';
 import AnaliseCNPJ from './pages/AnaliseCNPJ';
+import AnaliseIE from './pages/AnaliseIE';
 import ProtectedRoute from './components/ProtectedRoute';
 import { SocketProvider } from './contexts/SocketContext';
 
@@ -46,6 +47,8 @@ function App() {
             <Route path="/inativos" element={<Reativacao />} />
             <Route path="/rotas" element={<Rotas />} />
             <Route path="/analisecnpj" element={<AnaliseCNPJ />} />
+            <Route path="/analise-ie" element={<AnaliseIE />} />
+            <Route path="/positivacao" element={<Positivacao />} />
           </Route>
         </Route>
       </Routes>

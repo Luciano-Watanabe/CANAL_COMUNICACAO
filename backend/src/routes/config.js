@@ -69,6 +69,11 @@ router.get('/global', async (req, res) => {
             configs[row[0]] = row[1];
         });
 
+        // Fallback to process.env if not in database
+        if (!configs['GROQ_API_KEY'] && process.env.GROQ_API_KEY) {
+            configs['GROQ_API_KEY'] = process.env.GROQ_API_KEY;
+        }
+
         res.json({ success: true, configs });
     } catch (err) {
         console.error('Erro ao buscar configs globais:', err);

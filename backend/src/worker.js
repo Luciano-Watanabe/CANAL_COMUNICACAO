@@ -14,6 +14,7 @@ initializeOracleDatabase().then(() => {
     require('./services/vendedoresVisitasCron');
     require('./services/filaCron');
     require('./services/cnpjCron');
+    require('./services/ieCron');
     require('./services/geradorRotasCron');
     
     // Inicia o Webhook Poller

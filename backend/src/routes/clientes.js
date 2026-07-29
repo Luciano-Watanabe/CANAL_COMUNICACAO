@@ -426,7 +426,27 @@ router.get('/esquecidos', async (req, res) => {
                     JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
                     LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
                 `;
-                const mixRes = await connection.execute(sqlMix, { codatv1 });
+                let mixRes = await connection.execute(sqlMix, { codatv1 });
+                if (mixRes.rows.length === 0) {
+                    const sqlMixFallback = `
+                        SELECT P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE
+                        FROM PCPRODUT P
+                        JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                        WHERE EXISTS (
+                            SELECT 1 FROM PCEST E 
+                            WHERE E.CODPROD = P.CODPROD 
+                            HAVING SUM(NVL(E.QTESTGER,0) - NVL(E.QTBLOQUEADA,0) - NVL(E.QTRESERV,0)) > 0
+                        )
+                        AND EXISTS (
+                            SELECT 1 FROM PCEMBALAGEM EMB 
+                            WHERE EMB.CODPROD = P.CODPROD 
+                            AND NVL(EMB.ENVIAFV, 'N') = 'S' 
+                            AND EMB.DTINATIVO IS NULL
+                        )
+                        FETCH FIRST 10 ROWS ONLY
+                    `;
+                    mixRes = await connection.execute(sqlMixFallback);
+                }
                 produtosPorRamo[codatv1] = mixRes.rows.map(r => `✅ ${r[0]} - R$ ${r[1].toFixed(2)} / ${r[2] || 'UN'}`).join('\n');
             }
             
@@ -570,7 +590,27 @@ router.post('/:codcli/reativar', async (req, res) => {
                 JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
                 LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
             `;
-            const mixRes = await connection.execute(sqlMix, { codatv1 });
+            let mixRes = await connection.execute(sqlMix, { codatv1 });
+            if (mixRes.rows.length === 0) {
+                const sqlMixFallback = `
+                    SELECT P.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE
+                    FROM PCPRODUT P
+                    JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                    WHERE EXISTS (
+                        SELECT 1 FROM PCEST E 
+                        WHERE E.CODPROD = P.CODPROD 
+                        HAVING SUM(NVL(E.QTESTGER,0) - NVL(E.QTBLOQUEADA,0) - NVL(E.QTRESERV,0)) > 0
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM PCEMBALAGEM EMB 
+                        WHERE EMB.CODPROD = P.CODPROD 
+                        AND NVL(EMB.ENVIAFV, 'N') = 'S' 
+                        AND EMB.DTINATIVO IS NULL
+                    )
+                    FETCH FIRST 10 ROWS ONLY
+                `;
+                mixRes = await connection.execute(sqlMixFallback);
+            }
             if (mixRes.rows.length > 0) {
                 const cards = mixRes.rows.map(r => ({
                     codprod: r[0],

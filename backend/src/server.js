@@ -37,6 +37,7 @@ const produtosRoutes = require('./routes/produtos');
 const importExportRoutes = require('./routes/importExport');
 const campanhasRoutes = require('./routes/campanhas');
 const analiseCnpjRoutes = require('./routes/analiseCnpj');
+const analiseIeRoutes = require('./routes/analiseIe');
 const whatsappRoutes = require('./routes/whatsapp');
 const avisosRoutes = require('./routes/avisos');
 const dashboardRoutes = require('./routes/dashboard');
@@ -62,6 +63,7 @@ app.use('/api', avisosRoutes);
 app.use('/api', dashboardRoutes);
 app.use('/api', campanhasRoutes);
 app.use('/api/analise-cnpj', analiseCnpjRoutes);
+app.use('/api/analise-ie', analiseIeRoutes);
 app.use('/api', metricasRoutes);
 app.use('/api', whatsappRoutes);
 
