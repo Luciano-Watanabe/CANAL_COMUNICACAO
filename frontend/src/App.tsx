@@ -48,7 +48,6 @@ function App() {
             <Route path="/rotas" element={<Rotas />} />
             <Route path="/analisecnpj" element={<AnaliseCNPJ />} />
             <Route path="/analise-ie" element={<AnaliseIE />} />
-            <Route path="/positivacao" element={<Positivacao />} />
           </Route>
         </Route>
       </Routes>
