@@ -6,9 +6,7 @@ const cacheService = require('../services/cacheService');
 
 // GET /api/vendedores - Listar todos os vendedores
 router.get('/', async (req, res) => {
-    if (!cacheService.isLoaded) {
-        return res.status(503).json({ success: false, message: 'O servidor está carregando o banco de dados para a memória. Por favor, aguarde alguns segundos...' });
-    }
+    const isCacheLoading = !cacheService.isLoaded;
 
     const { codusur, role } = req.query;
 
@@ -39,7 +37,7 @@ router.get('/', async (req, res) => {
 
         filteredVendedores.sort((a, b) => (a.NOME || '').localeCompare(b.NOME || ''));
         
-        res.json({ success: true, vendedores: filteredVendedores });
+        res.json({ success: true, vendedores: filteredVendedores, isCacheLoading });
     } catch (err) {
         console.error('Erro ao buscar vendedores:', err);
         res.status(500).json({ success: false, message: 'Erro ao buscar vendedores' });

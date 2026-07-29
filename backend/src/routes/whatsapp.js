@@ -54,7 +54,7 @@ router.get('/whatsapp/status', async (req, res) => {
 
     const config = await getInstanceConfig(codusur);
     if (!config) {
-        return res.status(404).json({ success: false, state: 'NOT_CONFIGURED', status: 'Instância não configurada.' });
+        return res.json({ success: true, state: 'NOT_CONFIGURED', status: 'Instância não configurada.' });
     }
 
     try {

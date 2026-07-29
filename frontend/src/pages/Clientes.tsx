@@ -6,6 +6,8 @@ export default function Clientes() {
   const { maskData } = usePrivacy();
   const [clientes, setClientes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCacheLoading, setIsCacheLoading] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [selectedVendedor, setSelectedVendedor] = useState<string>('');
@@ -118,6 +120,7 @@ export default function Clientes() {
 
         if (data.success) {
           setClientes(data.clientes);
+          setIsCacheLoading(data.isCacheLoading || false);
         }
       } catch (error) {
         console.error('Erro ao buscar clientes:', error);
@@ -127,7 +130,18 @@ export default function Clientes() {
     };
 
     fetchClientes();
-  }, [selectedVendedor, debouncedSearchTerm, isGestor]);
+  }, [selectedVendedor, debouncedSearchTerm, isGestor, refreshTrigger]);
+
+  // Polling automático se o cache ainda estiver carregando no backend
+  useEffect(() => {
+    let timeoutId: any;
+    if (isCacheLoading) {
+        timeoutId = setTimeout(() => {
+            setRefreshTrigger(prev => prev + 1);
+        }, 2500);
+    }
+    return () => clearTimeout(timeoutId);
+  }, [isCacheLoading]);
 
   const openContatosModal = async (client: any) => {
     setSelectedClient(client);

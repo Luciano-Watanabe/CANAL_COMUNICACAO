@@ -10,7 +10,8 @@ class CacheService {
     }
 
     async loadAll() {
-        console.log('[CACHE] Iniciando carregamento de Vendedores e Clientes para a memória...');
+        const isFirstLoad = this.clientes.length === 0 && this.vendedores.length === 0;
+        console.log(`[CACHE] Iniciando carregamento de Vendedores e Clientes para a memória... (Primeiro carregamento: ${isFirstLoad})`);
         let conn;
         try {
             conn = await oracledb.getConnection({
@@ -45,14 +46,26 @@ class CacheService {
                 FROM PCUSUARI U
                 WHERE (U.BLOQUEIO = 'N' OR U.BLOQUEIO IS NULL)
             `;
-            const vendResult = await conn.execute(vendQuery);
-            this.vendedores = vendResult.rows.map(row => ({
-                CODUSUR: String(row[0]),
-                NOME: row[1],
-                TELEFONE1: row[2],
-                TELEFONE2: row[3],
-                BLOQUEIO: row[4]
-            }));
+            const vendResult = await conn.execute(vendQuery, [], { resultSet: true });
+            const rsVend = vendResult.resultSet;
+            let rowsVend;
+            let tempVendedores = [];
+            while ((rowsVend = await rsVend.getRows(1000)) && rowsVend.length > 0) {
+                const batch = rowsVend.map(row => ({
+                    CODUSUR: String(row[0]),
+                    NOME: row[1],
+                    TELEFONE1: row[2],
+                    TELEFONE2: row[3],
+                    BLOQUEIO: row[4]
+                }));
+                if (isFirstLoad) {
+                    this.vendedores.push(...batch);
+                } else {
+                    tempVendedores.push(...batch);
+                }
+            }
+            await rsVend.close();
+            if (!isFirstLoad) this.vendedores = tempVendedores;
 
             // 3. Load Clientes (Deduplicated using ROW_NUMBER logic)
             console.log('[CACHE] Carregando clientes...');
@@ -76,17 +89,29 @@ class CacheService {
                     FROM VW_CANAL_CLIENTES
                 ) WHERE rn = 1
             `;
-            const cliResult = await conn.execute(cliQuery);
-            this.clientes = cliResult.rows.map(row => ({
-                CODCLI: row[0],
-                CLIENTE: row[1],
-                FANTASIA: row[2],
-                CNPJ: row[3],
-                TELEFONE: row[4],
-                BLOQUEIO: row[5],
-                LIMITE_CREDITO: row[6],
-                VENDEDOR_PRINCIPAL: row[7] ? String(row[7]) : null
-            }));
+            const cliResult = await conn.execute(cliQuery, [], { resultSet: true });
+            const rsCli = cliResult.resultSet;
+            let rowsCli;
+            let tempClientes = [];
+            while ((rowsCli = await rsCli.getRows(1000)) && rowsCli.length > 0) {
+                const batch = rowsCli.map(row => ({
+                    CODCLI: row[0],
+                    CLIENTE: row[1],
+                    FANTASIA: row[2],
+                    CNPJ: row[3],
+                    TELEFONE: row[4],
+                    BLOQUEIO: row[5],
+                    LIMITE_CREDITO: row[6],
+                    VENDEDOR_PRINCIPAL: row[7] ? String(row[7]) : null
+                }));
+                if (isFirstLoad) {
+                    this.clientes.push(...batch);
+                } else {
+                    tempClientes.push(...batch);
+                }
+            }
+            await rsCli.close();
+            if (!isFirstLoad) this.clientes = tempClientes;
 
             // 4. Load Mix de Atividades (COMPRAS_GERAIS)
             console.log('[CACHE] Calculando Mix de Produtos por Ramo de Atividade (COMPRAS_GERAIS)...');

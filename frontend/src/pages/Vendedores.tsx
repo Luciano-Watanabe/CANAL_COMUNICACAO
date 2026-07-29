@@ -13,6 +13,8 @@ interface Vendedor {
 export default function Vendedores() {
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCacheLoading, setIsCacheLoading] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modal state
@@ -31,6 +33,7 @@ export default function Vendedores() {
       const data = await response.json();
       if (data.success) {
         setVendedores(data.vendedores);
+        setIsCacheLoading(data.isCacheLoading || false);
       }
     } catch (err) {
       console.error('Erro ao buscar vendedores:', err);
@@ -41,7 +44,17 @@ export default function Vendedores() {
 
   useEffect(() => {
     fetchVendedores();
-  }, []);
+  }, [refreshTrigger]);
+
+  useEffect(() => {
+    let timeoutId: any;
+    if (isCacheLoading) {
+        timeoutId = setTimeout(() => {
+            setRefreshTrigger(prev => prev + 1);
+        }, 2500);
+    }
+    return () => clearTimeout(timeoutId);
+  }, [isCacheLoading]);
 
   const handleEditClick = (vendedor: Vendedor) => {
     setEditingVendedor(vendedor);

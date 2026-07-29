@@ -20,7 +20,12 @@ export function WhatsAppMonitor({ codusur }: WhatsAppMonitorProps) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setStatus(data.state === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : 'ERROR');
+        setStatus('ERROR');
+        return;
+      }
+      
+      if (data.state === 'NOT_CONFIGURED') {
+        setStatus('NOT_CONFIGURED');
         return;
       }
       

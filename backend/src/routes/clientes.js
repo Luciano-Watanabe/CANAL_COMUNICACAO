@@ -26,9 +26,7 @@ try {
 const cacheService = require('../services/cacheService');
 
 router.get('/', async (req, res) => {
-    if (!cacheService.isLoaded) {
-        return res.status(503).json({ success: false, message: 'O servidor está carregando o banco de dados para a memória. Por favor, aguarde alguns segundos...' });
-    }
+    const isCacheLoading = !cacheService.isLoaded;
 
     const { codusur, role, vendedor, busca } = req.query;
 
@@ -92,7 +90,7 @@ router.get('/', async (req, res) => {
             return obj;
         });
 
-        return res.json({ success: true, clientes });
+        return res.json({ success: true, clientes, isCacheLoading });
     } catch (error) {
         console.error('Erro ao buscar clientes:', error);
         return res.status(500).json({ success: false, message: 'Erro interno ao buscar clientes.' });
@@ -228,8 +226,8 @@ router.get('/:codcli/pedidos', async (req, res) => {
 
 router.get('/esquecidos', async (req, res) => {
     const { codusur, role, dias, vendedorId } = req.query;
-    if (!codusur || codusur === 'undefined' || isNaN(Number(codusur))) {
-        return res.status(400).json({ success: false, error: 'codusur invalido ou obrigatorio' });
+    if (!codusur || codusur === 'undefined' || codusur === 'null' || isNaN(Number(codusur))) {
+        return res.json({ success: true, esquecidos: [] });
     }
 
     const diasFiltro = parseInt(dias) || 30;

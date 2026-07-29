@@ -25,9 +25,7 @@ router.get('/imagem/:codprod', (req, res) => {
 });
 
 router.get('/mix/:codcli', async (req, res) => {
-    if (!cacheService.isLoaded) {
-        return res.status(503).json({ success: false, error: 'O servidor está carregando o banco de dados para a memória. Por favor, aguarde alguns segundos...' });
-    }
+    const isCacheLoading = !cacheService.isLoaded;
 
     const { codcli } = req.params;
     let conn;
@@ -107,7 +105,7 @@ router.get('/mix/:codcli', async (req, res) => {
             };
         });
 
-        res.json({ success: true, mix: finalMix });
+        res.json({ success: true, mix: finalMix, isCacheLoading });
     } catch (err) {
         console.error('Erro ao buscar mix:', err);
         res.status(500).json({ success: false, error: err.message });
