@@ -37,6 +37,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     links.push({ name: 'Rotas de Visitas', path: '/rotas', icon: Calendar });
     links.push({ name: 'Clientes Inativos', path: '/inativos', icon: Users });
     links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
+    links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
   }
 
   if (userRole === 'BOT_GESTOR') {

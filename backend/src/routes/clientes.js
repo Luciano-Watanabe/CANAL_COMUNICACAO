@@ -99,6 +99,9 @@ router.get('/', async (req, res) => {
 
 router.get('/:codcli/financeiro', async (req, res) => {
     const { codcli } = req.params;
+    if (!codcli || codcli === 'null' || codcli === 'undefined' || isNaN(Number(codcli))) {
+        return res.json({ success: true, financeiro: { qtde_atraso: 0, valor_atraso: 0 } });
+    }
     let connection;
     try {
         connection = await oracledb.getConnection({
@@ -137,6 +140,9 @@ router.get('/:codcli/financeiro', async (req, res) => {
 
 router.get('/:codcli/pedidos', async (req, res) => {
     const { codcli } = req.params;
+    if (!codcli || codcli === 'null' || codcli === 'undefined' || isNaN(Number(codcli))) {
+        return res.json({ success: true, pedidos: [], dtultcomp: null });
+    }
     let connection;
     try {
         connection = await oracledb.getConnection({

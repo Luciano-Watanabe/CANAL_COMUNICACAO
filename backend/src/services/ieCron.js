@@ -32,7 +32,7 @@ cron.schedule('* * * * *', async () => {
               AND NOT EXISTS (
                   SELECT 1 FROM CANAL_ANALISE_IE A WHERE A.CODCLI = C.CODCLI
               )
-            FETCH FIRST 3 ROWS ONLY
+            FETCH FIRST 2 ROWS ONLY
         `;
         
         const result = await connection.execute(sql);

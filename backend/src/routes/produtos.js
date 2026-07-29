@@ -28,6 +28,9 @@ router.get('/mix/:codcli', async (req, res) => {
     const isCacheLoading = !cacheService.isLoaded;
 
     const { codcli } = req.params;
+    if (!codcli || codcli === 'null' || codcli === 'undefined' || isNaN(Number(codcli))) {
+        return res.status(400).json({ success: false, error: 'Código de cliente inválido' });
+    }
     let conn;
 
     try {
