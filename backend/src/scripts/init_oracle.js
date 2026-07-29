@@ -1,4 +1,7 @@
 const oracledb = require('oracledb');
+try {
+    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
+} catch (err) { }
 const fs = require('fs');
 const path = require('path');
 
