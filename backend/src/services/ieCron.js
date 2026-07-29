@@ -71,21 +71,28 @@ cron.schedule('* * * * *', async () => {
                     if (res.data && res.data.estabelecimento && res.data.estabelecimento.inscricoes_estaduais) {
                         const ies = res.data.estabelecimento.inscricoes_estaduais;
                         
-                        // Procura a IE do mesmo Estado
-                        const ieNoEstado = ies.find(i => i.estado.sigla === estentOrig);
+                        // 1. Procura se a IE que temos no banco está na lista
+                        let ieDaApi = ies.find(i => cleanStr(i.inscricao_estadual) === ieFormatada && i.estado.sigla === estentOrig);
                         
-                        if (ieNoEstado) {
-                            const ieApiFormatada = cleanStr(ieNoEstado.inscricao_estadual);
-                            
-                            if (ieApiFormatada === ieFormatada) {
-                                statusIe = ieNoEstado.ativo ? 'ATIVA' : 'BAIXADA';
-                            } else {
-                                // Encontrou IE no estado, mas não bate com a nossa (o cliente pode ter mudado de endereço)
-                                statusIe = ieNoEstado.ativo ? 'DESATUALIZADA' : 'BAIXADA (E DESATUALIZADA)';
-                                novaIe = ieNoEstado.inscricao_estadual;
-                            }
+                        if (ieDaApi) {
+                            // Achou a nossa IE
+                            statusIe = ieDaApi.ativo ? 'ATIVA' : 'BAIXADA';
                         } else {
-                            statusIe = 'NENHUMA IE NO ESTADO';
+                            // 2. Não achou a nossa IE exata. Vamos procurar alguma ATIVA no estado.
+                            const ieAtiva = ies.find(i => i.estado.sigla === estentOrig && i.ativo);
+                            if (ieAtiva) {
+                                statusIe = 'DESATUALIZADA';
+                                novaIe = ieAtiva.inscricao_estadual;
+                            } else {
+                                // 3. Se não tem nenhuma ativa, pega qualquer uma do estado para sugerir
+                                const qualquerIe = ies.find(i => i.estado.sigla === estentOrig);
+                                if (qualquerIe) {
+                                    statusIe = 'BAIXADA (E DESATUALIZADA)';
+                                    novaIe = qualquerIe.inscricao_estadual;
+                                } else {
+                                    statusIe = 'NENHUMA IE NO ESTADO';
+                                }
+                            }
                         }
                     } else {
                         statusIe = 'SEM INSCRIÇÕES ESTADUAIS';
