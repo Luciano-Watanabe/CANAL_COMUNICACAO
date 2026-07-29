@@ -88,6 +88,140 @@ class CacheService {
                 VENDEDOR_PRINCIPAL: row[7] ? String(row[7]) : null
             }));
 
+            // 4. Load Mix de Atividades (COMPRAS_GERAIS)
+            console.log('[CACHE] Calculando Mix de Produtos por Ramo de Atividade (COMPRAS_GERAIS)...');
+            const atvQuery = `SELECT DISTINCT CODATV1 FROM PCCLIENT WHERE CODATV1 IS NOT NULL`;
+            const atvResult = await conn.execute(atvQuery);
+            
+            const newMixAtividadeCache = {};
+            for (const row of atvResult.rows) {
+                const codatv1 = row[0];
+                const mixQuery = `
+                    WITH CLIENTES_ATIVIDADE AS (
+                        SELECT CODCLI FROM PCCLIENT WHERE CODATV1 = :codatv1
+                    ),
+                    COMPRAS_GERAIS AS (
+                        SELECT M.CODPROD, SUM(M.QT) AS QTD_TOTAL, COUNT(DISTINCT M.CODCLI) AS QTD_CLIENTES_COMPRARAM
+                        FROM PCMOV M
+                        JOIN CLIENTES_ATIVIDADE CA ON CA.CODCLI = M.CODCLI
+                        WHERE M.CODOPER = 'S' AND M.DTMOV >= SYSDATE - 180
+                        AND EXISTS (
+                            SELECT 1 FROM PCEMBALAGEM PE 
+                            WHERE PE.CODPROD = M.CODPROD 
+                            AND NVL(PE.ENVIAFV, 'N') = 'S' 
+                            AND PE.DTINATIVO IS NULL
+                        )
+                        GROUP BY M.CODPROD
+                    )
+                    SELECT 
+                        CG.CODPROD, 
+                        P.DESCRICAO,
+                        P.CODEPTO,
+                        D.DESCRICAO AS DEPARTAMENTO,
+                        NVL(PR.PVENDA, 0) AS PVENDA,
+                        CG.QTD_TOTAL,
+                        CG.QTD_CLIENTES_COMPRARAM,
+                        PE.EAN,
+                        PE.QTUNIT,
+                        PE.FATOPRECO,
+                        PE.UNIDADE_EMB,
+                        PE.TIPOEMBALAGEM
+                    FROM COMPRAS_GERAIS CG
+                    JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
+                    LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
+                    LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                    OUTER APPLY (
+                        SELECT CODAUXILIAR AS EAN, QTUNIT, NVL(FATORPRECO, 1) AS FATOPRECO, UNMEDIDA AS UNIDADE_EMB, TIPOEMBALAGEM
+                        FROM PCEMBALAGEM PE2
+                        WHERE PE2.CODPROD = CG.CODPROD
+                        AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                        AND PE2.DTINATIVO IS NULL
+                        ORDER BY PE2.QTUNIT DESC
+                        FETCH FIRST 1 ROWS ONLY
+                    ) PE
+                    ORDER BY CG.QTD_CLIENTES_COMPRARAM DESC
+                    FETCH FIRST 100 ROWS ONLY
+                `;
+                
+                try {
+                    const mixRes = await conn.execute(mixQuery, { codatv1 });
+                    newMixAtividadeCache[codatv1] = mixRes.rows.map(m => ({
+                        CODPROD: m[0],
+                        DESCRICAO: m[1],
+                        CODEPTO: m[2],
+                        DEPARTAMENTO: m[3],
+                        PVENDA: m[4],
+                        QTD_TOTAL: m[5],
+                        QTD_CLIENTES_COMPRARAM: m[6],
+                        EAN: m[7],
+                        QTUNIT: m[8],
+                        FATOPRECO: m[9],
+                        UNIDADE_EMB: m[10],
+                        TIPOEMBALAGEM: m[11]
+                    }));
+                } catch(e) {
+                    console.error(`[CACHE] Erro ao carregar MIX para Atividade ${codatv1}:`, e.message);
+                }
+            }
+            this.mixAtividadeCache = newMixAtividadeCache;
+            console.log(`[CACHE] Mix de ${atvResult.rows.length} Ramos de Atividade carregados.`);
+
+            // 5. Load Mix Geral (Fallback para quando o cliente não tiver Mix por Atividade)
+            console.log('[CACHE] Calculando Mix Geral (Fallback)...');
+            const mixGeralQuery = `
+                WITH PRODUTOS_ATIVOS AS (
+                    SELECT P.CODPROD, P.DESCRICAO, P.CODEPTO, D.DESCRICAO AS DEPARTAMENTO, 
+                           NVL(PR.PVENDA, 0) AS PVENDA
+                    FROM PCPRODUT P
+                    JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '1'
+                    LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
+                    LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                    WHERE NVL(P.OBS2, 'X') NOT IN ('FL')
+                      AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
+                )
+                SELECT 
+                    PA.CODPROD, 
+                    PA.DESCRICAO,
+                    PA.CODEPTO,
+                    PA.DEPARTAMENTO,
+                    PA.PVENDA,
+                    PE.EAN,
+                    PE.QTUNIT,
+                    PE.FATOPRECO,
+                    PE.UNIDADE_EMB,
+                    PE.TIPOEMBALAGEM
+                FROM PRODUTOS_ATIVOS PA
+                OUTER APPLY (
+                    SELECT CODAUXILIAR AS EAN, QTUNIT, NVL(FATORPRECO, 1) AS FATOPRECO, UNMEDIDA AS UNIDADE_EMB, TIPOEMBALAGEM
+                    FROM PCEMBALAGEM PE2
+                    WHERE PE2.CODPROD = PA.CODPROD
+                    AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                    AND PE2.DTINATIVO IS NULL
+                    ORDER BY PE2.QTUNIT DESC
+                    FETCH FIRST 1 ROWS ONLY
+                ) PE
+                WHERE ROWNUM <= 200
+            `;
+            try {
+                const geralRes = await conn.execute(mixGeralQuery);
+                this.mixGeralCache = geralRes.rows.map(m => ({
+                    CODPROD: m[0],
+                    DESCRICAO: m[1],
+                    CODEPTO: m[2],
+                    DEPARTAMENTO: m[3],
+                    PVENDA: m[4],
+                    EAN: m[5],
+                    QTUNIT: m[6],
+                    FATOPRECO: m[7],
+                    UNIDADE_EMB: m[8],
+                    TIPOEMBALAGEM: m[9],
+                    QTD_TOTAL: 1, // mock para media
+                    QTD_CLIENTES_COMPRARAM: 1 // mock para media
+                }));
+            } catch (e) {
+                console.error(`[CACHE] Erro ao carregar MIX Geral:`, e.message);
+            }
+
             this.isLoaded = true;
             console.log(`[CACHE] Sucesso: ${this.vendedores.length} vendedores e ${this.clientes.length} clientes carregados na memória.`);
 
@@ -118,6 +252,14 @@ class CacheService {
 
     getHierarchy(vendedorCodusur) {
         return this.hierarchyMap[vendedorCodusur] || { supervisor: null, gerente: null };
+    }
+
+    getMixAtividade(codatv1) {
+        return this.mixAtividadeCache[codatv1] || [];
+    }
+
+    getMixGeral() {
+        return this.mixGeralCache || [];
     }
 }
 

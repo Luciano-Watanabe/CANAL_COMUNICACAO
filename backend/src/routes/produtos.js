@@ -3,6 +3,7 @@ const router = express.Router();
 const oracledb = require('oracledb');
 const path = require('path');
 const fs = require('fs');
+const cacheService = require('../services/cacheService');
 
 router.get('/imagem/:codprod', (req, res) => {
     const { codprod } = req.params;
@@ -42,96 +43,58 @@ router.get('/mix/:codcli', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Cliente não encontrado' });
         }
 
-        const codatv1 = resCli.rows[0][0];
-        if (!codatv1) {
-            return res.json({ success: true, mix: [] }); // Sem ramo de atividade, sem mix
+        const codatv1 = resCli.rows[0] ? resCli.rows[0][0] : null;
+
+        let mixCache = [];
+        if (codatv1) {
+            mixCache = cacheService.getMixAtividade(codatv1);
         }
 
-        const sql = `
-            WITH CLIENTES_ATIVIDADE AS (
-                SELECT CODCLI FROM PCCLIENT WHERE CODATV1 = :codatv1
-            ),
-            COMPRAS_GERAIS AS (
-                SELECT M.CODPROD, SUM(M.QT) AS QTD_TOTAL, COUNT(DISTINCT M.CODCLI) AS QTD_CLIENTES_COMPRARAM
-                FROM PCMOV M
-                JOIN CLIENTES_ATIVIDADE CA ON CA.CODCLI = M.CODCLI
-                WHERE M.CODOPER = 'S' AND M.DTMOV >= SYSDATE - 180
-                AND EXISTS (
-                    SELECT 1 FROM PCEMBALAGEM PE 
-                    WHERE PE.CODPROD = M.CODPROD 
-                    AND NVL(PE.ENVIAFV, 'N') = 'S' 
-                    AND PE.DTINATIVO IS NULL
-                )
-                GROUP BY M.CODPROD
-            ),
-            COMPRAS_CLIENTE AS (
-                SELECT M.CODPROD, SUM(M.QT) AS QTD_CLIENTE, MAX(M.DTMOV) AS ULTIMA_COMPRA
-                FROM PCMOV M
-                WHERE M.CODCLI = :codcli AND M.CODOPER = 'S' AND M.DTMOV >= SYSDATE - 365
-                AND EXISTS (
-                    SELECT 1 FROM PCEMBALAGEM PE 
-                    WHERE PE.CODPROD = M.CODPROD 
-                    AND NVL(PE.ENVIAFV, 'N') = 'S' 
-                    AND PE.DTINATIVO IS NULL
-                )
-                GROUP BY M.CODPROD
-            )
-            SELECT 
-                CG.CODPROD, 
-                P.DESCRICAO,
-                P.CODEPTO,
-                D.DESCRICAO AS DEPARTAMENTO,
-                NVL(PR.PVENDA, 0) AS PVENDA,
-                NVL(CC.QTD_CLIENTE, 0) AS QTD_CLIENTE,
-                CC.ULTIMA_COMPRA,
-                CG.QTD_TOTAL,
-                CG.QTD_CLIENTES_COMPRARAM,
-                PE.EAN,
-                PE.QTUNIT,
-                PE.FATOPRECO,
-                PE.UNIDADE_EMB,
-                PE.TIPOEMBALAGEM
-            FROM COMPRAS_GERAIS CG
-            JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
-            LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
-            LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
-            LEFT JOIN COMPRAS_CLIENTE CC ON CC.CODPROD = CG.CODPROD
-            OUTER APPLY (
-                SELECT CODAUXILIAR AS EAN, QTUNIT, NVL(FATORPRECO, 1) AS FATOPRECO, UNMEDIDA AS UNIDADE_EMB, TIPOEMBALAGEM
-                FROM PCEMBALAGEM PE2
-                WHERE PE2.CODPROD = CG.CODPROD
-                AND NVL(PE2.ENVIAFV, 'N') = 'S' 
-                AND PE2.DTINATIVO IS NULL
-                ORDER BY PE2.QTUNIT DESC
-                FETCH FIRST 1 ROWS ONLY
-            ) PE
-            ORDER BY CG.QTD_CLIENTES_COMPRARAM DESC
-            FETCH FIRST 100 ROWS ONLY
+        if (!mixCache || mixCache.length === 0) {
+            // Fallback para todos os produtos com estoque (Mix Geral)
+            mixCache = cacheService.getMixGeral();
+        }
+
+        if (!mixCache || mixCache.length === 0) {
+            return res.json({ success: true, mix: [] }); 
+        }
+
+        // Busca apenas o que o cliente atual comprou no último ano
+        const sqlClient = `
+            SELECT M.CODPROD, SUM(M.QT) AS QTD_CLIENTE, MAX(M.DTMOV) AS ULTIMA_COMPRA
+            FROM PCMOV M
+            WHERE M.CODCLI = :codcli AND M.CODOPER = 'S' AND M.DTMOV >= SYSDATE - 365
+            GROUP BY M.CODPROD
         `;
+        const resClient = await conn.execute(sqlClient, { codcli });
 
-        const result = await conn.execute(sql, { codatv1, codcli });
+        const clientPurchases = {};
+        for (const r of resClient.rows) {
+            clientPurchases[String(r[0])] = {
+                qtdCliente: r[1],
+                ultimaCompra: r[2]
+            };
+        }
 
-        const mix = result.rows.map(row => {
-            const qtdCliente = row.QTD_CLIENTE ?? row.qtd_cliente ?? row[5] ?? 0;
-            const ultimaCompra = row.ULTIMA_COMPRA ?? row.ultima_compra ?? row[6] ?? null;
-            const qtdTotalAtividade = row.QTD_TOTAL ?? row.qtd_total ?? row[7] ?? 0;
-            const qtdClientesAtividade = row.QTD_CLIENTES_COMPRARAM ?? row.qtd_clientes_compraram ?? row[8] ?? 1;
-
-            const mediaAtividade = qtdTotalAtividade / qtdClientesAtividade;
+        const finalMix = mixCache.map(m => {
+            const clientInfo = clientPurchases[String(m.CODPROD)] || { qtdCliente: 0, ultimaCompra: null };
+            const qtdCliente = clientInfo.qtdCliente;
+            const qtdClientesAtividade = m.QTD_CLIENTES_COMPRARAM || 1;
+            const mediaAtividade = m.QTD_TOTAL / qtdClientesAtividade;
 
             return {
-                codprod: row.CODPROD || row.codprod || row[0],
-                descricao: row.DESCRICAO || row.descricao || row[1],
-                codepto: row.CODEPTO || row.codepto || row[2],
-                departamento: row.DEPARTAMENTO || row.departamento || row[3] || 'SEM DEPARTAMENTO',
-                preco: row.PVENDA || row.pvenda || row[4],
+                codprod: m.CODPROD,
+                descricao: m.DESCRICAO,
+                codepto: m.CODEPTO,
+                departamento: m.DEPARTAMENTO || 'SEM DEPARTAMENTO',
+                preco: m.PVENDA,
                 qtdCliente,
-                ultimaCompra: ultimaCompra ? new Date(ultimaCompra).toISOString() : null,
-                ean: row.EAN || row.ean || row[9],
-                qtunit: row.QTUNIT || row.qtunit || row[10],
-                fatopreco: row.FATOPRECO || row.fatopreco || row[11],
-                unidade: row.UNIDADE_EMB || row.unidade_emb || row[12] || '',
-                tipoembalagem: row.TIPOEMBALAGEM || row.tipoembalagem || row[13] || 'U',
+                ultimaCompra: clientInfo.ultimaCompra ? new Date(clientInfo.ultimaCompra).toISOString() : null,
+                ean: m.EAN,
+                qtunit: m.QTUNIT,
+                fatopreco: m.FATOPRECO,
+                unidade: m.UNIDADE_EMB || '',
+                tipoembalagem: m.TIPOEMBALAGEM || 'U',
                 sinais: {
                     jaComprou: qtdCliente > 0,
                     compraMuito: qtdCliente >= mediaAtividade,
@@ -140,7 +103,7 @@ router.get('/mix/:codcli', async (req, res) => {
             };
         });
 
-        res.json({ success: true, mix });
+        res.json({ success: true, mix: finalMix });
     } catch (err) {
         console.error('Erro ao buscar mix:', err);
         res.status(500).json({ success: false, error: err.message });
