@@ -77,8 +77,14 @@ cron.schedule('* * * * *', async () => {
             if (statusApi !== 'RATE_LIMIT') {
                 try {
                     await connection.execute(`
-                        INSERT INTO CANAL_ANALISE_CNPJ (CODCLI, CGCENT, SITUACAO_CADASTRAL, ATUALIZADO_POR)
-                        VALUES (:codcli, :cgcent, :status, 'CRON')
+                        MERGE INTO CANAL_ANALISE_CNPJ A
+                        USING (SELECT :codcli AS CODCLI, :cgcent AS CGCENT, :status AS SITUACAO_CADASTRAL, 'CRON' AS ATUALIZADO_POR FROM DUAL) B
+                        ON (A.CODCLI = B.CODCLI)
+                        WHEN MATCHED THEN
+                            UPDATE SET A.SITUACAO_CADASTRAL = B.SITUACAO_CADASTRAL, A.DATA_ANALISE = CURRENT_TIMESTAMP
+                        WHEN NOT MATCHED THEN
+                            INSERT (CODCLI, CGCENT, SITUACAO_CADASTRAL, ATUALIZADO_POR)
+                            VALUES (B.CODCLI, B.CGCENT, B.SITUACAO_CADASTRAL, B.ATUALIZADO_POR)
                     `, {
                         codcli: codcli,
                         cgcent: cgcentOrig,

@@ -114,8 +114,14 @@ cron.schedule('* * * * *', async () => {
             if (statusIe !== 'RATE_LIMIT') {
                 try {
                     await connection.execute(`
-                        INSERT INTO CANAL_ANALISE_IE (CODCLI, CNPJ, IE_SISTEMA, UF_SISTEMA, SITUACAO_IE, IE_NOVA, ATUALIZADO_POR)
-                        VALUES (:codcli, :cgcent, :ieent, :estent, :status, :novaIe, 'CRON')
+                        MERGE INTO CANAL_ANALISE_IE A
+                        USING (SELECT :codcli AS CODCLI, :cgcent AS CNPJ, :ieent AS IE_SISTEMA, :estent AS UF_SISTEMA, :status AS SITUACAO_IE, :novaIe AS IE_NOVA, 'CRON' AS ATUALIZADO_POR FROM DUAL) B
+                        ON (A.CODCLI = B.CODCLI)
+                        WHEN MATCHED THEN
+                            UPDATE SET A.SITUACAO_IE = B.SITUACAO_IE, A.IE_NOVA = B.IE_NOVA, A.DATA_ATUALIZACAO = CURRENT_TIMESTAMP
+                        WHEN NOT MATCHED THEN
+                            INSERT (CODCLI, CNPJ, IE_SISTEMA, UF_SISTEMA, SITUACAO_IE, IE_NOVA, ATUALIZADO_POR)
+                            VALUES (B.CODCLI, B.CNPJ, B.IE_SISTEMA, B.UF_SISTEMA, B.SITUACAO_IE, B.IE_NOVA, B.ATUALIZADO_POR)
                     `, {
                         codcli: codcli,
                         cgcent: cgcentOrig,
