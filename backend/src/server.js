@@ -161,14 +161,16 @@ const PORT = process.env.PORT || 3001;
 const initializeOracleDatabase = require('./scripts/init_oracle');
 const cacheService = require('./services/cacheService');
 
-initializeOracleDatabase().then(async () => {
-    // Carrega dados de clientes e vendedores pro cache (RAM) antes de abrir a API
-    await cacheService.loadAll();
-    cacheService.startAutoRefresh();
-
+initializeOracleDatabase().then(() => {
+    // Inicia a API imediatamente para não recusar conexões (ex: Tela de Login)
     server.listen(PORT, () => {
         console.log(`Backend server running on port ${PORT}`);
         console.log(`(Crons and Pollers are now running in the worker process)`);
+    });
+
+    // Inicia o carregamento do cache pesado em background
+    cacheService.loadAll().then(() => {
+        cacheService.startAutoRefresh();
     });
 }).catch(err => {
     console.error('Falha crítica ao inicializar o banco:', err);

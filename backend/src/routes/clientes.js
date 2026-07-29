@@ -26,6 +26,10 @@ try {
 const cacheService = require('../services/cacheService');
 
 router.get('/', async (req, res) => {
+    if (!cacheService.isLoaded) {
+        return res.status(503).json({ success: false, message: 'O servidor está carregando o banco de dados para a memória. Por favor, aguarde alguns segundos...' });
+    }
+
     const { codusur, role, vendedor, busca } = req.query;
 
     if (!codusur) {

@@ -6,6 +6,10 @@ const cacheService = require('../services/cacheService');
 
 // GET /api/vendedores - Listar todos os vendedores
 router.get('/', async (req, res) => {
+    if (!cacheService.isLoaded) {
+        return res.status(503).json({ success: false, message: 'O servidor está carregando o banco de dados para a memória. Por favor, aguarde alguns segundos...' });
+    }
+
     const { codusur, role } = req.query;
 
     try {

@@ -25,6 +25,10 @@ router.get('/imagem/:codprod', (req, res) => {
 });
 
 router.get('/mix/:codcli', async (req, res) => {
+    if (!cacheService.isLoaded) {
+        return res.status(503).json({ success: false, error: 'O servidor está carregando o banco de dados para a memória. Por favor, aguarde alguns segundos...' });
+    }
+
     const { codcli } = req.params;
     let conn;
 
