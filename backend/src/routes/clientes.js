@@ -92,14 +92,6 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar clientes:', error);
         return res.status(500).json({ success: false, message: 'Erro interno ao buscar clientes.' });
-    } finally {
-        if (connection) {
-            try {
-                await connection.close();
-            } catch (err) {
-                console.error('Erro ao fechar conexão:', err);
-            }
-        }
     }
 });
 
