@@ -1,4 +1,10 @@
 require('dotenv').config();
+const oracledb = require('oracledb');
+try {
+    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
+} catch (err) {
+    console.warn('[WORKER] Aviso: Falha ao inicializar o Thick mode do Oracle. Pode ser que o Instant Client não esteja presente no container.', err.message);
+}
 const initializeOracleDatabase = require('./scripts/init_oracle');
 const WebhookPoller = require('./services/webhookPoller');
 
