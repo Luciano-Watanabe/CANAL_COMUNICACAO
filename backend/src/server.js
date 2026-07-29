@@ -145,26 +145,25 @@ io.on('connection', (socket) => {
   });
 });
 
+// Endpoint interno para o Worker disparar eventos via Socket.io
+app.post('/api/internal/emit', (req, res) => {
+    // Basicamente permite apenas conexões locais/internas (opcional: validar IP/Token)
+    const { roomName, eventName, payload } = req.body;
+    if (roomName && eventName) {
+        io.to(roomName).emit(eventName, payload);
+        res.json({ success: true });
+    } else {
+        res.status(400).json({ success: false, message: 'Missing roomName or eventName' });
+    }
+});
+
 const PORT = process.env.PORT || 3001;
 const initializeOracleDatabase = require('./scripts/init_oracle');
 
 initializeOracleDatabase().then(() => {
-    // Carrega os crons apenas após disparar a verificação do banco (assíncrono, mas rápido o suficiente)
-    require('./services/statusCron');
-    require('./services/cleanupCron');
-    require('./services/automacoesCron');
-    require('./services/vendedoresVisitasCron');
-    require('./services/filaCron');
-    require('./services/cnpjCron');
-    require('./services/geradorRotasCron');
-    
     server.listen(PORT, () => {
         console.log(`Backend server running on port ${PORT}`);
-        
-        // Iniciar o poller após garantir que o banco está estruturado
-        const WebhookPoller = require('./services/webhookPoller');
-        const poller = new WebhookPoller(io);
-        poller.start();
+        console.log(`(Crons and Pollers are now running in the worker process)`);
     });
 }).catch(err => {
     console.error('Falha crítica ao inicializar o banco:', err);

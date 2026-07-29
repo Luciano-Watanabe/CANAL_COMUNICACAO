@@ -3,8 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 class WebhookPoller {
-    constructor(io) {
-        this.io = io;
+    constructor() {
         this.interval = null;
         this.isRunning = false;
         this.pollIntervalMs = 5000; // Poll every 5 seconds
@@ -157,9 +156,16 @@ class WebhookPoller {
 
             if (codusur) {
                 const roomName = `user_${codusur}`;
-                const io = require('../server').io;
-                if (io) {
-                    io.to(roomName).emit('nova_mensagem', msgObj);
+                // Como estamos num worker isolado, fazemos um POST interno pro Backend notificar o socket
+                try {
+                    const axios = require('axios');
+                    await axios.post('http://backend:3001/api/internal/emit', {
+                        roomName,
+                        eventName: 'nova_mensagem',
+                        payload: msgObj
+                    });
+                } catch (err) {
+                    console.error('[WebhookPoller] Erro ao notificar backend via HTTP POST:', err.message);
                 }
             } else {
                 console.log(`[WebhookPoller] Cliente ${telefone} não encontrado na PCCLIENT. Mensagem arquivada.`);
@@ -218,9 +224,15 @@ class WebhookPoller {
 
         if (codusur) {
             const roomName = `user_${codusur}`;
-            const io = require('../server').io;
-            if (io) {
-                io.to(roomName).emit('nova_mensagem', msgObj);
+            try {
+                const axios = require('axios');
+                await axios.post('http://backend:3001/api/internal/emit', {
+                    roomName,
+                    eventName: 'nova_mensagem',
+                    payload: msgObj
+                });
+            } catch (err) {
+                console.error('[WebhookPoller] Erro ao notificar backend via HTTP POST:', err.message);
             }
         } else {
             console.log(`[WebhookPoller] Cliente ${telefone} não encontrado. Mensagem arquivada.`);

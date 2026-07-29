@@ -61,7 +61,7 @@ export default function Login() {
         <form onSubmit={handleLogin} className="space-y-5">
           <div className="animate-slide-up" style={{ animationDelay: '300ms' }}>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-              Usuário (Nome de Guerra)
+              Usuario
             </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -78,7 +78,7 @@ export default function Login() {
 
           <div className="animate-slide-up" style={{ animationDelay: '400ms' }}>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-              Senha (SENHADB)
+              Senha
             </label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />

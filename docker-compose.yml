@@ -59,6 +59,35 @@ services:
       - POSTGRES_DB=canal_db
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./backend/src/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - canal_network
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: node src/worker.js
+    environment:
+      - NODE_ENV=development
+      - TZ=America/Sao_Paulo
+      - DB_HOST=db
+      - DB_USER=postgres
+      - DB_PASS=postgres
+      - DB_NAME=canal_db
+      # Oracle envs (Winthor)
+      - ORACLE_USER=${ORACLE_USER}
+      - ORACLE_PASS=${ORACLE_PASS}
+      - ORACLE_CONN_STR=${ORACLE_CONN_STR}
+      # Diretório de imagens dos produtos
+      - IMAGES_DIR=/app/imagens_produtos
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ${HOST_IMAGES_DIR:-/mnt/fotos_prod}:/app/imagens_produtos
+    depends_on:
+      - db
+      - backend
     networks:
       - canal_network
 
