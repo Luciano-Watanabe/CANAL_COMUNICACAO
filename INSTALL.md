@@ -11,7 +11,7 @@ Este documento descreve os passos necessários para configurar e iniciar o ambie
 ### 1. Preparação do Ambiente
 Clone o repositório ou copie os arquivos do projeto para o diretório desejado na máquina hospedeira.
 ```bash
-git clone <url-do-repositorio>
+git clone https://github.com/Luciano-Watanabe/CANAL_COMUNICACAO.git
 cd CANAL_COMUNICACAO
 ```
 
