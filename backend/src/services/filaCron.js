@@ -248,21 +248,19 @@ cron.schedule('* * * * *', async () => {
                     if (type === 'media') {
                         endpoint = `/message/sendMedia/${instanceName}`;
                         fallbackEndpoint = `/send/media`;
-                        // V2/GO espera URL pública, não base64
-                        const mediaUrlForV2 = payload.mediaUrl || payload.media;
+                        let mediaUrlForV2 = payload.mediaUrl || payload.media || '';
+                        if (mediaUrlForV2.includes('base64,')) {
+                            mediaUrlForV2 = mediaUrlForV2.split('base64,')[1];
+                        }
+                        if (!mediaUrlForV2.startsWith('http://') && !mediaUrlForV2.startsWith('https://')) {
+                            mediaUrlForV2 = mediaUrlForV2.replace(/\s+/g, '');
+                        }
                         payloadFallback = {
                             number: payload.number,
-                            type: payload.mediatype,
-                            mimetype: payload.mimetype,
+                            type: payload.mediatype || 'document',
                             filename: payload.fileName,
                             caption: payload.caption || '',
-                            url: mediaUrlForV2,
-                            mediaMessage: {
-                                mediatype: payload.mediatype,
-                                fileName: payload.fileName,
-                                caption: payload.caption || '',
-                                url: mediaUrlForV2
-                            }
+                            url: mediaUrlForV2
                         };
                     } else if (type === 'text') {
                         endpoint = `/message/sendText/${instanceName}`;

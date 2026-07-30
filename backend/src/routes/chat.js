@@ -703,23 +703,22 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
             console.log(`[DEBUG] Tentativa 1 falhou. Tentando endpoint alternativo /send/media (Evolution v2/GO)`);
             const fallbackUrl = `${urlBase}/send/media`;
             
-            // v2 uses 'type' instead of 'mediatype', and 'media' string
+            let mediaUrlV2 = base64Data || '';
+            if (mediaUrlV2.includes('base64,')) {
+                mediaUrlV2 = mediaUrlV2.split('base64,')[1];
+            }
+            if (!mediaUrlV2.startsWith('http://') && !mediaUrlV2.startsWith('https://')) {
+                mediaUrlV2 = mediaUrlV2.replace(/\s+/g, '');
+            }
             const payloadV2 = {
                 number: numberToSend,
                 type: mediatype, // 'audio', 'image', 'document', 'video'
-                mimetype: mimetype,
                 filename: fileName,
                 caption: caption || '',
-                url: base64Data, // Evo GO accepts raw base64 in url
-                mediaMessage: {
-                   mediatype: mediatype,
-                   fileName: fileName,
-                   caption: caption || '',
-                   url: base64Data
-                }
+                url: mediaUrlV2
             };
             
-            console.log(`[DEBUG] payloadV2 for /send/media:`, JSON.stringify({ ...payloadV2, url: payloadV2.url.substring(0, 50) + '...', mediaMessage: { ...payloadV2.mediaMessage, url: '...' } }));
+            console.log(`[DEBUG] payloadV2 for /send/media:`, JSON.stringify({ ...payloadV2, url: payloadV2.url.substring(0, 50) + '...' }));
             
             const evResponseFallback = await fetch(fallbackUrl, {
                 method: 'POST',

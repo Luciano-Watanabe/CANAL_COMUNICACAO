@@ -236,19 +236,19 @@ router.post('/send-whatsapp', upload.single('pdf'), async (req, res) => {
                         if (!res.ok) {
                             // Fallback para Evolution V2/GO
                             console.log(`[CATALOGO] Falhou V1 (${res.status}), tentando /send/media...`);
+                            let mediaUrl = payloadV1.media || '';
+                            if (mediaUrl.includes('base64,')) {
+                                mediaUrl = mediaUrl.split('base64,')[1];
+                            }
+                            if (!mediaUrl.startsWith('http://') && !mediaUrl.startsWith('https://')) {
+                                mediaUrl = mediaUrl.replace(/\s+/g, '');
+                            }
                             const payloadV2 = {
                                 number: payloadV1.number,
-                                type: payloadV1.mediatype,
-                                mimetype: payloadV1.mimetype,
-                                filename: payloadV1.fileName,
+                                type: payloadV1.mediatype || 'document',
+                                filename: payloadV1.fileName || `Catalogo_${ramoNome}.pdf`,
                                 caption: payloadV1.caption || '',
-                                url: payloadV1.media,
-                                mediaMessage: {
-                                    mediatype: payloadV1.mediatype,
-                                    fileName: payloadV1.fileName,
-                                    caption: payloadV1.caption || '',
-                                    url: payloadV1.media
-                                }
+                                url: mediaUrl
                             };
                             res = await fetch(`${urlBase}/send/media`, {
                                 method: 'POST',
