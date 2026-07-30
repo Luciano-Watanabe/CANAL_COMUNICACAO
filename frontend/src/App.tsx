@@ -13,6 +13,7 @@ import Reativacao from './pages/Reativacao';
 import Rotas from './pages/Rotas';
 import AnaliseCNPJ from './pages/AnaliseCNPJ';
 import AnaliseIE from './pages/AnaliseIE';
+import Catalogo from './pages/Catalogo';
 import ProtectedRoute from './components/ProtectedRoute';
 import { SocketProvider } from './contexts/SocketContext';
 
@@ -48,6 +49,7 @@ function App() {
             <Route path="/rotas" element={<Rotas />} />
             <Route path="/analisecnpj" element={<AnaliseCNPJ />} />
             <Route path="/analise-ie" element={<AnaliseIE />} />
+            <Route path="/catalogo" element={<Catalogo />} />
           </Route>
         </Route>
       </Routes>

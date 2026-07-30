@@ -60,3 +60,33 @@
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+@media print {
+  @page {
+    margin: 1cm;
+    size: A4 portrait;
+  }
+  
+  body {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: white !important;
+  }
+  
+  /* Oculta tudo que não for o catálogo ao imprimir */
+  body * {
+    visibility: hidden;
+  }
+  
+  .catalog-print-container, 
+  .catalog-print-container * {
+    visibility: visible;
+  }
+  
+  .catalog-print-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}

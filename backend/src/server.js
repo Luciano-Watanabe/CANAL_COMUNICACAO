@@ -46,6 +46,7 @@ const visitasRoutes = require('./routes/visitas');
 const automacoesRoutes = require('./routes/automacoes');
 const metricasRoutes = require('./routes/metricas');
 const rotasRoutes = require('./routes/rotas');
+const catalogoRoutes = require('./routes/catalogo');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/clientes', clientesRoutes);
@@ -66,6 +67,7 @@ app.use('/api/analise-cnpj', analiseCnpjRoutes);
 app.use('/api/analise-ie', analiseIeRoutes);
 app.use('/api', metricasRoutes);
 app.use('/api', whatsappRoutes);
+app.use('/api/catalogo', catalogoRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Canal de Comunicacao Backend' });

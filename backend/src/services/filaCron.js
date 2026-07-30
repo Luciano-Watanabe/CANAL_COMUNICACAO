@@ -72,8 +72,8 @@ cron.schedule('* * * * *', async () => {
                         COALESCE(T.API_URL, G.VALOR) AS URL_BASE
                     FROM CANAL_TOKENS_EVOLUTION T
                     LEFT JOIN CANAL_CONFIGURACOES G ON G.CHAVE = 'EVOLUTION_API_URL'
-                    WHERE T.API_TOKEN = 'TOKEN_121817072026'
-                `);
+                    WHERE T.CODUSUR = :codusur
+                `, { codusur });
                 
                 if (configResult.rows.length === 0) {
                     throw new Error('Token não cadastrado.');
@@ -183,8 +183,14 @@ cron.schedule('* * * * *', async () => {
                     }
                 }
 
-                let finalClientText = txtProdutos || `Olá ${nomeCliente.trim()}, notamos sua ausência! Que tal conferir as novidades?`;
-                finalClientText = finalClientText.replace(/¿/g, '\u2705');
+                let textoBase = txtProdutos;
+                if (textoBase && typeof textoBase === 'object') {
+                    // Fallback in case it's an unread LOB
+                    textoBase = '[Mensagem de Reativação]';
+                }
+                
+                let finalClientText = textoBase || `Olá ${(nomeCliente || '').trim()}, notamos sua ausência! Que tal conferir as novidades?`;
+                finalClientText = String(finalClientText).replace(/¿/g, '\u2705');
 
                 const msgClienteTxt = {
                     number: telCliente,

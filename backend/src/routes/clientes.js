@@ -804,7 +804,7 @@ router.get('/reativacao/fila/items', async (req, res) => {
         });
 
         let sql = `
-            SELECT ID, CODCLI, TELEFONE, STATUS, DATA_CRIACAO, LOG_ERRO
+            SELECT ID, CODCLI, TELEFONE, STATUS, DATA_CRIACAO, TO_CHAR(LOG_ERRO) AS LOG_ERRO
             FROM CANAL_REATIVACAO_FILA
             WHERE DATA_CRIACAO >= TRUNC(SYSDATE) - 7
         `;

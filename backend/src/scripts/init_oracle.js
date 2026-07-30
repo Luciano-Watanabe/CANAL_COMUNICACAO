@@ -143,15 +143,7 @@ async function initializeOracleDatabase() {
             connectString: process.env.ORACLE_CONN_STR
         });
 
-        // DROP wrong tables from previous bad init (if they exist)
-        try { await conn.execute(`DROP TABLE JCWEBHOOK CASCADE CONSTRAINTS`); } catch(e){}
-        try { await conn.execute(`DROP TABLE CANAL_AGENDAMENTO_STATUS CASCADE CONSTRAINTS`); } catch(e){}
-        try { await conn.execute(`DROP TABLE CANAL_WEBHOOK_STATE CASCADE CONSTRAINTS`); } catch(e){}
-        try { await conn.execute(`DROP TABLE CANAL_VISITAS CASCADE CONSTRAINTS`); } catch(e){}
-        try { await conn.execute(`DROP TABLE CANAL_TOKENS_EVOLUTION CASCADE CONSTRAINTS`); } catch(e){}
-        try { await conn.execute(`DROP TABLE CANAL_AVISOS CASCADE CONSTRAINTS`); } catch(e){}
-        try { await conn.execute(`DROP TABLE CANAL_REATIVACAO_FILA CASCADE CONSTRAINTS`); } catch(e){}
-        try { await conn.execute(`DROP TABLE CANAL_ANALISE_CNPJ CASCADE CONSTRAINTS`); } catch(e){}
+        // DROP TABLE removido para não apagar dados em todo restart
 
         // 1. Criar Tabelas
         for (const sql of TABLES) {
