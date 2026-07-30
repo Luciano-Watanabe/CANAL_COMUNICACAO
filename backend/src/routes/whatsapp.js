@@ -265,27 +265,28 @@ router.get('/whatsapp/check-number/:numero', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Instância do vendedor não configurada.' });
         }
 
-        const url = `${config.urlBase}/chat/whatsappNumbers/${config.instanceName}`;
+        const url = `${config.urlBase}/user/check`;
         let evoResponse;
         
         try {
             evoResponse = await axios.post(url, {
-                numbers: [numero]
+                number: [numero]
             }, {
                 headers: {
                     'apikey': config.apiToken,
+                    'instance': config.instanceName,
                     'Content-Type': 'application/json'
                 },
                 timeout: 5000
             });
         } catch (evoErr) {
-            console.error('Erro na chamada Evolution API para whatsappNumbers:', evoErr.message);
+            console.error('Erro na chamada Evolution API para /user/check:', evoErr.message);
             return res.status(500).json({ success: false, error: 'Erro ao consultar a API do WhatsApp.' });
         }
 
         let exists = false;
-        if (Array.isArray(evoResponse.data) && evoResponse.data.length > 0) {
-            exists = evoResponse.data[0].exists === true;
+        if (evoResponse.data?.data?.Users && Array.isArray(evoResponse.data.data.Users) && evoResponse.data.data.Users.length > 0) {
+            exists = evoResponse.data.data.Users[0].IsInWhatsapp === true;
         }
 
         await connection.execute(`
