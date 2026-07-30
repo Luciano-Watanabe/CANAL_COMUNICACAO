@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Send, Users, AlertCircle, Phone } from 'lucide-react';
+import { X, Send, Users, AlertCircle, Phone, PenTool } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
+import { ModalGerenciarTemplates } from './ModalGerenciarTemplates';
 
 interface Cliente {
   codcli: number;
@@ -26,31 +27,30 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
   const [loading, setLoading] = useState(false);
   const [loadingClientes, setLoadingClientes] = useState(false);
 
-  const [config, setConfig] = useState(() => {
-    const saved = localStorage.getItem('catalogo_config');
-    if (saved) return JSON.parse(saved);
-    return {
-      tipoMensagem: 'LANCAMENTO',
-      mensagemPadrao: 'Confira nossos lançamentos deste mês no catálogo anexo!'
-    };
-  });
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | ''>('');
+  const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
 
-  const TIPOS_MENSAGEM = [
-    { id: 'LANCAMENTO', label: 'Lançamentos', template: 'Confira nossos lançamentos deste mês no catálogo anexo!' },
-    { id: 'PROMOCAO', label: 'Promoção', template: 'Preços especiais! Veja nosso catálogo de ofertas anexo.' },
-    { id: 'ATUALIZACAO', label: 'Atualização', template: 'Nosso catálogo foi atualizado, confira as novidades no PDF.' }
-  ];
-
-  useEffect(() => {
-    localStorage.setItem('catalogo_config', JSON.stringify(config));
-  }, [config]);
-
-  const handleConfigTipoChange = (novoTipoId: string) => {
-    const tipo = TIPOS_MENSAGEM.find(t => t.id === novoTipoId);
-    if (tipo) {
-      setConfig({ ...config, tipoMensagem: novoTipoId, mensagemPadrao: tipo.template });
+  const fetchTemplates = async () => {
+    try {
+      const res = await fetch('/api/templates_paginas/CATALOGO');
+      const data = await res.json();
+      if (data.success) {
+        setTemplates(data.templates);
+        if (data.templates.length > 0 && selectedTemplateId === '') {
+          setSelectedTemplateId(data.templates[0].id);
+        }
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchTemplates();
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && selectedVendedor) {
@@ -143,8 +143,9 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
       
       const ramoObj = atividades.find(a => String(a.codatv) === String(ramoSelecionado));
       formData.append('ramoNome', ramoObj ? ramoObj.ramo : 'Geral');
-      formData.append('mensagemPadrao', config.mensagemPadrao);
-      formData.append('tipoMensagem', config.tipoMensagem);
+      const t = templates.find(temp => temp.id === selectedTemplateId);
+      formData.append('mensagemPadrao', t ? t.template : '');
+      formData.append('tipoMensagem', t ? t.tipo : '');
 
       // 3. Send
       await onSend(formData);
@@ -263,19 +264,28 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
             </div>
           )}
 
-          <div className="border border-slate-700 rounded-lg p-4 space-y-4">
-            <h4 className="text-sm font-medium text-white flex items-center gap-2">Configurações da Mensagem</h4>
+          <div className="border border-slate-700 rounded-lg p-4 space-y-4 relative">
+            <div className="flex justify-between items-center">
+              <h4 className="text-sm font-medium text-white flex items-center gap-2">Configurações da Mensagem</h4>
+              <button
+                onClick={() => setManageTemplatesOpen(true)}
+                className="flex items-center gap-2 text-xs bg-slate-800 hover:bg-slate-700 text-blue-400 px-2 py-1 rounded border border-slate-700 transition-colors"
+              >
+                <PenTool className="w-3 h-3" />
+                Gerenciar Templates
+              </button>
+            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">Tipo de Mensagem</label>
                 <select 
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500"
-                  value={config.tipoMensagem}
-                  onChange={(e) => handleConfigTipoChange(e.target.value)}
+                  value={selectedTemplateId}
+                  onChange={(e) => setSelectedTemplateId(Number(e.target.value))}
                 >
-                  {TIPOS_MENSAGEM.map(t => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.tipo}</option>
                   ))}
                 </select>
               </div>
@@ -289,9 +299,9 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">Mensagem Padrão</label>
               <textarea 
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-green-500 min-h-[80px] text-sm"
-                value={config.mensagemPadrao}
-                onChange={(e) => setConfig({ ...config, mensagemPadrao: e.target.value })}
+                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-400 focus:outline-none min-h-[80px] text-sm"
+                value={templates.find(t => t.id === selectedTemplateId)?.template || ''}
+                readOnly
               />
             </div>
           </div>
@@ -318,6 +328,14 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
           </button>
         </div>
       </div>
+      {manageTemplatesOpen && (
+        <ModalGerenciarTemplates 
+          isOpen={manageTemplatesOpen} 
+          onClose={() => setManageTemplatesOpen(false)} 
+          pagina="CATALOGO"
+          onTemplatesChanged={fetchTemplates}
+        />
+      )}
     </div>
   );
 }

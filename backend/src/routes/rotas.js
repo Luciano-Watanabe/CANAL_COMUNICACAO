@@ -279,7 +279,7 @@ router.get('/:codusur', async (req, res) => {
 // Disparar rota presencial para o vendedor
 router.post('/:codusur/disparar', async (req, res) => {
     const { codusur } = req.params;
-    const { dia, clientes } = req.body;
+    const { dia, clientes, templates = [] } = req.body;
 
     let connection;
     try {
@@ -315,37 +315,82 @@ router.post('/:codusur/disparar', async (req, res) => {
         let evoUrl = configResult.rows[0][2];
         if (evoUrl.endsWith('/')) evoUrl = evoUrl.slice(0, -1);
 
-        let texto = `*Sua Rota Presencial - ${dia}*\n\nOlá ${nome.trim()}, aqui está a sequência otimizada das suas visitas de hoje:\n\n`;
+        let texto = `*Sua Rota - ${dia}*\n\nOlá ${nome.trim()}, aqui estão suas interações de hoje:\n\n`;
+
+        const agrupado = {
+            'PRESENCIAL': [],
+            'WHATS': [],
+            'TELEFONE': [],
+            'EMAIL': []
+        };
 
         if (clientes && clientes.length > 0) {
-            let count = 1;
-            clientes.forEach(c => {
+            clientes.forEach((c, index) => {
                 const interacao = c.interacao || 'PRESENCIAL';
-                if (interacao === 'PRESENCIAL') {
+                if (agrupado[interacao]) {
                     const nomeCli = c.razaosocial || c.CLIENTE || '';
                     const endereco = c.endereco || c.ENDERENT || 'S/ Endereço';
                     const municipio = c.municipio || c.MUNICENT || '';
-                    texto += `*${count}º Parada*: ${nomeCli.trim()}\n📍 ${endereco} - ${municipio}\n\n`;
-                    count++;
+                    agrupado[interacao].push({
+                        codcli: c.codcli || c.CODCLI,
+                        nome: nomeCli.trim(),
+                        endereco,
+                        municipio,
+                        sequencia: index + 1
+                    });
                 }
             });
         } else {
             const sql = `
-                SELECT C.CLIENTE, NVL(C.ENDERENT, C.ENDERCOB), C.MUNICENT, R.SEQUENCIA
+                SELECT C.CLIENTE, NVL(C.ENDERENT, C.ENDERCOB), C.MUNICENT, R.SEQUENCIA, R.INTERACAO, R.CODCLI
                 FROM CANAL_ROTAS R
                 JOIN PCCLIENT C ON C.CODCLI = R.CODCLI
-                WHERE R.CODUSUR = :codusur AND R.DIASEMANA = :dia AND R.INTERACAO = 'PRESENCIAL'
+                WHERE R.CODUSUR = :codusur AND R.DIASEMANA = :dia
                 ORDER BY R.SEQUENCIA ASC
             `;
             const result = await connection.execute(sql, { codusur, dia });
             
             if (result.rows.length === 0) {
-                return res.json({ success: false, error: 'Não há clientes presenciais agendados para este dia.' });
+                return res.json({ success: false, error: 'Não há clientes agendados para este dia.' });
             }
 
             result.rows.forEach(r => {
-                texto += `*${r[3]}º Parada*: ${r[0].trim()}\n📍 ${r[1] || 'S/ Endereço'} - ${r[2] || ''}\n\n`;
+                const interacao = r[4] || 'PRESENCIAL';
+                if (agrupado[interacao]) {
+                    agrupado[interacao].push({
+                        nome: r[0].trim(),
+                        endereco: r[1] || 'S/ Endereço',
+                        municipio: r[2] || '',
+                        sequencia: r[3],
+                        codcli: r[5]
+                    });
+                }
             });
+        }
+
+        const icons = {
+            'PRESENCIAL': '🚗',
+            'WHATS': '📱',
+            'TELEFONE': '📞',
+            'EMAIL': '✉️'
+        };
+
+        for (const [interacao, lista] of Object.entries(agrupado)) {
+            if (lista.length > 0) {
+                texto += `${icons[interacao]} *${interacao}*\n`;
+                const t = templates.find(temp => temp.tipo.toUpperCase() === interacao.toUpperCase());
+                if (t && t.template) {
+                    texto += `_(Sugerida: ${t.template})_\n`;
+                }
+                lista.forEach(c => {
+                    if (interacao === 'PRESENCIAL') {
+                        texto += `*${c.sequencia}º Parada*: ${c.codcli} - ${c.nome}\n📍 ${c.endereco} - ${c.municipio}\n`;
+                    } else {
+                        texto += `- ${c.codcli} - ${c.nome}\n`;
+                    }
+                });
+                texto += `\n`;
+            }
         }
 
         texto += `Boa sorte nas vendas!`;

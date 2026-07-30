@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, Send, AlertTriangle, Users, Eye, X, List, Play, Square, Settings } from 'lucide-react';
+import { Search, Send, AlertTriangle, Users, X, List, Play, Square, PenTool } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
+import { ModalGerenciarTemplates } from '../components/ModalGerenciarTemplates';
 
 export default function Reativacao() {
   const { maskData } = usePrivacy();
@@ -19,33 +20,61 @@ export default function Reativacao() {
   const [isSending, setIsSending] = useState(false);
   const [filaFilter, setFilaFilter] = useState<'TODOS' | 'PENDENTE' | 'PROCESSANDO' | 'ENVIADO' | 'ERRO'>('TODOS');
   
-  // Configs
-  const [configModalOpen, setConfigModalOpen] = useState(false);
-  const [config, setConfig] = useState(() => {
-    const saved = localStorage.getItem('reativacao_config');
-    if (saved) return JSON.parse(saved);
-    return {
-      enviarPrecos: true,
-      tipoMensagem: 'SAUDADE',
-      mensagemPadrao: 'Olá, sentimos sua falta! Veja algumas ofertas especiais que separamos para você:'
-    };
-  });
+  // Templates e Configuração
+  const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [clientConfigs, setClientConfigs] = useState<Record<string, { enviarPrecos: boolean; tipoMensagemId: number | null }>>({});
 
-  const TIPOS_MENSAGEM = [
-    { id: 'SAUDADE', label: 'Saudade', template: 'Olá, sentimos sua falta! Veja algumas ofertas especiais que separamos para você:' },
-    { id: 'OFERTA', label: 'Oferta Especial', template: 'Temos preços exclusivos para você que não compra há um tempo. Confira nossa lista:' },
-    { id: 'NOVIDADE', label: 'Novidades', template: 'Chegaram novidades no nosso catálogo! Dê uma olhada nos produtos:' }
-  ];
+  const fetchTemplates = async () => {
+    try {
+      const res = await fetch('/api/templates_paginas/REATIVACAO');
+      const data = await res.json();
+      if (data.success) {
+        setTemplates(data.templates);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem('reativacao_config', JSON.stringify(config));
-  }, [config]);
+    fetchTemplates();
+  }, []);
 
-  const handleConfigTipoChange = (novoTipoId: string) => {
-    const tipo = TIPOS_MENSAGEM.find(t => t.id === novoTipoId);
-    if (tipo) {
-      setConfig({ ...config, tipoMensagem: novoTipoId, mensagemPadrao: tipo.template });
-    }
+  const getClientConfig = (codcli: string) => {
+    if (clientConfigs[codcli]) return clientConfigs[codcli];
+    return {
+      enviarPrecos: true,
+      tipoMensagemId: templates.length > 0 ? templates[0].id : null
+    };
+  };
+
+  const handleClientConfigChange = (codcli: string, field: 'enviarPrecos' | 'tipoMensagemId', value: any) => {
+    setClientConfigs(prev => ({
+      ...prev,
+      [codcli]: {
+        ...getClientConfig(codcli),
+        [field]: value
+      }
+    }));
+  };
+
+  const addToQueue = (cliente: any) => {
+    const telefoneAlvo = cliente.telefone_selecionado || (cliente.telefone ? cliente.telefone.split(',')[0] : '');
+    const cConfig = getClientConfig(cliente.codcli);
+    const t = templates.find(temp => temp.id === cConfig.tipoMensagemId);
+    
+    setQueue(prev => {
+      if (prev.find(c => c.codcli === cliente.codcli)) return prev;
+      return [...prev, {
+        ...cliente,
+        telefone: telefoneAlvo,
+        mensagemId: cConfig.tipoMensagemId,
+        mensagemTipo: t ? t.tipo : 'Padrão',
+        mensagemCustom: t ? t.template : '',
+        enviarPrecos: cConfig.enviarPrecos
+      }];
+    });
   };
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,20 +128,21 @@ export default function Reativacao() {
     setClientes(prev => prev.map(c => c.codcli === codcli ? { ...c, telefone_selecionado: newTelefone } : c));
   };
 
-  const addToQueue = (client: any) => {
-    setQueue(prev => {
-      if (prev.find(c => c.codcli === client.codcli)) return prev;
-      const contactToUse = client.telefone_selecionado || (client.telefone ? client.telefone.split(',')[0] : '');
-      return [...prev, { ...client, telefone: contactToUse }];
-    });
-  };
-
   const addAllToQueue = () => {
     const newClients = clientes.filter(c => !queue.find(q => q.codcli === c.codcli));
     if (newClients.length > 0) {
       const clientsToAdd = newClients.map(c => ({
+        c,
+        telefoneAlvo: c.telefone_selecionado || (c.telefone ? c.telefone.split(',')[0] : ''),
+        cConfig: getClientConfig(c.codcli),
+        t: templates.find(temp => temp.id === getClientConfig(c.codcli).tipoMensagemId)
+      })).map(({ c, telefoneAlvo, cConfig, t }) => ({
         ...c,
-        telefone: c.telefone_selecionado || (c.telefone ? c.telefone.split(',')[0] : '')
+        telefone: telefoneAlvo,
+        mensagemId: cConfig.tipoMensagemId,
+        mensagemTipo: t ? t.tipo : 'Padrão',
+        mensagemCustom: t ? t.template : '',
+        enviarPrecos: cConfig.enviarPrecos
       }));
       setQueue(prev => [...prev, ...clientsToAdd]);
     }
@@ -154,7 +184,7 @@ export default function Reativacao() {
       const res = await fetch('/api/clientes/reativacao/fila', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fila: queue, codusur: user?.matricula, config })
+        body: JSON.stringify({ fila: queue, codusur: user?.matricula })
       });
       const data = await res.json();
       if (data.success) {
@@ -218,11 +248,11 @@ export default function Reativacao() {
         
         <div className="flex flex-col sm:flex-row gap-3 items-center w-full md:w-auto">
           <button
-            onClick={() => setConfigModalOpen(true)}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white px-4 py-2.5 rounded-xl font-medium transition-colors border border-slate-200 dark:border-slate-700"
+            onClick={() => setManageTemplatesOpen(true)}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-blue-400 px-4 py-2 rounded-xl font-medium transition-all shadow-sm border border-slate-700"
           >
-            <Settings className="w-5 h-5" />
-            Configurações
+            <PenTool className="w-5 h-5" />
+            Templates de Mensagem
           </button>
           
           <button
@@ -290,16 +320,16 @@ export default function Reativacao() {
                 <th className="px-6 py-4 font-medium">Telefone</th>
                 <th className="px-6 py-4 font-medium">Vendedor</th>
                 <th className="px-6 py-4 font-medium">Ramo de Atividade</th>
+                <th className="px-6 py-4 font-medium text-center">Configuração da Mensagem</th>
                 <th className="px-6 py-4 font-medium text-center">Data Últ. Compra</th>
                 <th className="px-6 py-4 font-medium text-center">Dias sem Compra</th>
-                <th className="px-6 py-4 font-medium">Mensagem Padrão</th>
                 <th className="px-6 py-4 font-medium text-right">Ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-color)]">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-8 text-center text-gray-400">
+                  <td colSpan={11} className="px-6 py-8 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                       <span>Buscando clientes inativos...</span>
@@ -308,7 +338,7 @@ export default function Reativacao() {
                 </tr>
               ) : clientes.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-8 text-center text-gray-400">
+                  <td colSpan={11} className="px-6 py-8 text-center text-gray-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <AlertTriangle className="w-8 h-8 opacity-50" />
                       Nenhum cliente encontrado para este filtro.
@@ -338,25 +368,33 @@ export default function Reativacao() {
                     </td>
                     <td className="px-6 py-4 text-gray-400">{c.vendedor || '-'}</td>
                     <td className="px-6 py-4 text-gray-400 text-xs truncate max-w-[150px]" title={c.ramo_atividade}>{c.ramo_atividade || '-'}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-2">
+                        <select
+                          className="bg-slate-800 border border-slate-700 text-white text-xs rounded-md px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 w-full max-w-[200px]"
+                          value={getClientConfig(c.codcli).tipoMensagemId || ''}
+                          onChange={(e) => handleClientConfigChange(c.codcli, 'tipoMensagemId', Number(e.target.value))}
+                        >
+                          {templates.map(t => (
+                            <option key={t.id} value={t.id}>{t.tipo}</option>
+                          ))}
+                        </select>
+                        <label className="flex items-center gap-2 text-xs text-gray-300">
+                          <input 
+                            type="checkbox"
+                            className="rounded bg-slate-800 border-white/10 text-blue-500 focus:ring-blue-500"
+                            checked={getClientConfig(c.codcli).enviarPrecos}
+                            onChange={(e) => handleClientConfigChange(c.codcli, 'enviarPrecos', e.target.checked)}
+                          />
+                          Incluir Produtos e Preços
+                        </label>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-center text-gray-400">{c.dtultcomp || '-'}</td>
                     <td className="px-6 py-4 text-center">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
                         {c.diasCompra} dias
                       </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-gray-400 text-xs max-w-[150px] truncate" title={c.mensagem || 'Mensagem Padrão'}>
-                          {c.mensagem ? c.mensagem.split('\n').filter(Boolean)[2] + '...' : 'Carregando ofertas...'}
-                        </span>
-                        <button 
-                          onClick={() => setViewMessage(c.mensagem || 'Mensagem não carregada')}
-                          className="text-gray-400 hover:text-white transition-colors p-1 bg-white/5 rounded"
-                          title="Ver Mensagem Completa"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </div>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button
@@ -534,70 +572,12 @@ export default function Reativacao() {
           </div>
         </div>
       )}
-
-      {/* Modal de Configurações */}
-      {configModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full max-w-md shadow-2xl relative">
-            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                <Settings className="w-5 h-5 text-blue-500" />
-                Configurações de Envio
-              </h3>
-              <button onClick={() => setConfigModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-5">
-              <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
-                <div>
-                  <div className="font-medium text-slate-800 dark:text-white text-sm">Enviar com preços</div>
-                  <div className="text-xs text-slate-500">Incluir valores na mensagem e PDF</div>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" checked={config.enviarPrecos} onChange={(e) => setConfig({ ...config, enviarPrecos: e.target.checked })} />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Mensagem</label>
-                <select 
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={config.tipoMensagem}
-                  onChange={(e) => handleConfigTipoChange(e.target.value)}
-                >
-                  {TIPOS_MENSAGEM.map(t => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mensagem Padrão</label>
-                <textarea 
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 min-h-[100px] text-sm outline-none"
-                  value={config.mensagemPadrao}
-                  onChange={(e) => setConfig({ ...config, mensagemPadrao: e.target.value })}
-                />
-              </div>
-
-              <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-lg text-sm border border-blue-100 dark:border-blue-900/50">
-                <input type="checkbox" checked disabled className="rounded text-blue-500 opacity-70" />
-                <span>Sempre enviar a lista de produtos e imagem</span>
-              </div>
-            </div>
-            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-              <button 
-                onClick={() => setConfigModalOpen(false)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg shadow-blue-500/30"
-              >
-                Salvar e Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalGerenciarTemplates 
+        isOpen={manageTemplatesOpen} 
+        onClose={() => setManageTemplatesOpen(false)} 
+        pagina="REATIVACAO"
+        onTemplatesChanged={fetchTemplates}
+      />
     </div>
   );
 }
