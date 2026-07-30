@@ -343,6 +343,7 @@ cron.schedule('* * * * *', async () => {
                 };
 
                 let b64Pdf = null;
+                let pdfPublicUrl = null;
                 try {
                     let evoRes;
                     
@@ -360,7 +361,7 @@ cron.schedule('* * * * *', async () => {
 
                         // URL pública para V2 fallback: acessível pela Evolution API externamente
                         const backendPublicUrl = (process.env.BACKEND_PUBLIC_URL || 'http://backend:3001').replace(/\/$/, '');
-                        const pdfPublicUrl = b64Pdf ? `${backendPublicUrl}/uploads/catalogos/${require('path').basename(catalogoPdfPath)}` : null;
+                        pdfPublicUrl = b64Pdf ? `${backendPublicUrl}/uploads/catalogos/${require('path').basename(catalogoPdfPath)}` : null;
                         console.log(`[FILA CRON] URL pública do PDF: ${pdfPublicUrl}`);
 
                         if (b64Pdf) {
