@@ -185,12 +185,10 @@ router.post('/send-whatsapp', upload.single('pdf'), async (req, res) => {
                 // Monta o resumo
                 let resumoMsg = `*Relatório de Disparo do Catálogo*\n\nRamo: ${ramoNome}\nSegue o catálogo enviado aos Clientes.\nAbaixo a lista de clientes que receberam:\n\n`;
                 clientesList.forEach(c => {
-                    // Limpa tel
                     const telNumbers = (c.telefone || '').replace(/\D/g, '');
                     resumoMsg += `- ${c.nome.trim()} - Link: wa.me/55${telNumbers}\n`;
                 });
 
-                // Aqui usamos o codusurLogged para pegar o Token da Evolution
                 const tokenRes = await conn.execute(`
                     SELECT T.INSTANCE_NAME, T.API_TOKEN, COALESCE(T.API_URL, G.VALOR) AS URL_BASE
                     FROM CANAL_TOKENS_EVOLUTION T
@@ -206,29 +204,76 @@ router.post('/send-whatsapp', upload.single('pdf'), async (req, res) => {
                     
                     const headers = { 'apikey': token, 'instance': instanceName, 'Content-Type': 'application/json' };
                     
+                    // Função helper para enviar com fallback V1→V2 da Evolution
+                    const sendEvoMedia = async (payloadV1) => {
+                        console.log(`[CATALOGO] Enviando PDF ao vendedor ${telefoneVendedor} via ${urlBase}`);
+                        let res = await fetch(`${urlBase}/message/sendMedia/${instanceName}`, {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify(payloadV1)
+                        });
+                        let data = await res.json().catch(() => ({}));
+                        console.log(`[CATALOGO] V1 status=${res.status}`, JSON.stringify(data).substring(0, 200));
+                        
+                        if (!res.ok) {
+                            // Fallback para Evolution V2/GO
+                            console.log(`[CATALOGO] Falhou V1 (${res.status}), tentando /send/media...`);
+                            const payloadV2 = {
+                                number: payloadV1.number,
+                                type: payloadV1.mediatype,
+                                mimetype: payloadV1.mimetype,
+                                filename: payloadV1.fileName,
+                                caption: payloadV1.caption || '',
+                                url: payloadV1.media,
+                                mediaMessage: {
+                                    mediatype: payloadV1.mediatype,
+                                    fileName: payloadV1.fileName,
+                                    caption: payloadV1.caption || '',
+                                    url: payloadV1.media
+                                }
+                            };
+                            res = await fetch(`${urlBase}/send/media`, {
+                                method: 'POST',
+                                headers,
+                                body: JSON.stringify(payloadV2)
+                            });
+                            data = await res.json().catch(() => ({}));
+                            console.log(`[CATALOGO] V2 status=${res.status}`, JSON.stringify(data).substring(0, 200));
+                        }
+                        return res;
+                    };
+
                     // a) Enviar Texto Resumo
-                    await fetch(`${urlBase}/message/sendText/${instanceName}`, {
+                    const txtRes = await fetch(`${urlBase}/message/sendText/${instanceName}`, {
                         method: 'POST',
                         headers,
                         body: JSON.stringify({ number: telefoneVendedor, text: resumoMsg })
-                    }).catch(e => console.error('Erro enviar resumo:', e));
+                    });
+                    if (!txtRes.ok) {
+                        // Fallback texto
+                        await fetch(`${urlBase}/send/text`, {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({ number: telefoneVendedor, text: resumoMsg })
+                        });
+                    }
 
-                    // b) Enviar Arquivo PDF
-                    const fileBuffer = fs.readFileSync(pdfPath);
-                    const base64Data = fileBuffer.toString('base64');
-                    
-                    await fetch(`${urlBase}/message/sendMedia/${instanceName}`, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify({
+                    // b) Enviar PDF
+                    if (fs.existsSync(pdfPath)) {
+                        const base64Data = fs.readFileSync(pdfPath, { encoding: 'base64' });
+                        await sendEvoMedia({
                             number: telefoneVendedor,
                             mediatype: 'document',
                             mimetype: 'application/pdf',
                             fileName: `Catalogo_${ramoNome}.pdf`,
                             caption: `Catálogo de Produtos - ${ramoNome}`,
                             media: base64Data
-                        })
-                    }).catch(e => console.error('Erro enviar PDF pro vendedor:', e));
+                        });
+                    } else {
+                        console.error(`[CATALOGO] PDF não encontrado para envio ao vendedor: ${pdfPath}`);
+                    }
+                } else {
+                    console.warn(`[CATALOGO] Nenhum token Evolution encontrado para codusur ${codusurLogged || vendedorId}`);
                 }
             }
             

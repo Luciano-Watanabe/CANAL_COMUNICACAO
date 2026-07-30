@@ -193,6 +193,8 @@ cron.schedule('* * * * *', async () => {
                     textoBase = '[Mensagem de Reativação]';
                 }
                 
+                console.log(`[FILA CRON] ID=${filaId} CODCLI=${codcli} textoBase=${String(textoBase).substring(0, 100)}`);
+                
                 let isCatalogoPdf = false;
                 let catalogoPdfPath = '';
                 let catalogoRamo = '';
@@ -209,10 +211,11 @@ cron.schedule('* * * * *', async () => {
                     } else {
                         finalClientText = `Olá ${(nomeCliente || '').trim()}, confira nosso novo catálogo de produtos da categoria: ${catalogoRamo}!`;
                     }
+                    console.log(`[FILA CRON] ✅ Modo Catálogo PDF | Path="${catalogoPdfPath}" | Ramo="${catalogoRamo}" | Msg="${finalClientText.substring(0, 60)}"`);
                 } else {
                     finalClientText = String(finalClientText).replace(/¿/g, '\u2705');
                 }
-
+                
                 const msgClienteTxt = {
                     number: telCliente,
                     text: finalClientText
@@ -245,18 +248,20 @@ cron.schedule('* * * * *', async () => {
                     if (type === 'media') {
                         endpoint = `/message/sendMedia/${instanceName}`;
                         fallbackEndpoint = `/send/media`;
+                        // V2/GO espera URL pública, não base64
+                        const mediaUrlForV2 = payload.mediaUrl || payload.media;
                         payloadFallback = {
                             number: payload.number,
                             type: payload.mediatype,
                             mimetype: payload.mimetype,
                             filename: payload.fileName,
                             caption: payload.caption || '',
-                            url: payload.media,
+                            url: mediaUrlForV2,
                             mediaMessage: {
                                 mediatype: payload.mediatype,
                                 fileName: payload.fileName,
                                 caption: payload.caption || '',
-                                url: payload.media
+                                url: mediaUrlForV2
                             }
                         };
                     } else if (type === 'text') {
@@ -339,16 +344,28 @@ cron.schedule('* * * * *', async () => {
                     }
                 };
 
+                let b64Pdf = null;
                 try {
                     let evoRes;
                     
                     if (isCatalogoPdf) {
                         // ENVIAR PDF DE CATÁLOGO
                         const fs = require('fs');
+                        console.log(`[FILA CRON] Checando PDF Path: "${catalogoPdfPath}"`);
                         if (fs.existsSync(catalogoPdfPath)) {
-                            const fileBuffer = fs.readFileSync(catalogoPdfPath);
-                            const base64Data = fileBuffer.toString('base64');
-                            
+                            console.log(`[FILA CRON] PDF encontrado! Lendo arquivo...`);
+                            b64Pdf = fs.readFileSync(catalogoPdfPath, { encoding: 'base64' });
+                            // Nota: Evolution API V1 espera base64 puro (sem prefixo data:)
+                        } else {
+                            console.log(`[FILA CRON] PDF NÃO encontrado no caminho especificado!`);
+                        }
+
+                        // URL pública para V2 fallback: acessível pela Evolution API externamente
+                        const backendPublicUrl = (process.env.BACKEND_PUBLIC_URL || 'http://backend:3001').replace(/\/$/, '');
+                        const pdfPublicUrl = b64Pdf ? `${backendPublicUrl}/uploads/catalogos/${require('path').basename(catalogoPdfPath)}` : null;
+                        console.log(`[FILA CRON] URL pública do PDF: ${pdfPublicUrl}`);
+
+                        if (b64Pdf) {
                             // Primeiro manda a mensagem de saudação
                             await sendEvo('text', {
                                 number: telCliente,
@@ -356,20 +373,18 @@ cron.schedule('* * * * *', async () => {
                             });
                             
                             // Depois manda o PDF
-                            evoRes = await fetch(`${evoUrl}/message/sendMedia/${instanceName}`, {
-                                method: 'POST',
-                                headers,
-                                body: JSON.stringify({
-                                    number: telCliente,
-                                    mediatype: 'document',
-                                    mimetype: 'application/pdf',
-                                    fileName: `Catalogo_${catalogoRamo}.pdf`,
-                                    caption: `Catálogo de Produtos - ${catalogoRamo}`,
-                                    media: base64Data
-                                })
+                            evoRes = await sendEvo('media', {
+                                number: telCliente,
+                                mediatype: 'document',
+                                mimetype: 'application/pdf',
+                                fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
+                                media: b64Pdf,
+                                mediaUrl: pdfPublicUrl, // URL pública para fallback V2
+                                caption: ''
                             });
                         } else {
-                            throw new Error('Arquivo PDF do catálogo não encontrado');
+                            // Falhou ler PDF, manda só o texto
+                            evoRes = await sendEvo('text', msgClienteTxt);
                         }
                     } else if (base64Data) {
                         // Imagem de Reativação com mix de produtos
@@ -389,9 +404,31 @@ cron.schedule('* * * * *', async () => {
                     console.error(`[FILA CRON] Erro no fluxo de envio cliente:`, err);
                 }
 
-                if (!isCatalogoPdf) {
-                    await sendEvo('contact', msgClienteVcard);
-                    
+                // Sempre enviar o VCard para o cliente
+                await sendEvo('contact', msgClienteVcard);
+                
+                // Avisos ao vendedor
+                if (isCatalogoPdf) {
+                    if (telVendedor) {
+                        await sendEvo('text', {
+                            number: telVendedor,
+                            text: `Bom dia! Uma cópia do catálogo (${catalogoRamo}) foi enviada ao cliente *${nomeCliente.trim()}*.`
+                        });
+                        if (b64Pdf) {
+                            await new Promise(r => setTimeout(r, 1000));
+                            await sendEvo('media', {
+                                number: telVendedor,
+                                mediatype: 'document',
+                                mimetype: 'application/pdf',
+                                fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
+                                media: b64Pdf,
+                                mediaUrl: pdfPublicUrl, // URL pública para fallback V2
+                                caption: `Cópia do catálogo de ${catalogoRamo.trim()}`
+                            });
+                        }
+                        await sendEvo('contact', msgVendedorVcard);
+                    }
+                } else {
                     await sendEvo('text', msgVendedorTxt);
                     await new Promise(r => setTimeout(r, 1000));
                     
