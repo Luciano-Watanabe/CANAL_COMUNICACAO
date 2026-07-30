@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { X, Send, Users, AlertCircle, Phone, PenTool, Search } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import { ModalGerenciarTemplates } from './ModalGerenciarTemplates';
 
 interface Cliente {
@@ -147,23 +146,47 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
     setLoading(true);
     try {
       // 1. Generate PDF
-      const element = document.querySelector('.catalog-print-container');
+      const element = document.querySelector('.catalog-print-container') as HTMLElement;
       if (!element) throw new Error('Não foi possível encontrar o container do catálogo.');
-      
-      const opt = {
-        margin: 1,
-        filename: 'catalogo.pdf',
-        image: { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: { unit: 'cm', format: 'a4', orientation: 'portrait' as const }
-      };
 
-      const originalDisplay = (element as HTMLElement).style.display;
-      (element as HTMLElement).style.display = 'block';
+      const originalDisplay = element.style.display;
+      element.style.display = 'block';
 
-      const pdfBlob = await html2pdf().set(opt).from(element as HTMLElement).output('blob');
+      // Aguarda o navegador renderizar
+      await new Promise(r => setTimeout(r, 150));
+
+      const htmlToImage = await import('html-to-image');
+      const toJpeg = htmlToImage.toJpeg || htmlToImage.default.toJpeg;
       
-      (element as HTMLElement).style.display = originalDisplay;
+      const jspdfModule = await import('jspdf');
+      const jsPDF = jspdfModule.jsPDF || jspdfModule.default;
+
+      const dataUrl = await toJpeg(element, { quality: 0.98, backgroundColor: '#ffffff' });
+      
+      element.style.display = originalDisplay;
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const totalHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      let heightLeft = totalHeight;
+      let position = 0;
+
+      // Add a small margin top for the first page? No, standard is 0, we can add 10mm
+      const margin = 10;
+      pdf.addImage(dataUrl, 'JPEG', margin, margin, pdfWidth - (margin*2), totalHeight - (margin*2));
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - totalHeight; 
+        pdf.addPage();
+        pdf.addImage(dataUrl, 'JPEG', margin, position + margin, pdfWidth - (margin*2), totalHeight - (margin*2));
+        heightLeft -= pageHeight;
+      }
+
+      const pdfBlob = pdf.output('blob');
 
       // 2. Prepare FormData
       const formData = new FormData();

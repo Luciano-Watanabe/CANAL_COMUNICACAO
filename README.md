@@ -250,14 +250,14 @@ graph TD
 
 *   **Filtros de Busca Avançada**: Nas telas de Gerentes e Supervisores, a interface não carrega milhares de clientes ao abrir (para economizar recursos). O usuário conta com *Dropdowns* de Vendedores e campos de busca *Live Search* por Razão Social/Fantasia e CNPJ.
 *   **Análise de CNPJ e I.E.:** Interfaces dedicadas (restritas a Gerentes, Supervisores e BOT_GESTOR) para conferir a auditoria fiscal automática que os Crons fizeram. Ajuda a descobrir de imediato se um cliente recém-cadastrado possui Inscrição Estadual divergente (Inativa/Baixada) comparada ao que foi colocado no Winthor, evitando emissão de notas problemáticas.
-*   **Edição de Contatos**: Qualquer nível da hierarquia, dentro da sua limitação de visão, tem autonomia para adicionar ou editar o WhatsApp do cliente na base local (`contatos`), sem necessitar alterar o cadastro rígido do Winthor.
-*   **Catálogo e Cross-sell**: Durante o chat, o vendedor tem atalhos baseados na view de produtos e na tabela de `METRICAS_CROSS_SELL`, sugerindo compras complementares com base no histórico do ERP.
+*   **Edição de Contatos e Validação de WhatsApp**: Qualquer nível da hierarquia, dentro da sua limitação de visão, tem autonomia para adicionar ou editar o WhatsApp do cliente na base local (`contatos`), sem necessitar alterar o cadastro rígido do Winthor. O sistema **valida automaticamente e em tempo real** (com ícones ✔️ e ❌) se o número possui conta de WhatsApp ativa via Evolution API, além de armazenar o resultado em cache no banco local.
+*   **Catálogo e Cross-sell**: Durante o chat, o vendedor tem atalhos baseados na view de produtos e na tabela de `METRICAS_CROSS_SELL`, sugerindo compras complementares com base no histórico do ERP. O sistema também permite **Geração e Envio de Catálogos (PDF)** superando limitações de CSS (suporte a Tailwind, oklch) com preenchimento **automático do WhatsApp do Vendedor** para que ele receba uma cópia opcional da mídia.
     > [!TIP]
     > **Mapeamento de Imagens de Produtos:** Para que as fotos dos itens apareçam no catálogo e no painel do vendedor, elas devem ser armazenadas no diretório configurado na variável `.env` `IMAGES_DIR` (por padrão: `backend/imagens_produtos/`).
     > **Regra de Nomenclatura:** O nome do arquivo da imagem deve ser **exatamente** o código do produto (`codprod`) no Winthor.
     > Extensões aceitas: `.jpg`, `.png`, `.jpeg`, `.webp`.
     > *Exemplo: Para o produto de código `12345`, salve o arquivo como `12345.jpg`.*
-*   **Monitoramento de Filas**: Supervisores podem observar clientes na `CANAL_REATIVACAO_FILA` para cobrar os vendedores sobre retornos pendentes.
+*   **Monitoramento de Filas e Reativação Inteligente**: Supervisores podem observar clientes na `CANAL_REATIVACAO_FILA` para cobrar os vendedores sobre retornos pendentes. A tela de **Reativação** permite disparos em lote estruturados com seleção de templates customizáveis gravados diretamente no banco de dados (suportando grandes textos via campos CLOB/Stream no Oracle).
 
 ### 4.1 Auditoria Fiscal Automática (Análise IE e CNPJ)
 O módulo de Análise IE atua como um escudo fiscal para a empresa. 
