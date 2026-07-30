@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Download, Filter, Eye, EyeOff, Send } from 'lucide-react';
 import ModalWhatsAppCatalogo from '../components/ModalWhatsAppCatalogo';
 
