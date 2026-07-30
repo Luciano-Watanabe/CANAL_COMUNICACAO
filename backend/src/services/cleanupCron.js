@@ -37,34 +37,43 @@ cron.schedule('0 3 * * *', async () => {
 
         console.log(`[CLEANUP] Foram limpos ${statusResult.rows.length} registros de status antigos.`);
 
-        // 2. Excluir Áudios mais velhos que 7 dias
         const uploadsDir = path.join(__dirname, '../../uploads');
         if (fs.existsSync(uploadsDir)) {
-            const files = fs.readdirSync(uploadsDir);
             const agora = Date.now();
             const seteDiasMs = 7 * 24 * 60 * 60 * 1000;
             const umDiaMs = 24 * 60 * 60 * 1000;
             let audiosExcluidos = 0;
             let imagensExcluidas = 0;
 
-            for (const file of files) {
-                // Áudios e mídias são salvos no diretório uploads
-                const ext = file.toLowerCase();
-                const filePath = path.join(uploadsDir, file);
-                const stats = fs.statSync(filePath);
-                
-                if (ext.endsWith('.ogg') || ext.endsWith('.mp3')) {
-                    if (agora - stats.mtimeMs > seteDiasMs) {
-                        fs.unlinkSync(filePath);
-                        audiosExcluidos++;
+            const limparDiretorio = (dirPath) => {
+                if (!fs.existsSync(dirPath)) return;
+                const files = fs.readdirSync(dirPath);
+
+                for (const file of files) {
+                    const filePath = path.join(dirPath, file);
+                    const stats = fs.statSync(filePath);
+
+                    if (stats.isDirectory()) {
+                        limparDiretorio(filePath);
+                        continue;
                     }
-                } else if (ext.endsWith('.jpg') || ext.endsWith('.jpeg') || ext.endsWith('.png') || ext.endsWith('.mp4') || ext.endsWith('.pdf')) {
-                    if (agora - stats.mtimeMs > umDiaMs) {
-                        fs.unlinkSync(filePath);
-                        imagensExcluidas++;
+
+                    const ext = file.toLowerCase();
+                    if (ext.endsWith('.ogg') || ext.endsWith('.mp3')) {
+                        if (agora - stats.mtimeMs > seteDiasMs) {
+                            fs.unlinkSync(filePath);
+                            audiosExcluidos++;
+                        }
+                    } else if (ext.endsWith('.jpg') || ext.endsWith('.jpeg') || ext.endsWith('.png') || ext.endsWith('.mp4') || ext.endsWith('.pdf')) {
+                        if (agora - stats.mtimeMs > umDiaMs) {
+                            fs.unlinkSync(filePath);
+                            imagensExcluidas++;
+                        }
                     }
                 }
-            }
+            };
+
+            limparDiretorio(uploadsDir);
             console.log(`[CLEANUP] Foram limpos ${audiosExcluidos} arquivos de áudio antigos (> 7 dias) e ${imagensExcluidas} arquivos de imagem/mídia (> 24 horas).`);
         }
 
