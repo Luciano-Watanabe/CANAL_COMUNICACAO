@@ -375,16 +375,41 @@ router.post('/:codusur/disparar', async (req, res) => {
             'EMAIL': '✉️'
         };
 
+        const clientsToFetch = [];
+        if (agrupado['WHATS']) clientsToFetch.push(...agrupado['WHATS'].map(c => c.codcli));
+        if (agrupado['TELEFONE']) clientsToFetch.push(...agrupado['TELEFONE'].map(c => c.codcli));
+
+        const mapTelefones = {};
+        if (clientsToFetch.length > 0) {
+            const uniqueCodclis = [...new Set(clientsToFetch)].slice(0, 999);
+            const sqlTels = `SELECT CODCLI, NVL(TELCELENT, NVL(TELENT, TELCOB)) FROM PCCLIENT WHERE CODCLI IN (${uniqueCodclis.join(',')})`;
+            const resTels = await connection.execute(sqlTels);
+            resTels.rows.forEach(r => {
+                mapTelefones[r[0]] = r[1];
+            });
+        }
+
         for (const [interacao, lista] of Object.entries(agrupado)) {
             if (lista.length > 0) {
                 texto += `${icons[interacao]} *${interacao}*\n`;
                 const t = templates.find(temp => temp.tipo.toUpperCase() === interacao.toUpperCase());
                 if (t && t.template) {
-                    texto += `_(Sugerida: ${t.template})_\n`;
+                    texto += `${t.template}\n`;
                 }
                 lista.forEach(c => {
                     if (interacao === 'PRESENCIAL') {
                         texto += `*${c.sequencia}º Parada*: ${c.codcli} - ${c.nome}\n📍 ${c.endereco} - ${c.municipio}\n`;
+                    } else if (interacao === 'WHATS' || interacao === 'TELEFONE') {
+                        const phone = mapTelefones[c.codcli] ? String(mapTelefones[c.codcli]).replace(/[^0-9]/g, '') : '';
+                        let linkStr = '';
+                        if (phone) {
+                            let dddPhone = phone;
+                            if (dddPhone.length === 10 || dddPhone.length === 11) {
+                                dddPhone = '55' + dddPhone;
+                            }
+                            linkStr = ` - wa.me/${dddPhone}`;
+                        }
+                        texto += `- ${c.codcli} - ${c.nome}${linkStr}\n`;
                     } else {
                         texto += `- ${c.codcli} - ${c.nome}\n`;
                     }
