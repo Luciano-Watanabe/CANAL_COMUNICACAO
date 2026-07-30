@@ -32,13 +32,14 @@ export default function Catalogo() {
 
   useEffect(() => {
     // Buscar vendedores
-    fetch('/api/vendedores')
+    if (!user) return;
+    fetch(`/api/vendedores?codusur=${user.matricula}&role=${user.role}`)
       .then(r => r.json())
       .then(data => {
         if (data.success) setVendedores(data.vendedores || []);
       })
       .catch(console.error);
-  }, []);
+  }, [user?.matricula, user?.role]);
 
   useEffect(() => {
     fetch('/api/catalogo/atividades')

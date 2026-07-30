@@ -76,10 +76,33 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
     }
   }, [selectedVendedor, isOpen]);
 
+  useEffect(() => {
+    if (selectedVendedor && vendedores) {
+      const vend = vendedores.find(v => String(v.CODUSUR || v.codusur) === String(selectedVendedor));
+      if (vend) {
+        let phone = vend.TELEFONE1 || vend.telefone1 || vend.TELEFONE2 || vend.telefone2 || '';
+        if (phone) {
+          phone = String(phone).replace(/\D/g, '');
+          if (phone.length === 10 || phone.length === 11) {
+            phone = '55' + phone;
+          }
+        }
+        setTelefoneVendedor(phone);
+      } else {
+        setTelefoneVendedor('');
+      }
+    } else {
+      setTelefoneVendedor('');
+    }
+  }, [selectedVendedor, vendedores]);
+
   const fetchClientes = async (vendedorId: string) => {
     setLoadingClientes(true);
     try {
-      const res = await fetch(`/api/clientes/esquecidos?vendedorId=${vendedorId}&dias=-1`);
+      const userStr = localStorage.getItem('user');
+      const userObj = userStr ? JSON.parse(userStr) : {};
+      const role = userObj.role || '';
+      const res = await fetch(`/api/clientes/esquecidos?vendedorId=${vendedorId}&dias=-1&codusur=${codusurLogged}&role=${role}`);
       const data = await res.json();
       if (data.success && data.esquecidos) {
         const validClients = data.esquecidos.filter((c: any) => c.telefone && c.telefone.trim().length >= 10);

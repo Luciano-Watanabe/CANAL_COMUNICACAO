@@ -33,7 +33,11 @@ cron.schedule('* * * * *', async () => {
             FETCH FIRST 4 ROWS ONLY
         `;
         
-        const result = await connection.execute(sql);
+        const result = await connection.execute(sql, [], {
+            fetchInfo: {
+                "MENSAGEM_TXT": { type: oracledb.STRING }
+            }
+        });
         if (result.rows.length === 0) {
             isProcessingFila = false;
             if (connection) {
