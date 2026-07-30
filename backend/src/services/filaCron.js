@@ -344,74 +344,69 @@ cron.schedule('* * * * *', async () => {
 
                 let b64Pdf = null;
                 let pdfPublicUrl = null;
-                try {
-                    let evoRes;
-                    
-                    if (isCatalogoPdf) {
-                        // ENVIAR PDF DE CATÁLOGO
-                        const fs = require('fs');
-                        console.log(`[FILA CRON] Checando PDF Path: "${catalogoPdfPath}"`);
-                        if (fs.existsSync(catalogoPdfPath)) {
-                            console.log(`[FILA CRON] PDF encontrado! Lendo arquivo...`);
-                            b64Pdf = fs.readFileSync(catalogoPdfPath, { encoding: 'base64' });
-                            // Nota: Evolution API V1 espera base64 puro (sem prefixo data:)
-                        } else {
-                            console.log(`[FILA CRON] PDF NÃO encontrado no caminho especificado!`);
-                        }
+                
+                if (isCatalogoPdf) {
+                    // ENVIAR PDF DE CATÁLOGO AO CLIENTE
+                    const fs = require('fs');
+                    console.log(`[FILA CRON] Checando PDF Path: "${catalogoPdfPath}"`);
+                    if (fs.existsSync(catalogoPdfPath)) {
+                        console.log(`[FILA CRON] PDF encontrado! Lendo arquivo...`);
+                        b64Pdf = fs.readFileSync(catalogoPdfPath, { encoding: 'base64' });
+                    } else {
+                        console.log(`[FILA CRON] PDF NÃO encontrado no caminho especificado!`);
+                    }
 
-                        // URL pública para V2 fallback: acessível pela Evolution API externamente
-                        const backendPublicUrl = (process.env.BACKEND_PUBLIC_URL || 'http://backend:3001').replace(/\/$/, '');
-                        pdfPublicUrl = b64Pdf ? `${backendPublicUrl}/uploads/catalogos/${require('path').basename(catalogoPdfPath)}` : null;
-                        console.log(`[FILA CRON] URL pública do PDF: ${pdfPublicUrl}`);
+                    // URL pública para V2 fallback: acessível pela Evolution API externamente
+                    const backendPublicUrl = (process.env.BACKEND_PUBLIC_URL || 'http://backend:3001').replace(/\/$/, '');
+                    pdfPublicUrl = b64Pdf ? `${backendPublicUrl}/uploads/catalogos/${require('path').basename(catalogoPdfPath)}` : null;
+                    console.log(`[FILA CRON] URL pública do PDF: ${pdfPublicUrl}`);
 
-                        if (b64Pdf) {
-                            // Primeiro manda a mensagem de saudação
-                            await sendEvo('text', {
-                                number: telCliente,
-                                text: finalClientText
-                            });
-                            
-                            // Depois manda o PDF
-                            evoRes = await sendEvo('media', {
-                                number: telCliente,
-                                mediatype: 'document',
-                                mimetype: 'application/pdf',
-                                fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
-                                media: b64Pdf,
-                                mediaUrl: pdfPublicUrl, // URL pública para fallback V2
-                                caption: ''
-                            });
-                        } else {
-                            // Falhou ler PDF, manda só o texto
-                            evoRes = await sendEvo('text', msgClienteTxt);
-                        }
-                    } else if (base64Data) {
-                        // Imagem de Reativação com mix de produtos
-                        evoRes = await sendEvo('media', {
+                    if (b64Pdf) {
+                        // Primeiro manda a mensagem de saudação ao cliente
+                        await sendEvo('text', {
                             number: telCliente,
-                            mediatype: 'image',
-                            mimetype: 'image/jpeg',
-                            fileName: `Ofertas_${codcli}.jpg`,
-                            media: base64Data,
-                            caption: msgClienteTxt.text
+                            text: finalClientText
+                        });
+                        
+                        // Depois manda o PDF ao cliente
+                        await sendEvo('media', {
+                            number: telCliente,
+                            mediatype: 'document',
+                            mimetype: 'application/pdf',
+                            fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
+                            media: b64Pdf,
+                            mediaUrl: pdfPublicUrl,
+                            caption: ''
                         });
                     } else {
-                        // Só texto
-                        evoRes = await sendEvo('text', msgClienteTxt);
+                        // Falhou ler PDF, manda só o texto ao cliente
+                        await sendEvo('text', msgClienteTxt);
                     }
-                } catch (err) {
-                    console.error(`[FILA CRON] Erro no fluxo de envio cliente:`, err);
+                } else if (base64Data) {
+                    // Imagem de Reativação com mix de produtos para o cliente
+                    await sendEvo('media', {
+                        number: telCliente,
+                        mediatype: 'image',
+                        mimetype: 'image/jpeg',
+                        fileName: `Ofertas_${codcli}.jpg`,
+                        media: base64Data,
+                        caption: msgClienteTxt.text
+                    });
+                } else {
+                    // Só texto para o cliente
+                    await sendEvo('text', msgClienteTxt);
                 }
 
-                // Sempre enviar o VCard para o cliente
+                // Enviar o VCard do Vendedor para o cliente
                 await sendEvo('contact', msgClienteVcard);
                 
-                // Avisos ao vendedor
+                // --- SÓ CHEGA AQUI SE O ENVIO AO CLIENTE FOI BEM SUCEDIDO ---
+                // Avisos / Cópia ao vendedor
                 if (isCatalogoPdf) {
                     if (telVendedor) {
                         await sendEvo('text', {
                             number: telVendedor,
-                            text: `Bom dia! Uma cópia do catálogo (${catalogoRamo}) foi enviada ao cliente *${nomeCliente.trim()}*.`
+                            text: `Uma cópia do catálogo (${catalogoRamo}) foi enviada ao cliente *${nomeCliente.trim()}*.`
                         });
                         if (b64Pdf) {
                             await new Promise(r => setTimeout(r, 1000));
@@ -421,29 +416,31 @@ cron.schedule('* * * * *', async () => {
                                 mimetype: 'application/pdf',
                                 fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
                                 media: b64Pdf,
-                                mediaUrl: pdfPublicUrl, // URL pública para fallback V2
+                                mediaUrl: pdfPublicUrl,
                                 caption: `Cópia do catálogo de ${catalogoRamo.trim()}`
                             });
                         }
                         await sendEvo('contact', msgVendedorVcard);
                     }
                 } else {
-                    await sendEvo('text', msgVendedorTxt);
-                    await new Promise(r => setTimeout(r, 1000));
-                    
-                    if (base64Data) {
-                        await sendEvo('media', {
-                            number: telVendedor,
-                            mediatype: 'image',
-                            mimetype: 'image/jpeg',
-                            fileName: `encarte_vendedor_${Date.now()}.jpg`,
-                            caption: '',
-                            media: base64Data
-                        });
+                    if (telVendedor) {
+                        await sendEvo('text', msgVendedorTxt);
                         await new Promise(r => setTimeout(r, 1000));
-                    }
+                        
+                        if (base64Data) {
+                            await sendEvo('media', {
+                                number: telVendedor,
+                                mediatype: 'image',
+                                mimetype: 'image/jpeg',
+                                fileName: `encarte_vendedor_${Date.now()}.jpg`,
+                                caption: '',
+                                media: base64Data
+                            });
+                            await new Promise(r => setTimeout(r, 1000));
+                        }
 
-                    await sendEvo('contact', msgVendedorVcard);
+                        await sendEvo('contact', msgVendedorVcard);
+                    }
                 }
 
                 await connection.execute(`UPDATE CANAL_REATIVACAO_FILA SET STATUS = 'ENVIADO' WHERE ID = :id`, { id: filaId }, { autoCommit: true });
