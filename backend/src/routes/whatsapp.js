@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const oracledb = require('oracledb');
+const axios = require('axios');
 
 // Busca a instância do usuário logado
 async function getInstanceConfig(codusur) {
@@ -217,6 +218,98 @@ router.get('/whatsapp/connect', async (req, res) => {
     } catch (err) {
         console.error(`Erro requisição connect/qrcode (URL: ${config ? config.urlBase : 'desconhecida'}):`, err, err.cause);
         res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.get('/whatsapp/check-number/:numero', async (req, res) => {
+    let { numero } = req.params;
+    const { codusur } = req.query;
+    
+    if (!numero || !codusur) {
+        return res.status(400).json({ success: false, error: 'numero e codusur são obrigatórios.' });
+    }
+
+    numero = String(numero).replace(/[^0-9]/g, '');
+    if (numero.length === 10 || numero.length === 11) {
+        numero = '55' + numero;
+    }
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const sqlCache = `
+            SELECT TEM_WHATS, DATA_VERIFICACAO 
+            FROM CANAL_WHATSAPP_CACHE 
+            WHERE TELEFONE = :numero
+        `;
+        const resultCache = await connection.execute(sqlCache, { numero });
+        
+        if (resultCache.rows.length > 0) {
+            const row = resultCache.rows[0];
+            const temWhats = row[0] === 'S';
+            const dataVerificacao = row[1];
+            
+            const diffDays = (new Date() - new Date(dataVerificacao)) / (1000 * 60 * 60 * 24);
+            if (diffDays <= 30) {
+                return res.json({ success: true, exists: temWhats, source: 'cache', numero });
+            }
+        }
+
+        const config = await getInstanceConfig(codusur);
+        if (!config) {
+            return res.status(404).json({ success: false, error: 'Instância do vendedor não configurada.' });
+        }
+
+        const url = `${config.urlBase}/chat/whatsappNumbers/${config.instanceName}`;
+        let evoResponse;
+        
+        try {
+            evoResponse = await axios.post(url, {
+                numbers: [numero]
+            }, {
+                headers: {
+                    'apikey': config.apiToken,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 5000
+            });
+        } catch (evoErr) {
+            console.error('Erro na chamada Evolution API para whatsappNumbers:', evoErr.message);
+            return res.status(500).json({ success: false, error: 'Erro ao consultar a API do WhatsApp.' });
+        }
+
+        let exists = false;
+        if (Array.isArray(evoResponse.data) && evoResponse.data.length > 0) {
+            exists = evoResponse.data[0].exists === true;
+        }
+
+        await connection.execute(`
+            MERGE INTO CANAL_WHATSAPP_CACHE C
+            USING (SELECT :numero AS TELEFONE, :tem_whats AS TEM_WHATS FROM DUAL) D
+            ON (C.TELEFONE = D.TELEFONE)
+            WHEN MATCHED THEN 
+                UPDATE SET C.TEM_WHATS = D.TEM_WHATS, C.DATA_VERIFICACAO = CURRENT_TIMESTAMP
+            WHEN NOT MATCHED THEN 
+                INSERT (TELEFONE, TEM_WHATS) VALUES (D.TELEFONE, D.TEM_WHATS)
+        `, {
+            numero: numero,
+            tem_whats: exists ? 'S' : 'N'
+        }, { autoCommit: true });
+
+        res.json({ success: true, exists, source: 'api', numero });
+
+    } catch (err) {
+        console.error('Erro geral no /whatsapp/check-number:', err);
+        res.status(500).json({ success: false, error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch(e) {}
+        }
     }
 });
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Send, Users, AlertCircle, Phone, PenTool } from 'lucide-react';
+import { X, Send, Users, AlertCircle, Phone, PenTool, Search } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { ModalGerenciarTemplates } from './ModalGerenciarTemplates';
 
@@ -30,6 +30,24 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
   const [templates, setTemplates] = useState<any[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | ''>('');
   const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
+
+  const [whatsappStatus, setWhatsappStatus] = useState<Record<number, 'loading'|'exists'|'missing'|'error'>>({});
+
+  const handleCheckWhatsapp = async (codcli: number, telefone: string) => {
+    if (!telefone) return;
+    setWhatsappStatus(prev => ({ ...prev, [codcli]: 'loading' }));
+    try {
+      const response = await fetch(`/api/whatsapp/check-number/${telefone.replace(/[^0-9]/g, '')}?codusur=${codusurLogged}`);
+      const data = await response.json();
+      if (data.success) {
+        setWhatsappStatus(prev => ({ ...prev, [codcli]: data.exists ? 'exists' : 'missing' }));
+      } else {
+        setWhatsappStatus(prev => ({ ...prev, [codcli]: 'error' }));
+      }
+    } catch (err) {
+      setWhatsappStatus(prev => ({ ...prev, [codcli]: 'error' }));
+    }
+  };
 
   const fetchTemplates = async () => {
     try {
@@ -254,7 +272,28 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-slate-200 truncate">{c.codcli} - {c.fantasia}</p>
-                          <p className="text-xs text-slate-500 truncate">{c.telefone}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-xs text-slate-500 truncate">{c.telefone}</p>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleCheckWhatsapp(c.codcli, c.telefone.split(',')[0]);
+                              }}
+                              className="p-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors flex items-center justify-center w-5 h-5"
+                              title="Verificar se tem WhatsApp"
+                            >
+                              {whatsappStatus[c.codcli] === 'loading' ? (
+                                <div className="w-3 h-3 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+                              ) : whatsappStatus[c.codcli] === 'exists' ? (
+                                <span title="WhatsApp Encontrado!" className="text-emerald-500 text-[10px] font-bold leading-none">✔️</span>
+                              ) : whatsappStatus[c.codcli] === 'missing' ? (
+                                <span title="Sem WhatsApp" className="text-rose-500 text-[10px] font-bold leading-none">❌</span>
+                              ) : (
+                                <Search className="w-3 h-3 text-slate-400" />
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </label>
                     ))}

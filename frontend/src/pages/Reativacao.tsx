@@ -25,6 +25,24 @@ export default function Reativacao() {
   const [templates, setTemplates] = useState<any[]>([]);
   const [clientConfigs, setClientConfigs] = useState<Record<string, { enviarPrecos: boolean; tipoMensagemId: number | null }>>({});
 
+  const [whatsappStatus, setWhatsappStatus] = useState<Record<string, 'loading'|'exists'|'missing'|'error'>>({});
+
+  const handleCheckWhatsapp = async (codcli: string, telefone: string) => {
+    if (!telefone) return;
+    setWhatsappStatus(prev => ({ ...prev, [codcli]: 'loading' }));
+    try {
+      const response = await fetch(`/api/whatsapp/check-number/${telefone.replace(/[^0-9]/g, '')}?codusur=${user?.matricula}`);
+      const data = await response.json();
+      if (data.success) {
+        setWhatsappStatus(prev => ({ ...prev, [codcli]: data.exists ? 'exists' : 'missing' }));
+      } else {
+        setWhatsappStatus(prev => ({ ...prev, [codcli]: 'error' }));
+      }
+    } catch (err) {
+      setWhatsappStatus(prev => ({ ...prev, [codcli]: 'error' }));
+    }
+  };
+
   const fetchTemplates = async () => {
     try {
       const res = await fetch('/api/templates_paginas/REATIVACAO');
@@ -352,19 +370,41 @@ export default function Reativacao() {
                     <td className="px-6 py-4 font-medium text-gray-200">{maskData(c.fantasia || c.cliente)}</td>
                     <td className="px-6 py-4 text-gray-400 text-xs">{maskData(c.razao_social || c.cliente)}</td>
                     <td className="px-6 py-4 text-gray-400 whitespace-nowrap">
-                      {c.telefone && c.telefone.includes(',') ? (
-                        <select 
-                          className="bg-slate-800 border border-slate-700 text-white text-xs rounded-md px-2 py-1 w-full max-w-[150px]"
-                          onChange={(e) => handleContactChange(c.codcli, e.target.value)}
-                          value={c.telefone_selecionado || c.telefone.split(',')[0]}
-                        >
-                          {c.telefone.split(',').map((tel: string, idx: number) => (
-                            <option key={idx} value={tel.trim()}>{tel.trim()}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        c.telefone || '-'
-                      )}
+                      <div className="flex items-center gap-2">
+                        {c.telefone && c.telefone.includes(',') ? (
+                          <select 
+                            className="bg-slate-800 border border-slate-700 text-white text-xs rounded-md px-2 py-1 w-full max-w-[150px]"
+                            onChange={(e) => {
+                                handleContactChange(c.codcli, e.target.value);
+                                setWhatsappStatus(prev => ({ ...prev, [c.codcli]: undefined as any }));
+                            }}
+                            value={c.telefone_selecionado || c.telefone.split(',')[0]}
+                          >
+                            {c.telefone.split(',').map((tel: string, idx: number) => (
+                              <option key={idx} value={tel.trim()}>{tel.trim()}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          c.telefone || '-'
+                        )}
+                        {c.telefone && (
+                          <button
+                            onClick={() => handleCheckWhatsapp(c.codcli, c.telefone_selecionado || (c.telefone ? c.telefone.split(',')[0] : ''))}
+                            className="p-1 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors"
+                            title="Verificar se tem WhatsApp"
+                          >
+                            {whatsappStatus[c.codcli] === 'loading' ? (
+                              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                            ) : whatsappStatus[c.codcli] === 'exists' ? (
+                              <span title="WhatsApp Encontrado!" className="text-emerald-500 text-xs font-bold leading-none">✔️</span>
+                            ) : whatsappStatus[c.codcli] === 'missing' ? (
+                              <span title="Sem WhatsApp" className="text-rose-500 text-xs font-bold leading-none">❌</span>
+                            ) : (
+                              <Search className="w-4 h-4 text-gray-400" />
+                            )}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-gray-400">{c.vendedor || '-'}</td>
                     <td className="px-6 py-4 text-gray-400 text-xs truncate max-w-[150px]" title={c.ramo_atividade}>{c.ramo_atividade || '-'}</td>

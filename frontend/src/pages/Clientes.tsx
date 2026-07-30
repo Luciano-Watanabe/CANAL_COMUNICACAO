@@ -26,6 +26,24 @@ export default function Clientes() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  const [whatsAppCheckResult, setWhatsAppCheckResult] = useState<'loading'|'exists'|'missing'|'error'|null>(null);
+
+  const checkWhatsApp = async () => {
+    if (!novoTelefone) return;
+    setWhatsAppCheckResult('loading');
+    try {
+      const response = await fetch(`/api/whatsapp/check-number/${novoTelefone.replace(/[^0-9]/g, '')}?codusur=${user?.matricula}`);
+      const data = await response.json();
+      if (data.success) {
+        setWhatsAppCheckResult(data.exists ? 'exists' : 'missing');
+      } else {
+        setWhatsAppCheckResult('error');
+      }
+    } catch (err) {
+      setWhatsAppCheckResult('error');
+    }
+  };
+  
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -172,6 +190,7 @@ export default function Clientes() {
         setContatos([...contatos, { nome: novoNome, telefone: novoTelefone }]);
         setNovoNome('');
         setNovoTelefone('55');
+        setWhatsAppCheckResult(null);
       }
     } catch (err) {
       console.error(err);
@@ -393,14 +412,35 @@ export default function Clientes() {
                   </div>
                   <div>
                     <label className="block text-xs text-slate-500 mb-1">WhatsApp</label>
-                    <input 
-                      type="text" 
-                      required
-                      value={novoTelefone}
-                      onChange={e => setNovoTelefone(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white border border-transparent dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-primary-500"
-                      placeholder="5511999999999"
-                    />
+                    <div className="flex gap-2">
+                        <input 
+                          type="text" 
+                          required
+                          value={novoTelefone}
+                          onChange={e => {
+                              setNovoTelefone(e.target.value);
+                              setWhatsAppCheckResult(null);
+                          }}
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-white border border-transparent dark:border-slate-700 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-primary-500"
+                          placeholder="5511999999999"
+                        />
+                        <button
+                          type="button"
+                          onClick={checkWhatsApp}
+                          className="p-2 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700"
+                          title="Verificar se tem WhatsApp"
+                        >
+                          {whatsAppCheckResult === 'loading' ? (
+                            <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                          ) : whatsAppCheckResult === 'exists' ? (
+                            <span title="WhatsApp Encontrado!" className="text-emerald-500 text-sm font-bold leading-none">✔️</span>
+                          ) : whatsAppCheckResult === 'missing' ? (
+                            <span title="Sem WhatsApp" className="text-rose-500 text-sm font-bold leading-none">❌</span>
+                          ) : (
+                            <Search size={16} className="text-slate-400" />
+                          )}
+                        </button>
+                    </div>
                   </div>
                 </div>
                 <button 
