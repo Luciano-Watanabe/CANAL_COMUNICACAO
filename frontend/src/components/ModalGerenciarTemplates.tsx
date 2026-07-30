@@ -48,14 +48,18 @@ export function ModalGerenciarTemplates({ isOpen, onClose, pagina, onTemplatesCh
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pagina, ...editForm })
       });
-      if (res.ok) {
+      const data = await res.json();
+      if (res.ok && data.success) {
         setIsAdding(false);
         setEditForm({ tipo: '', template: '' });
         fetchTemplates();
         onTemplatesChanged();
+      } else {
+        alert(data.message || data.error || 'Erro ao adicionar template.');
       }
     } catch (err) {
       console.error(err);
+      alert('Erro de comunicação com o servidor.');
     }
   };
 
@@ -66,14 +70,18 @@ export function ModalGerenciarTemplates({ isOpen, onClose, pagina, onTemplatesCh
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm)
       });
-      if (res.ok) {
+      const data = await res.json();
+      if (res.ok && data.success) {
         setEditingId(null);
         setEditForm({ tipo: '', template: '' });
         fetchTemplates();
         onTemplatesChanged();
+      } else {
+        alert(data.message || data.error || 'Erro ao atualizar template.');
       }
     } catch (err) {
       console.error(err);
+      alert('Erro de comunicação com o servidor.');
     }
   };
 
@@ -101,7 +109,7 @@ export function ModalGerenciarTemplates({ isOpen, onClose, pagina, onTemplatesCh
   const startAdd = () => {
     setEditingId(null);
     setIsAdding(true);
-    setEditForm({ tipo: '', template: '' });
+    setEditForm({ tipo: pagina === 'ROTAS' ? 'PRESENCIAL' : '', template: '' });
   };
 
   if (!isOpen) return null;
@@ -140,13 +148,26 @@ export function ModalGerenciarTemplates({ isOpen, onClose, pagina, onTemplatesCh
               </h4>
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Nome do Tipo</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Lançamentos"
-                  value={editForm.tipo}
-                  onChange={e => setEditForm({ ...editForm, tipo: e.target.value })}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                />
+                {pagina === 'ROTAS' ? (
+                  <select
+                    value={editForm.tipo}
+                    onChange={e => setEditForm({ ...editForm, tipo: e.target.value })}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="PRESENCIAL">PRESENCIAL</option>
+                    <option value="WHATS">WHATS</option>
+                    <option value="EMAIL">EMAIL</option>
+                    <option value="TELEFONE">TELEFONE</option>
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="Ex: Lançamentos"
+                    value={editForm.tipo}
+                    onChange={e => setEditForm({ ...editForm, tipo: e.target.value.toUpperCase() })}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mensagem Padrão</label>
