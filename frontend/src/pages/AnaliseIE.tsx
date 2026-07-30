@@ -182,13 +182,14 @@ export default function AnaliseIE() {
                 <th className="px-6 py-4 font-medium">IE Sistema (UF)</th>
                 <th className="px-6 py-4 font-medium">Situação IE</th>
                 <th className="px-6 py-4 font-medium">IE Nova Sugerida</th>
+                <th className="px-6 py-4 font-medium">Link Sintegra</th>
                 <th className="px-6 py-4 font-medium">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
                       <span>Carregando análises...</span>
@@ -197,7 +198,7 @@ export default function AnaliseIE() {
                 </tr>
               ) : filteredAnalises.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <BarChart2 className="w-10 h-10 opacity-50 text-primary-400" />
                       <span className="text-lg">Nenhuma análise problemática encontrada</span>
@@ -213,6 +214,16 @@ export default function AnaliseIE() {
                     <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400">{a.ie_sistema} ({a.uf_sistema})</td>
                     <td className="px-6 py-4">{getStatusBadge(a.situacao)}</td>
                     <td className="px-6 py-4 font-bold text-amber-600 dark:text-amber-500">{a.ie_nova || '-'}</td>
+                    <td className="px-6 py-4">
+                      <a
+                        href={`https://sintegrapi.com.br/consultas-uteis/consultar-sintegra-${(a.uf_sistema || 'sp').toLowerCase()}/${a.cnpj.replace(/\\D/g, '')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary-500 hover:text-primary-600 underline text-xs font-medium"
+                      >
+                        Ver no Sintegra
+                      </a>
+                    </td>
                     <td className="px-6 py-4">
                       <button
                         onClick={() => handleReconsultar(a)}

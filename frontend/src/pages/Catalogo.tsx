@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Download, Filter, Eye, EyeOff } from 'lucide-react';
+import { Download, Filter, Eye, EyeOff, Send } from 'lucide-react';
+import ModalWhatsAppCatalogo from '../components/ModalWhatsAppCatalogo';
 
 interface Produto {
   codprod: number;
@@ -23,6 +24,21 @@ export default function Catalogo() {
   const [loading, setLoading] = useState(true);
   const [codatvSelecionado, setCodatvSelecionado] = useState<string>('');
   const [mostrarPrecos, setMostrarPrecos] = useState(true);
+  const [vendedores, setVendedores] = useState<any[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+
+  useEffect(() => {
+    // Buscar vendedores
+    fetch('/api/vendedores')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) setVendedores(data.vendedores || []);
+      })
+      .catch(console.error);
+  }, []);
 
   useEffect(() => {
     fetch('/api/catalogo/atividades')
@@ -98,6 +114,14 @@ export default function Catalogo() {
           </button>
 
           <button
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl shadow-lg shadow-green-500/30 transition-colors"
+          >
+            <Send size={18} />
+            <span className="text-sm font-medium">Enviar Whats</span>
+          </button>
+
+          <button
             onClick={handlePrint}
             className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl shadow-lg shadow-primary-500/30 transition-colors"
           >
@@ -113,14 +137,18 @@ export default function Catalogo() {
         </div>
       ) : (
         <div className="catalog-print-container space-y-12 bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-sm print:shadow-none print:p-0">
-          <div className="hidden print:block text-center mb-8">
-            <h1 className="text-4xl font-bold text-slate-900">Catálogo de Produtos</h1>
-            {codatvSelecionado && (
-              <h2 className="text-xl text-slate-600 mt-2">
-                Mix sugerido para: {atividades.find(a => String(a.codatv) === codatvSelecionado)?.ramo}
-              </h2>
-            )}
-            <div className="w-full h-px bg-slate-200 mt-6"></div>
+          <div className="hidden print:block text-center mb-8 border-b-2 border-slate-200 pb-6">
+            <div className="flex flex-col items-center justify-center gap-4">
+              <img src="/logo-ag.png" alt="Logo" className="h-20 object-contain" />
+              <div>
+                <h1 className="text-4xl font-bold text-slate-900">Catálogo de Produtos</h1>
+                {codatvSelecionado && (
+                  <p className="text-lg text-slate-500 mt-2">
+                    Categoria: {atividades.find(a => String(a.codatv) === String(codatvSelecionado))?.ramo}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
 
           {Object.entries(produtosPorDepartamento).map(([dep, prods]) => (
@@ -130,7 +158,7 @@ export default function Catalogo() {
                 {dep}
               </h3>
               
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 print:grid-cols-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 print:grid-cols-5">
                 {prods.map(p => (
                   <div key={p.codprod} className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700/50 flex flex-col print:border-slate-300 print:bg-white print:break-inside-avoid" style={{ breakInside: 'avoid' }}>
                     <div className="aspect-square bg-white rounded-lg mb-4 flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-700 print:border-slate-200">
@@ -172,6 +200,24 @@ export default function Catalogo() {
           )}
         </div>
       )}
+
+      <ModalWhatsAppCatalogo
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        vendedores={vendedores}
+        atividades={atividades}
+        ramoSelecionado={codatvSelecionado}
+        codusurLogged={user?.matricula}
+        onSend={async (formData) => {
+          const res = await fetch('/api/catalogo/send-whatsapp', {
+            method: 'POST',
+            body: formData
+          });
+          const result = await res.json();
+          if (!result.success) throw new Error(result.error || 'Erro desconhecido');
+          alert('Catálogo enviado com sucesso!');
+        }}
+      />
     </div>
   );
 }

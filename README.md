@@ -4,6 +4,14 @@ Bem-vindo à documentação oficial do **Canal de Comunicação (Homologação)*
 
 ---
 
+## Principais Soluções Oferecidas
+- **WhatsApp Integrado ao ERP:** Comunique-se com os clientes sem precisar de celulares corporativos e sincronize dados em tempo real.
+- **Auditoria Fiscal Automática (CNPJ/IE):** O sistema consulta dados do Sintegra/Receita Federal em background para evitar cadastros frios ou Inscrições Estaduais bloqueadas.
+- **Disparos em Lote Seguros (Tickets):** Campanhas de reativação e envio de catálogos respeitam limites de tempo dinâmicos da API, evitando banimentos por SPAM.
+- **Cross-sell Inteligente:** Baseado no histórico de compras do Winthor, sugere complementos de venda durante as conversas.
+
+---
+
 ## Guia de Instalação Rápida
 > [!TIP]
 > Vai subir o projeto do zero? Elaboramos um guia rápido com os comandos do Docker e as configurações do `.env`!  
@@ -250,6 +258,12 @@ graph TD
     > Extensões aceitas: `.jpg`, `.png`, `.jpeg`, `.webp`.
     > *Exemplo: Para o produto de código `12345`, salve o arquivo como `12345.jpg`.*
 *   **Monitoramento de Filas**: Supervisores podem observar clientes na `CANAL_REATIVACAO_FILA` para cobrar os vendedores sobre retornos pendentes.
+
+### 4.1 Auditoria Fiscal Automática (Análise IE e CNPJ)
+O módulo de Análise IE atua como um escudo fiscal para a empresa. 
+- **Como funciona:** Processos assíncronos (`worker.js`) vasculham clientes recém-cadastrados ou sem auditoria no ERP. Através de integrações com APIs (ex: CNPJ.ws e Sintegra), o sistema valida a situação cadastral do CNPJ e descobre eventuais Inscrições Estaduais vinculadas.
+- **Prevenção de Erros:** Vendedores podem acompanhar pelo dashboard (menu Análise IE) clientes que estão com a Inscrição Estadual Inativa, Suspensa ou Baixada.
+- **Link Direto SINTEGRA:** Na tela de Análise de IE, o sistema provê um botão direto que abre a página pública do Sintegra, injetando o CNPJ e o Estado (UF) do cliente para comprovação fiscal imediata pelo analista.
 
 ### Visualização do Sistema (Dashboard / Frontend)
 

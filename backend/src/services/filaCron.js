@@ -189,8 +189,24 @@ cron.schedule('* * * * *', async () => {
                     textoBase = '[Mensagem de Reativação]';
                 }
                 
+                let isCatalogoPdf = false;
+                let catalogoPdfPath = '';
+                let catalogoRamo = '';
+                
+                if (typeof textoBase === 'string' && textoBase.startsWith('[MEDIA_CATALOGO]')) {
+                    isCatalogoPdf = true;
+                    // ex: [MEDIA_CATALOGO]/caminho/arquivo.pdf|Ramo
+                    const parts = textoBase.replace('[MEDIA_CATALOGO]', '').split('|');
+                    catalogoPdfPath = parts[0];
+                    catalogoRamo = parts[1] || 'Geral';
+                }
+
                 let finalClientText = textoBase || `Olá ${(nomeCliente || '').trim()}, notamos sua ausência! Que tal conferir as novidades?`;
-                finalClientText = String(finalClientText).replace(/¿/g, '\u2705');
+                if (isCatalogoPdf) {
+                    finalClientText = `Olá ${(nomeCliente || '').trim()}, confira nosso novo catálogo de produtos da categoria: ${catalogoRamo}!`;
+                } else {
+                    finalClientText = String(finalClientText).replace(/¿/g, '\u2705');
+                }
 
                 const msgClienteTxt = {
                     number: telCliente,
@@ -318,38 +334,76 @@ cron.schedule('* * * * *', async () => {
                     }
                 };
 
-                if (base64Data) {
-                    await sendEvo('media', {
-                        number: telCliente,
-                        mediatype: 'image',
-                        mimetype: 'image/jpeg',
-                        fileName: `encarte_${Date.now()}.jpg`,
-                        caption: '',
-                        media: base64Data
-                    });
-                    await new Promise(r => setTimeout(r, 1000));
+                try {
+                    let evoRes;
+                    
+                    if (isCatalogoPdf) {
+                        // ENVIAR PDF DE CATÁLOGO
+                        const fs = require('fs');
+                        if (fs.existsSync(catalogoPdfPath)) {
+                            const fileBuffer = fs.readFileSync(catalogoPdfPath);
+                            const base64Data = fileBuffer.toString('base64');
+                            
+                            // Primeiro manda a mensagem de saudação
+                            await sendEvo('text', {
+                                number: telCliente,
+                                text: finalClientText
+                            });
+                            
+                            // Depois manda o PDF
+                            evoRes = await fetch(`${evoUrl}/message/sendMedia/${instanceName}`, {
+                                method: 'POST',
+                                headers,
+                                body: JSON.stringify({
+                                    number: telCliente,
+                                    mediatype: 'document',
+                                    mimetype: 'application/pdf',
+                                    fileName: `Catalogo_${catalogoRamo}.pdf`,
+                                    caption: `Catálogo de Produtos - ${catalogoRamo}`,
+                                    media: base64Data
+                                })
+                            });
+                        } else {
+                            throw new Error('Arquivo PDF do catálogo não encontrado');
+                        }
+                    } else if (base64Data) {
+                        // Imagem de Reativação com mix de produtos
+                        evoRes = await sendEvo('media', {
+                            number: telCliente,
+                            mediatype: 'image',
+                            mimetype: 'image/jpeg',
+                            fileName: `Ofertas_${codcli}.jpg`,
+                            media: base64Data,
+                            caption: msgClienteTxt.text
+                        });
+                    } else {
+                        // Só texto
+                        evoRes = await sendEvo('text', msgClienteTxt);
+                    }
+                } catch (err) {
+                    console.error(`[FILA CRON] Erro no fluxo de envio cliente:`, err);
                 }
 
-                await sendEvo('text', msgClienteTxt);
-                await new Promise(r => setTimeout(r, 1000));
-                await sendEvo('contact', msgClienteVcard);
-                
-                await sendEvo('text', msgVendedorTxt);
-                await new Promise(r => setTimeout(r, 1000));
-                
-                if (base64Data) {
-                    await sendEvo('media', {
-                        number: telVendedor,
-                        mediatype: 'image',
-                        mimetype: 'image/jpeg',
-                        fileName: `encarte_vendedor_${Date.now()}.jpg`,
-                        caption: '',
-                        media: base64Data
-                    });
+                if (!isCatalogoPdf) {
+                    await sendEvo('contact', msgClienteVcard);
+                    
+                    await sendEvo('text', msgVendedorTxt);
                     await new Promise(r => setTimeout(r, 1000));
-                }
+                    
+                    if (base64Data) {
+                        await sendEvo('media', {
+                            number: telVendedor,
+                            mediatype: 'image',
+                            mimetype: 'image/jpeg',
+                            fileName: `encarte_vendedor_${Date.now()}.jpg`,
+                            caption: '',
+                            media: base64Data
+                        });
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
 
-                await sendEvo('contact', msgVendedorVcard);
+                    await sendEvo('contact', msgVendedorVcard);
+                }
 
                 await connection.execute(`UPDATE CANAL_REATIVACAO_FILA SET STATUS = 'ENVIADO' WHERE ID = :id`, { id: filaId }, { autoCommit: true });
                 
