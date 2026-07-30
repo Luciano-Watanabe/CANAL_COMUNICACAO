@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, Send, AlertTriangle, Users, Eye, X, List, Play, Square } from 'lucide-react';
+import { Search, Send, AlertTriangle, Users, Eye, X, List, Play, Square, Settings } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 export default function Reativacao() {
@@ -19,6 +19,35 @@ export default function Reativacao() {
   const [isSending, setIsSending] = useState(false);
   const [filaFilter, setFilaFilter] = useState<'TODOS' | 'PENDENTE' | 'PROCESSANDO' | 'ENVIADO' | 'ERRO'>('TODOS');
   
+  // Configs
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [config, setConfig] = useState(() => {
+    const saved = localStorage.getItem('reativacao_config');
+    if (saved) return JSON.parse(saved);
+    return {
+      enviarPrecos: true,
+      tipoMensagem: 'SAUDADE',
+      mensagemPadrao: 'Olá, sentimos sua falta! Veja algumas ofertas especiais que separamos para você:'
+    };
+  });
+
+  const TIPOS_MENSAGEM = [
+    { id: 'SAUDADE', label: 'Saudade', template: 'Olá, sentimos sua falta! Veja algumas ofertas especiais que separamos para você:' },
+    { id: 'OFERTA', label: 'Oferta Especial', template: 'Temos preços exclusivos para você que não compra há um tempo. Confira nossa lista:' },
+    { id: 'NOVIDADE', label: 'Novidades', template: 'Chegaram novidades no nosso catálogo! Dê uma olhada nos produtos:' }
+  ];
+
+  useEffect(() => {
+    localStorage.setItem('reativacao_config', JSON.stringify(config));
+  }, [config]);
+
+  const handleConfigTipoChange = (novoTipoId: string) => {
+    const tipo = TIPOS_MENSAGEM.find(t => t.id === novoTipoId);
+    if (tipo) {
+      setConfig({ ...config, tipoMensagem: novoTipoId, mensagemPadrao: tipo.template });
+    }
+  };
+
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   const userStr = localStorage.getItem('user');
@@ -125,7 +154,7 @@ export default function Reativacao() {
       const res = await fetch('/api/clientes/reativacao/fila', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fila: queue, codusur: user?.matricula })
+        body: JSON.stringify({ fila: queue, codusur: user?.matricula, config })
       });
       const data = await res.json();
       if (data.success) {
@@ -188,6 +217,14 @@ export default function Reativacao() {
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 items-center w-full md:w-auto">
+          <button
+            onClick={() => setConfigModalOpen(true)}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white px-4 py-2.5 rounded-xl font-medium transition-colors border border-slate-200 dark:border-slate-700"
+          >
+            <Settings className="w-5 h-5" />
+            Configurações
+          </button>
+          
           <button
             onClick={() => setViewQueue(true)}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2.5 rounded-xl font-medium transition-colors border border-slate-700 relative"
@@ -492,6 +529,70 @@ export default function Reativacao() {
                 ) : (
                   <><Play className="w-5 h-5" /> Iniciar Disparos no Servidor</>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Configurações */}
+      {configModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full max-w-md shadow-2xl relative">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-500" />
+                Configurações de Envio
+              </h3>
+              <button onClick={() => setConfigModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
+                <div>
+                  <div className="font-medium text-slate-800 dark:text-white text-sm">Enviar com preços</div>
+                  <div className="text-xs text-slate-500">Incluir valores na mensagem e PDF</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" checked={config.enviarPrecos} onChange={(e) => setConfig({ ...config, enviarPrecos: e.target.checked })} />
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Mensagem</label>
+                <select 
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={config.tipoMensagem}
+                  onChange={(e) => handleConfigTipoChange(e.target.value)}
+                >
+                  {TIPOS_MENSAGEM.map(t => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mensagem Padrão</label>
+                <textarea 
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 min-h-[100px] text-sm outline-none"
+                  value={config.mensagemPadrao}
+                  onChange={(e) => setConfig({ ...config, mensagemPadrao: e.target.value })}
+                />
+              </div>
+
+              <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-lg text-sm border border-blue-100 dark:border-blue-900/50">
+                <input type="checkbox" checked disabled className="rounded text-blue-500 opacity-70" />
+                <span>Sempre enviar a lista de produtos e imagem</span>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <button 
+                onClick={() => setConfigModalOpen(false)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg shadow-blue-500/30"
+              >
+                Salvar e Fechar
               </button>
             </div>
           </div>

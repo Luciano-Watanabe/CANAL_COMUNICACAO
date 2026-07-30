@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, Search, Trash2, Calendar, Map as MapIcon, Car, MessageCircle, Phone, Mail, Check, Send } from 'lucide-react';
+import { Save, Search, Trash2, Calendar, Map as MapIcon, Car, MessageCircle, Phone, Mail, Check, Send, Settings, X } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 import { MapModal } from '../components/MapModal';
 
@@ -52,6 +52,34 @@ export default function Rotas() {
   
   // Controle do dropdown de pesquisa
   const [activeDay, setActiveDay] = useState<string | null>(null);
+
+  // Configurações
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [config, setConfig] = useState(() => {
+    const saved = localStorage.getItem('rotas_config');
+    if (saved) return JSON.parse(saved);
+    return {
+      tipoMensagem: 'CONFIRMACAO',
+      mensagemPadrao: 'Olá, confirmo nossa visita agendada para hoje. Até logo!'
+    };
+  });
+
+  const TIPOS_MENSAGEM = [
+    { id: 'CONFIRMACAO', label: 'Confirmação de Visita', template: 'Olá, confirmo nossa visita agendada para hoje. Até logo!' },
+    { id: 'AVISO', label: 'Aviso de Chegada', template: 'Olá, estou a caminho para nossa reunião!' },
+    { id: 'REAGENDAMENTO', label: 'Reagendamento', template: 'Olá, ocorreu um imprevisto. Podemos reagendar nossa visita de hoje?' }
+  ];
+
+  useEffect(() => {
+    localStorage.setItem('rotas_config', JSON.stringify(config));
+  }, [config]);
+
+  const handleConfigTipoChange = (novoTipoId: string) => {
+    const tipo = TIPOS_MENSAGEM.find(t => t.id === novoTipoId);
+    if (tipo) {
+      setConfig({ ...config, tipoMensagem: novoTipoId, mensagemPadrao: tipo.template });
+    }
+  };
 
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
@@ -287,7 +315,7 @@ export default function Rotas() {
       const res = await fetch(`/api/rotas/${selectedVendedor}/disparar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dia, clientes: rotas[dia] || [] })
+        body: JSON.stringify({ dia, clientes: rotas[dia] || [], config })
       });
       const data = await res.json();
       if (data.success) {
@@ -367,6 +395,14 @@ export default function Rotas() {
               </option>
             ))}
           </select>
+
+          <button
+            onClick={() => setConfigModalOpen(true)}
+            className="flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white px-3 py-2 rounded-xl font-medium transition-colors border border-slate-200 dark:border-slate-700 h-[42px]"
+            title="Configurações de Mensagem"
+          >
+            <Settings size={18} />
+          </button>
 
           <button 
             onClick={handleSave}
@@ -768,6 +804,54 @@ export default function Rotas() {
         onClose={() => setMapModalDia(null)} 
         onApplyRoute={handleApplyRoute}
       />
+
+      {/* Modal de Configurações */}
+      {configModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl w-full max-w-md shadow-2xl relative">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 rounded-t-xl">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-500" />
+                Configurações de Envio
+              </h3>
+              <button onClick={() => setConfigModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Tipo de Mensagem</label>
+                <select 
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={config.tipoMensagem}
+                  onChange={(e) => handleConfigTipoChange(e.target.value)}
+                >
+                  {TIPOS_MENSAGEM.map(t => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mensagem Padrão</label>
+                <textarea 
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 min-h-[100px] text-sm outline-none"
+                  value={config.mensagemPadrao}
+                  onChange={(e) => setConfig({ ...config, mensagemPadrao: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <button 
+                onClick={() => setConfigModalOpen(false)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm font-medium shadow-lg shadow-blue-500/30"
+              >
+                Salvar e Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
