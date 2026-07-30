@@ -141,7 +141,7 @@ router.post('/send-whatsapp', upload.single('pdf'), async (req, res) => {
             return res.status(400).json({ success: false, error: 'Arquivo PDF não enviado.' });
         }
 
-        const { clientes, vendedorId, telefoneVendedor, ramoNome, codusurLogged } = req.body;
+        const { clientes, vendedorId, telefoneVendedor, ramoNome, codusurLogged, mensagemPadrao } = req.body;
         if (!clientes) {
             return res.status(400).json({ success: false, error: 'Lista de clientes vazia.' });
         }
@@ -153,7 +153,7 @@ router.post('/send-whatsapp', upload.single('pdf'), async (req, res) => {
 
         const pdfPath = req.file.path;
         // O marcador que o filaCron.js vai entender
-        const msgTexto = `[MEDIA_CATALOGO]${pdfPath}|${ramoNome}`;
+        const msgTexto = `[MEDIA_CATALOGO]${pdfPath}|${ramoNome}|${mensagemPadrao || ''}`;
 
         let conn;
         try {

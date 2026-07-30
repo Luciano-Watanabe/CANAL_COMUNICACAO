@@ -197,17 +197,18 @@ cron.schedule('* * * * *', async () => {
                 let catalogoPdfPath = '';
                 let catalogoRamo = '';
                 
+                let finalClientText = textoBase || `Olá ${(nomeCliente || '').trim()}, notamos sua ausência! Que tal conferir as novidades?`;
                 if (typeof textoBase === 'string' && textoBase.startsWith('[MEDIA_CATALOGO]')) {
                     isCatalogoPdf = true;
-                    // ex: [MEDIA_CATALOGO]/caminho/arquivo.pdf|Ramo
+                    // ex: [MEDIA_CATALOGO]/caminho/arquivo.pdf|Ramo|MensagemCustom
                     const parts = textoBase.replace('[MEDIA_CATALOGO]', '').split('|');
                     catalogoPdfPath = parts[0];
                     catalogoRamo = parts[1] || 'Geral';
-                }
-
-                let finalClientText = textoBase || `Olá ${(nomeCliente || '').trim()}, notamos sua ausência! Que tal conferir as novidades?`;
-                if (isCatalogoPdf) {
-                    finalClientText = `Olá ${(nomeCliente || '').trim()}, confira nosso novo catálogo de produtos da categoria: ${catalogoRamo}!`;
+                    if (parts[2]) {
+                        finalClientText = parts[2];
+                    } else {
+                        finalClientText = `Olá ${(nomeCliente || '').trim()}, confira nosso novo catálogo de produtos da categoria: ${catalogoRamo}!`;
+                    }
                 } else {
                     finalClientText = String(finalClientText).replace(/¿/g, '\u2705');
                 }
