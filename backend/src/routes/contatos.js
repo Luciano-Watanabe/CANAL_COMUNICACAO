@@ -31,13 +31,18 @@ router.get('/:codcli', async (req, res) => {
         });
 
         const result = await connection.execute(
-            `SELECT DISTINCT NOMECONTATO AS NOME_CONTATO, NVL(TELEFONE, CELULAR) AS TELEFONE FROM PCCONTATO WHERE CODCLI = :codcli ORDER BY NOMECONTATO`,
+            `SELECT DISTINCT C.NOMECONTATO AS NOME_CONTATO, NVL(C.TELEFONE, C.CELULAR) AS TELEFONE, W.TEM_WHATS
+             FROM PCCONTATO C
+             LEFT JOIN CANAL_WHATSAPP_CACHE W ON W.TELEFONE = NVL(C.TELEFONE, C.CELULAR)
+             WHERE C.CODCLI = :codcli 
+             ORDER BY C.NOMECONTATO`,
             { codcli }
         );
 
         const contatos = result.rows.map(row => ({
             nome: row.NOME_CONTATO || row.nome_contato || row[0],
-            telefone: row.TELEFONE || row.telefone || row[1]
+            telefone: row.TELEFONE || row.telefone || row[1],
+            tem_whats: row.TEM_WHATS || row.tem_whats || row[2]
         }));
 
         res.json({ success: true, contatos });

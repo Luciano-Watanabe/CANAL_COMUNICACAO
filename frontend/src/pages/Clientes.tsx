@@ -52,6 +52,16 @@ export default function Clientes() {
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
+  useEffect(() => {
+    const cleanPhone = novoTelefone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length >= 10 && cleanPhone.length <= 13) {
+      const handler = setTimeout(() => {
+        checkWhatsApp();
+      }, 800);
+      return () => clearTimeout(handler);
+    }
+  }, [novoTelefone]);
+
   
   const handleExportMissing = () => {
     const userStr = localStorage.getItem('user');
@@ -187,7 +197,11 @@ export default function Clientes() {
       });
       const data = await res.json();
       if (data.success) {
-        setContatos([...contatos, { nome: novoNome, telefone: novoTelefone }]);
+        setContatos([...contatos, { 
+          nome: novoNome, 
+          telefone: novoTelefone, 
+          tem_whats: whatsAppCheckResult === 'exists' ? 'S' : (whatsAppCheckResult === 'missing' ? 'N' : null) 
+        }]);
         setNovoNome('');
         setNovoTelefone('55');
         setWhatsAppCheckResult(null);
@@ -383,7 +397,11 @@ export default function Clientes() {
                       <li key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
                         <div>
                           <p className="font-medium text-slate-800 dark:text-slate-200 text-sm">{c.nome ? maskData(c.nome) : 'Sem nome'}</p>
-                          <p className="text-xs text-slate-500 font-mono">{maskData(c.telefone)}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs text-slate-500 font-mono">{maskData(c.telefone)}</p>
+                            {c.tem_whats === 'S' && <span title="WhatsApp Encontrado!" className="text-emerald-500 text-xs font-bold leading-none">✔️</span>}
+                            {c.tem_whats === 'N' && <span title="Sem WhatsApp" className="text-rose-500 text-xs font-bold leading-none">❌</span>}
+                          </div>
                         </div>
                         <button 
                           onClick={() => removeContato(c.telefone)}
