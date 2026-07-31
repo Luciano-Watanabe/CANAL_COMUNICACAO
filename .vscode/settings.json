@@ -1,0 +1,6 @@
+{
+  // Suprime os warnings "Unknown at rule" para @theme, @apply, @layer do Tailwind v4
+  // Essas diretivas são processadas pelo compilador Tailwind antes do browser e são válidas.
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore"
+}
