@@ -26,6 +26,9 @@ cron.schedule('* * * * *', async () => {
             connectString: process.env.ORACLE_CONN_STR
         });
 
+        // Recarrega as configurações globais a cada ciclo para garantir que o Modo Teste esteja atualizado
+        await cacheService.reloadConfigs(connection);
+
         const sql = `
             SELECT ID, CODCLI, TELEFONE, CODUSUR, MENSAGEM_TXT, CODATV1
             FROM CANAL_REATIVACAO_FILA

@@ -249,27 +249,30 @@ class CacheService {
             }
 
             // 6. Load Configurações Globais
-            console.log('[CACHE] Carregando Configurações Globais...');
-            try {
-                const configRes = await conn.execute(`SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES`);
-                const configs = {};
-                configRes.rows.forEach(row => {
-                    configs[row[0]] = row[1];
-                });
-                this.globalConfigs = configs;
-            } catch (e) {
-                console.error(`[CACHE] Erro ao carregar Configurações Globais:`, e.message);
-            }
+            await this.reloadConfigs(conn);
 
             this.isLoaded = true;
             console.log(`[CACHE] Sucesso: ${this.vendedores.length} vendedores e ${this.clientes.length} clientes carregados na memória.`);
-
         } catch (err) {
             console.error('[CACHE] Erro ao carregar dados para o cache:', err);
         } finally {
             if (conn) {
-                try { await conn.close(); } catch(e) {}
+                try { await conn.close(); } catch (err) {}
             }
+        }
+    }
+
+    async reloadConfigs(conn) {
+        try {
+            const configRes = await conn.execute(`SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES`);
+            const configs = {};
+            configRes.rows.forEach(row => {
+                configs[row[0]] = row[1];
+            });
+            this.globalConfigs = configs;
+            console.log('[CACHE] Configurações Globais recarregadas com sucesso.');
+        } catch (e) {
+            console.error(`[CACHE] Erro ao carregar Configurações Globais:`, e.message);
         }
     }
 
