@@ -134,7 +134,7 @@ cron.schedule('* * * * *', async () => {
 
                 let base64Data = null;
                 let listaProdutos = '';
-                if (codatv1) {
+                if (codatv1 && enviarPreco) {
                     let campanhaFilter = '';
                     if (campanhaSelecionada) {
                         campanhaFilter = `AND UPPER(EMB.EMBALAGEM) LIKE UPPER('%' || :campanha || '%')`;
