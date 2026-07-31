@@ -194,7 +194,7 @@ router.post('/send', async (req, res) => {
         // 2. Chamar a API da Evolution para enviar o texto
         
         // Formata o número (DDI + DDD + Numero). Assumindo BR 55 se não houver.
-        let numberToSend = formatPhone(telefone);
+        let numberToSend = cacheService.getDestinoFinal(formatPhone(telefone));
 
         const evolutionUrl = `${urlBase}/send/text`;
         
@@ -305,7 +305,7 @@ router.post('/send-produto', async (req, res) => {
         let urlBase = configResult.rows[0][2];
 
         if (urlBase.endsWith('/')) urlBase = urlBase.slice(0, -1);
-        let numberToSend = formatPhone(telefone);
+        let numberToSend = cacheService.getDestinoFinal(formatPhone(telefone));
 
         const imagePath = getImagePath(codprod);
         
@@ -517,7 +517,7 @@ router.post('/send-carousel', async (req, res) => {
         let urlBase = configResult.rows[0][2];
 
         if (urlBase.endsWith('/')) urlBase = urlBase.slice(0, -1);
-        let numberToSend = formatPhone(telefone);
+        let numberToSend = cacheService.getDestinoFinal(formatPhone(telefone));
 
         // Formata os cards preenchendo os caminhos corretos das imagens (verificando extensões)
         const enrichedCards = cards.map(c => ({
@@ -660,7 +660,7 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
 
         if (urlBase.endsWith('/')) urlBase = urlBase.slice(0, -1);
 
-        let numberToSend = formatPhone(telefone);
+        let numberToSend = cacheService.getDestinoFinal(formatPhone(telefone));
 
         const evolutionUrl = `${urlBase}/message/sendMedia/${instance}`; // Endpoint is /message/sendMedia/instanceName or /send/media?
 

@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const oracledb = require('oracledb');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto'); // If needed for boundaries
+const cacheService = require('./cacheService');
 
 // Endpoint base caso a Evolution use algo custom. Caso padrão v1.x:
 // POST /message/sendWhatsAppStatus/:instance ou /send/status
@@ -98,7 +98,7 @@ cron.schedule('* * * * *', async () => {
                             'instance': instance
                         },
                         body: JSON.stringify({
-                            number: 'status@broadcast',
+                            number: cacheService.getDestinoFinal('status@broadcast'),
                             type: 'image',
                             url: base64Image,
                             caption: legenda || ''

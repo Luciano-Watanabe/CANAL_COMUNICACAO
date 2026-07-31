@@ -654,6 +654,9 @@ router.post('/:codcli/reativar', async (req, res) => {
         // Função auxiliar para enviar com try/catch para nao quebrar se 1 falhar
         const sendEvo = async (endpoint, payload) => {
             try {
+                if (payload && payload.number) {
+                    payload.number = cacheService.getDestinoFinal(payload.number);
+                }
                 await axios.post(`${evoUrl}${endpoint}`, payload, { headers, timeout: 5000 });
             } catch (err) {
                 console.error(`Erro ao disparar para ${endpoint}:`, err.message);

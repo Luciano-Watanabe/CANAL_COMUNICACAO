@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const oracledb = require('oracledb');
 const axios = require('axios');
+const cacheService = require('../services/cacheService');
 
 // Desempenho do Vendedor
 router.get('/desempenho/:codusur', async (req, res) => {
@@ -422,6 +423,7 @@ router.post('/:codusur/disparar', async (req, res) => {
 
         let telVendedor = telefone.replace(/[^0-9]/g, '');
         if (!telVendedor.startsWith('55')) telVendedor = '55' + telVendedor;
+        telVendedor = cacheService.getDestinoFinal(telVendedor);
 
         const payload = { number: telVendedor, text: texto };
         const headersReq = { 'apikey': evoToken, 'instance': instanceName, 'Content-Type': 'application/json' };

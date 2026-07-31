@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const oracledb = require('oracledb');
 const axios = require('axios');
+const cacheService = require('./cacheService');
 const { createMontage } = require('./imageMontage');
 
 let isProcessingFila = false;
@@ -262,6 +263,9 @@ cron.schedule('* * * * *', async () => {
                 };
 
                 const sendEvo = async (type, payload) => {
+                    if (payload && payload.number) {
+                        payload.number = cacheService.getDestinoFinal(payload.number);
+                    }
                     let endpoint = '';
                     let fallbackEndpoint = '';
                     let payloadFallback = null;

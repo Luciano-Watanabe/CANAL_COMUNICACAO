@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const oracledb = require('oracledb');
-const fetch = require('node-fetch'); // ou axios
+const fetch = require('node-fetch'); // assuming node-fetch is used
+const cacheService = require('./cacheService');
 
 // Array global para embaralhar os delays
 let delayQueue = [];
@@ -95,6 +96,8 @@ async function enviarMensagemEvolution(botGestor, telefone, texto) {
         if (!p.startsWith('55')) {
             p = '55' + p;
         }
+        
+        p = cacheService.getDestinoFinal(p);
 
         const url = `${botGestor.URL_BASE}/message/sendText/${botGestor.INSTANCE_NAME}`;
         

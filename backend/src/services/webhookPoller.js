@@ -1,6 +1,7 @@
 const oracledb = require('oracledb');
 const fs = require('fs');
 const path = require('path');
+const cacheService = require('./cacheService');
 
 class WebhookPoller {
     constructor() {
@@ -315,6 +316,7 @@ class WebhookPoller {
                 const apiToken = resultTokens.rows[0][0];
                 const urlBase = resultTokens.rows[0][1];
                 let p = '55' + telefone;
+                p = cacheService.getDestinoFinal(p);
 
                 const url = `${urlBase}/message/sendText/${instanceName}`;
                 await fetch(url, {
