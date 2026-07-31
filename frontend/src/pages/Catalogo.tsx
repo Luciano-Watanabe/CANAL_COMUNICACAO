@@ -138,13 +138,14 @@ export default function Catalogo() {
         </div>
       ) : (
         <div className="catalog-print-container space-y-12 bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-sm print:shadow-none print:p-0">
-          <div className="hidden print:block text-center mb-8 border-b-2 border-slate-200 pb-6">
-            <div className="flex flex-col items-center justify-center gap-4">
-              <img src="/logo-ag.png" alt="Logo" className="h-20 object-contain" />
+          {/* ── Logo / Cabeçalho – aparece em tela e repete em todas as páginas no print ── */}
+          <div className="catalog-print-header text-center mb-8 border-b-2 border-slate-200 pb-6 print:mb-4 print:pb-3">
+            <div className="flex flex-col items-center justify-center gap-3">
+              <img src="/logo-ag.png" alt="Logo" className="h-16 object-contain print:h-12" />
               <div>
-                <h1 className="text-4xl font-bold text-slate-900">Catálogo de Produtos</h1>
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white print:text-2xl">Catálogo de Produtos</h1>
                 {codatvSelecionado && (
-                  <p className="text-lg text-slate-500 mt-2">
+                  <p className="text-base text-slate-500 mt-1">
                     Categoria: {atividades.find(a => String(a.codatv) === String(codatvSelecionado))?.ramo}
                   </p>
                 )}
@@ -153,15 +154,15 @@ export default function Catalogo() {
           </div>
 
           {Object.entries(produtosPorDepartamento).map(([dep, prods]) => (
-            <div key={dep} className="print:break-inside-avoid" style={{ breakInside: 'avoid' }}>
-              <h3 className="text-2xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-3">
+            <div key={dep} className="catalog-dept-group" style={{ breakInside: 'auto' }}>
+              <h3 className="text-2xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-3" style={{ breakAfter: 'avoid' }}>
                 <span className="w-2 h-8 bg-primary-500 rounded-full print:bg-slate-800"></span>
                 {dep}
               </h3>
               
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 print:grid-cols-5">
+              <div className="catalog-products-grid grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
                 {prods.map(p => (
-                  <div key={p.codprod} className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700/50 flex flex-col print:border-slate-300 print:bg-white print:break-inside-avoid" style={{ breakInside: 'avoid' }}>
+                  <div key={p.codprod} className="catalog-product-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700/50 flex flex-col print:border-slate-300 print:bg-white" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
                     <div className="aspect-square bg-white rounded-lg mb-4 flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-700 print:border-slate-200">
                       <img 
                         src={`/api/produtos/imagem/${p.codprod}`} 

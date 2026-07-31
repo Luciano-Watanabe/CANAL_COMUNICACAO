@@ -348,17 +348,27 @@ cron.schedule('* * * * *', async () => {
                 if (isCatalogoPdf) {
                     // ENVIAR PDF DE CATÁLOGO AO CLIENTE
                     const fs = require('fs');
+                    const path = require('path');
                     console.log(`[FILA CRON] Checando PDF Path: "${catalogoPdfPath}"`);
+                    
+                    // Tenta o path exato; se falhar e não tiver extensão, tenta com .pdf
+                    let resolvedPdfPath = catalogoPdfPath;
                     if (fs.existsSync(catalogoPdfPath)) {
                         console.log(`[FILA CRON] PDF encontrado! Lendo arquivo...`);
                         b64Pdf = fs.readFileSync(catalogoPdfPath, { encoding: 'base64' });
+                    } else if (!path.extname(catalogoPdfPath) && fs.existsSync(catalogoPdfPath + '.pdf')) {
+                        resolvedPdfPath = catalogoPdfPath + '.pdf';
+                        console.log(`[FILA CRON] PDF encontrado com extensão .pdf: "${resolvedPdfPath}". Lendo arquivo...`);
+                        b64Pdf = fs.readFileSync(resolvedPdfPath, { encoding: 'base64' });
                     } else {
-                        console.log(`[FILA CRON] PDF NÃO encontrado no caminho especificado!`);
+                        console.log(`[FILA CRON] PDF NÃO encontrado no caminho especificado (nem com extensão .pdf)!`);
                     }
 
                     // URL pública para V2 fallback: acessível pela Evolution API externamente
                     const backendPublicUrl = (process.env.BACKEND_PUBLIC_URL || 'http://backend:3001').replace(/\/$/, '');
-                    pdfPublicUrl = b64Pdf ? `${backendPublicUrl}/uploads/catalogos/${require('path').basename(catalogoPdfPath)}` : null;
+                    let pdfBasename = path.basename(resolvedPdfPath);
+                    if (!path.extname(pdfBasename)) pdfBasename += '.pdf'; // garante extensão na URL
+                    pdfPublicUrl = b64Pdf ? `${backendPublicUrl}/uploads/catalogos/${pdfBasename}` : null;
                     console.log(`[FILA CRON] URL pública do PDF: ${pdfPublicUrl}`);
 
                     if (b64Pdf) {

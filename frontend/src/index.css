@@ -63,30 +63,75 @@
 
 @media print {
   @page {
-    margin: 1cm;
+    margin: 2cm 1cm 1.5cm 1cm;
     size: A4 portrait;
   }
-  
+
   body {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
     background: white !important;
   }
-  
+
   /* Oculta tudo que não for o catálogo ao imprimir */
   body * {
     visibility: hidden;
   }
-  
-  .catalog-print-container, 
+
+  .catalog-print-container,
   .catalog-print-container * {
     visibility: visible;
   }
-  
+
   .catalog-print-container {
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
   }
+
+  /* ─── Cabeçalho com logo repetido em todas as páginas ──────────────── */
+  .catalog-print-header {
+    display: flex !important;
+    visibility: visible !important;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e2e8f0;
+    position: running(header);
+  }
+
+  @page {
+    @top-center {
+      content: element(header);
+    }
+  }
+
+  /* ─── Impede quebra dentro dos cards de produto ─────────────────────── */
+  .catalog-product-card {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    overflow: hidden;
+  }
+
+  /* ─── Impede quebra no título do departamento com o primeiro produto ── */
+  .catalog-dept-group {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .catalog-dept-group h3 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* ─── Grid de 4 colunas no A4 ───────────────────────────────────────── */
+  .catalog-products-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 12px !important;
+  }
 }
+
