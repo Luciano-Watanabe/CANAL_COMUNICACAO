@@ -121,14 +121,15 @@ router.get('/produtos', async (req, res) => {
                 NVL(PR.PVENDA, 0) AS PVENDA, 
                 PE.CODAUXILIAR AS EAN, 
                 PE.QTUNIT, 
-                PE.UNMEDIDA AS UNIDADE_EMB
+                PE.UNMEDIDA AS UNIDADE_EMB,
+                PE.TIPOEMBALAGEM
             FROM PCPRODUT P
             JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '1'
             LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
             LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
             ${joinClause}
             OUTER APPLY (
-                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA
+                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA, TIPOEMBALAGEM
                 FROM PCEMBALAGEM PE2
                 WHERE PE2.CODPROD = P.CODPROD
                 AND NVL(PE2.ENVIAFV, 'N') = 'S' 
@@ -144,16 +145,27 @@ router.get('/produtos', async (req, res) => {
 
         const result = await conn.execute(sql, binds);
 
-        const produtos = result.rows.map(row => ({
-            codprod: row[0],
-            descricao: row[1],
-            codepto: row[2],
-            departamento: row[3],
-            preco: row[4],
-            ean: row[5] || '',
-            qtunit: row[6] || 1,
-            unidade: row[7] || 'UN'
-        }));
+        const produtos = result.rows.map(row => {
+            const tipoEmbalagem = row[8];
+            let unidadeCalculada = row[7] || 'UN'; // default UNMEDIDA fallback
+            
+            if (tipoEmbalagem === 'P') {
+                unidadeCalculada = 'KG';
+            } else if (tipoEmbalagem === 'U') {
+                unidadeCalculada = 'UN';
+            }
+
+            return {
+                codprod: row[0],
+                descricao: row[1],
+                codepto: row[2],
+                departamento: row[3],
+                preco: row[4],
+                ean: row[5] || '',
+                qtunit: row[6] || 1,
+                unidade: unidadeCalculada
+            };
+        });
 
         res.json({ success: true, produtos });
     } catch (err) {
