@@ -111,9 +111,26 @@ cron.schedule('* * * * *', async () => {
                 const telVendedorRaw = detailsRes.rows[0][2];
                 const telVendedor = formatPhone(telVendedorRaw);
 
+                let textoBase = txtProdutos;
+                if (textoBase && typeof textoBase === 'object') {
+                    textoBase = '[Mensagem de Reativação]';
+                }
+                let campanhaSelecionada = null;
+                if (typeof textoBase === 'string') {
+                    const matchCampanha = textoBase.match(/^\[CAMPANHA:(.*?)\]/);
+                    if (matchCampanha) {
+                        campanhaSelecionada = matchCampanha[1];
+                        textoBase = textoBase.substring(matchCampanha[0].length);
+                    }
+                }
+
                 let base64Data = null;
                 let listaProdutos = '';
                 if (codatv1) {
+                    let campanhaFilter = '';
+                    if (campanhaSelecionada) {
+                        campanhaFilter = `AND UPPER(EMB.EMBALAGEM) LIKE UPPER('%' || :campanha || '%')`;
+                    }
                     const sqlMix = `
                         SELECT 
                             CG.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE, NVL(P.QTUNITCX, 1) AS QTUNITCX
@@ -132,6 +149,7 @@ cron.schedule('* * * * *', async () => {
                                   WHERE EMB.CODPROD = M.CODPROD 
                                     AND NVL(EMB.ENVIAFV, 'N') = 'S' 
                                     AND EMB.DTINATIVO IS NULL
+                                    ${campanhaFilter}
                               )
                             GROUP BY M.CODPROD
                             ORDER BY QTD_CLIENTES_COMPRARAM DESC
@@ -140,7 +158,9 @@ cron.schedule('* * * * *', async () => {
                         JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
                         LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
                     `;
-                    const mixRes = await connection.execute(sqlMix, { codatv1 });
+                    const bindsMix = { codatv1 };
+                    if (campanhaSelecionada) bindsMix.campanha = campanhaSelecionada;
+                    const mixRes = await connection.execute(sqlMix, bindsMix);
                     if (mixRes.rows.length > 0) {
                         const fs = require('fs');
                         const path = require('path');
@@ -187,11 +207,7 @@ cron.schedule('* * * * *', async () => {
                     }
                 }
 
-                let textoBase = txtProdutos;
-                if (textoBase && typeof textoBase === 'object') {
-                    // Fallback in case it's an unread LOB
-                    textoBase = '[Mensagem de Reativação]';
-                }
+                // textoBase foi extraido lá em cima, ignoramos o bloco que existia aqui
                 
                 console.log(`[FILA CRON] ID=${filaId} CODCLI=${codcli} textoBase=${String(textoBase).substring(0, 100)}`);
                 

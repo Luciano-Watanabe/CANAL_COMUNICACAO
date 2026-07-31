@@ -23,6 +23,7 @@ export default function Catalogo() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [loading, setLoading] = useState(true);
   const [codatvSelecionado, setCodatvSelecionado] = useState<string>('');
+  const [campanhaSelecionada, setCampanhaSelecionada] = useState<string>('');
   const [mostrarPrecos, setMostrarPrecos] = useState(true);
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,9 +53,11 @@ export default function Catalogo() {
 
   useEffect(() => {
     setLoading(true);
-    const url = codatvSelecionado 
-      ? `/api/catalogo/produtos?codatv1=${codatvSelecionado}` 
-      : `/api/catalogo/produtos`;
+    let url = `/api/catalogo/produtos`;
+    const params = new URLSearchParams();
+    if (codatvSelecionado) params.append('codatv1', codatvSelecionado);
+    if (campanhaSelecionada) params.append('campanha', campanhaSelecionada);
+    if (params.toString()) url += `?${params.toString()}`;
       
     fetch(url)
       .then(r => r.json())
@@ -63,7 +66,7 @@ export default function Catalogo() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [codatvSelecionado]);
+  }, [codatvSelecionado, campanhaSelecionada]);
 
   const produtosPorDepartamento = useMemo(() => {
     const agrupado: Record<string, Produto[]> = {};
@@ -103,6 +106,21 @@ export default function Catalogo() {
                   {a.ramo}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className="flex items-center bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2 shadow-sm">
+            <Filter size={18} className="text-slate-400 mr-2" />
+            <select
+              className="bg-transparent border-none text-sm text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer outline-none w-32"
+              value={campanhaSelecionada}
+              onChange={(e) => setCampanhaSelecionada(e.target.value)}
+            >
+              <option value="">Sem Campanha</option>
+              <option value="PROMOÇÃO">Promoções</option>
+              <option value="FIXO">FIXO</option>
+              <option value="BLACKFRIDAY">BLACKFRIDAY</option>
+              <option value="JORNAL">JORNAL</option>
             </select>
           </div>
 

@@ -23,7 +23,7 @@ export default function Reativacao() {
   // Templates e Configuração
   const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
-  const [clientConfigs, setClientConfigs] = useState<Record<string, { enviarPrecos: boolean; tipoMensagemId: number | null }>>({});
+  const [clientConfigs, setClientConfigs] = useState<Record<string, { enviarPrecos: boolean; tipoMensagemId: number | null; campanha: string }>>({});
 
   const [whatsappStatus, setWhatsappStatus] = useState<Record<string, 'loading'|'exists'|'missing'|'error'>>({});
 
@@ -63,11 +63,12 @@ export default function Reativacao() {
     if (clientConfigs[codcli]) return clientConfigs[codcli];
     return {
       enviarPrecos: true,
-      tipoMensagemId: templates.length > 0 ? templates[0].id : null
+      tipoMensagemId: templates.length > 0 ? templates[0].id : null,
+      campanha: ''
     };
   };
 
-  const handleClientConfigChange = (codcli: string, field: 'enviarPrecos' | 'tipoMensagemId', value: any) => {
+  const handleClientConfigChange = (codcli: string, field: 'enviarPrecos' | 'tipoMensagemId' | 'campanha', value: any) => {
     setClientConfigs(prev => ({
       ...prev,
       [codcli]: {
@@ -90,7 +91,8 @@ export default function Reativacao() {
         mensagemId: cConfig.tipoMensagemId,
         mensagemTipo: t ? t.tipo : 'Padrão',
         mensagemCustom: t ? t.template : '',
-        enviarPrecos: cConfig.enviarPrecos
+        enviarPrecos: cConfig.enviarPrecos,
+        campanha: cConfig.campanha
       }];
     });
   };
@@ -160,7 +162,8 @@ export default function Reativacao() {
         mensagemId: cConfig.tipoMensagemId,
         mensagemTipo: t ? t.tipo : 'Padrão',
         mensagemCustom: t ? t.template : '',
-        enviarPrecos: cConfig.enviarPrecos
+        enviarPrecos: cConfig.enviarPrecos,
+        campanha: cConfig.campanha
       }));
       setQueue(prev => [...prev, ...clientsToAdd]);
     }
@@ -411,13 +414,24 @@ export default function Reativacao() {
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-2">
                         <select
-                          className="bg-slate-800 border border-slate-700 text-white text-xs rounded-md px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 w-full max-w-[200px]"
+                          className="bg-slate-800 border border-slate-700 text-white text-xs rounded-md px-2 py-1 focus:outline-none focus:border-blue-500 w-full max-w-[200px]"
                           value={getClientConfig(c.codcli).tipoMensagemId || ''}
                           onChange={(e) => handleClientConfigChange(c.codcli, 'tipoMensagemId', Number(e.target.value))}
                         >
                           {templates.map(t => (
                             <option key={t.id} value={t.id}>{t.tipo}</option>
                           ))}
+                        </select>
+                        <select
+                          className="bg-slate-800 border border-slate-700 text-white text-xs rounded-md px-2 py-1 focus:outline-none focus:border-blue-500 w-full max-w-[200px]"
+                          value={getClientConfig(c.codcli).campanha || ''}
+                          onChange={(e) => handleClientConfigChange(c.codcli, 'campanha', e.target.value)}
+                        >
+                          <option value="">Sem Campanha de Produtos</option>
+                          <option value="PROMOÇÃO">Promoções</option>
+                          <option value="FIXO">FIXO</option>
+                          <option value="BLACKFRIDAY">BLACKFRIDAY</option>
+                          <option value="JORNAL">JORNAL</option>
                         </select>
                         <label className="flex items-center gap-2 text-xs text-gray-300">
                           <input 

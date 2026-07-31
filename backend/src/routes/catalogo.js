@@ -67,7 +67,7 @@ router.get('/atividades', async (req, res) => {
 
 // Buscar Produtos do Catálogo (Opcionalmente filtrado por Atividade)
 router.get('/produtos', async (req, res) => {
-    const { codatv1 } = req.query;
+    const { codatv1, campanha } = req.query;
     let conn;
     try {
         conn = await oracledb.getConnection({
@@ -98,6 +98,19 @@ router.get('/produtos', async (req, res) => {
             binds.codatv1 = codatv1;
         }
 
+        if (campanha && campanha.trim() !== '') {
+            whereClause += `
+                AND EXISTS (
+                    SELECT 1 FROM PCEMBALAGEM P_EMB 
+                    WHERE P_EMB.CODPROD = P.CODPROD 
+                      AND NVL(P_EMB.ENVIAFV, 'N') = 'S'
+                      AND P_EMB.DTINATIVO IS NULL
+                      AND UPPER(P_EMB.EMBALAGEM) LIKE UPPER('%' || :campanha || '%')
+                )
+            `;
+            binds.campanha = campanha.trim();
+        }
+
         const sql = `
             ${withClause}
             SELECT 
@@ -125,6 +138,7 @@ router.get('/produtos', async (req, res) => {
             ) PE
             WHERE NVL(P.OBS2, 'X') NOT IN ('FL')
             AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
+            ${whereClause}
             ORDER BY NVL(D.DESCRICAO, 'OUTROS'), P.DESCRICAO
         `;
 
