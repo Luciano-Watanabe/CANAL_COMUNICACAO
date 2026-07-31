@@ -431,6 +431,15 @@ router.get('/esquecidos', async (req, res) => {
                     ) CG
                     JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
                     LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                    OUTER APPLY (
+                        SELECT QTUNIT, NVL(FATORPRECO, 1) AS FATORPRECO, TIPOEMBALAGEM
+                        FROM PCEMBALAGEM PE2
+                        WHERE PE2.CODPROD = P.CODPROD
+                        AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                        AND PE2.DTINATIVO IS NULL
+                        ORDER BY PE2.QTUNIT DESC
+                        FETCH FIRST 1 ROWS ONLY
+                    ) PE
                 `;
                 let mixRes = await connection.execute(sqlMix, { codatv1 });
                 if (mixRes.rows.length === 0) {
