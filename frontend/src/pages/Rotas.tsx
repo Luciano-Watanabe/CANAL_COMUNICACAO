@@ -198,14 +198,24 @@ export default function Rotas() {
     }
   };
 
+  const getInteractionRank = (id: string) => {
+    const idx = INTERACOES.findIndex(i => i.id === id);
+    return idx >= 0 ? idx : 99;
+  };
+
   const handleSave = async () => {
     if (!selectedVendedor) return;
     setSaving(true);
     try {
-      // Extrair apenas os dados necessarios
+      // Extrair apenas os dados necessarios e forçar a ordem por tipo de interação
       const rotasPayload: Record<string, any[]> = {};
       DIAS_SEMANA.forEach(dia => {
-        rotasPayload[dia] = rotas[dia].map(c => ({
+        const ordenado = [...rotas[dia]].sort((a, b) => {
+           const oA = getInteractionRank(a.interacao || 'PRESENCIAL');
+           const oB = getInteractionRank(b.interacao || 'PRESENCIAL');
+           return oA - oB;
+        });
+        rotasPayload[dia] = ordenado.map(c => ({
           codcli: c.codcli || c.CODCLI,
           interacao: c.interacao || 'PRESENCIAL'
         }));
@@ -285,12 +295,21 @@ export default function Rotas() {
       alert('Nenhum cliente agendado neste dia para traçar a rota.');
       return;
     }
+    const presenciais = clientes.filter(c => (c.interacao || 'PRESENCIAL') === 'PRESENCIAL');
+    if (presenciais.length === 0) {
+      alert('Nenhum cliente presencial para traçar rota no mapa.');
+      return;
+    }
     setMapModalDia(dia);
   };
 
   const handleApplyRoute = (novaOrdem: any[]) => {
     if (mapModalDia) {
-      setRotas({ ...rotas, [mapModalDia]: novaOrdem });
+      const allClients = rotas[mapModalDia];
+      const nonPresenciais = allClients.filter(c => (c.interacao || 'PRESENCIAL') !== 'PRESENCIAL');
+      
+      const newRoute = [...novaOrdem, ...nonPresenciais];
+      setRotas({ ...rotas, [mapModalDia]: newRoute });
       setMapModalDia(null);
     }
   };
@@ -791,7 +810,7 @@ export default function Rotas() {
       <MapModal 
         isOpen={!!mapModalDia} 
         dia={mapModalDia || ''} 
-        clientes={mapModalDia ? rotas[mapModalDia] : []} 
+        clientes={mapModalDia ? rotas[mapModalDia].filter(c => (c.interacao || 'PRESENCIAL') === 'PRESENCIAL') : []} 
         vendedor={vendedorInfo}
         onClose={() => setMapModalDia(null)} 
         onApplyRoute={handleApplyRoute}
