@@ -178,9 +178,9 @@ export default function Catalogo() {
                 {dep}
               </h3>
               
-              <div className="catalog-products-grid grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+              <div className="catalog-products-grid grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 print:block print:columns-3 print:gap-4">
                 {prods.map(p => (
-                  <div key={p.codprod} className="catalog-product-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700/50 flex flex-col print:border-slate-300 print:bg-white" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+                  <div key={p.codprod} className="catalog-product-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700/50 flex flex-col print:border-slate-300 print:bg-white print:break-inside-avoid print:inline-block print:w-full print:mb-4" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
                     <div className="aspect-square bg-white rounded-lg mb-4 flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-700 print:border-slate-200">
                       <img 
                         src={`/api/produtos/imagem/${p.codprod}`} 
