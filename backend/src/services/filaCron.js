@@ -134,7 +134,7 @@ cron.schedule('* * * * *', async () => {
 
                 let base64Data = null;
                 let listaProdutos = '';
-                if (codatv1 && enviarPreco) {
+                if (codatv1) {
                     let campanhaFilter = '';
                     if (campanhaSelecionada) {
                         campanhaFilter = `AND UPPER(EMB.EMBALAGEM) LIKE UPPER('%' || :campanha || '%')`;
@@ -206,10 +206,12 @@ cron.schedule('* * * * *', async () => {
                         });
                         base64Data = await createMontage(cards);
 
-                        listaProdutos = '\n\n*Produtos sugeridos:*';
-                        cards.forEach(c => {
-                            listaProdutos += `\n- ${c.title}${c.text ? ` (${c.text})` : ''}`;
-                        });
+                        if (enviarPreco) {
+                            listaProdutos = '\n\n*Produtos sugeridos:*';
+                            cards.forEach(c => {
+                                listaProdutos += `\n- ${c.title}${c.text ? ` (${c.text})` : ''}`;
+                            });
+                        }
                     }
                 }
 

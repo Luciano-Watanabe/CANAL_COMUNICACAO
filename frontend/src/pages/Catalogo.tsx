@@ -157,14 +157,21 @@ export default function Catalogo() {
       ) : (
         <div className="catalog-print-container space-y-12 bg-white dark:bg-slate-900 rounded-2xl p-8 shadow-sm print:shadow-none print:p-0">
           {/* ── Logo / Cabeçalho – aparece em tela e repete em todas as páginas no print ── */}
-          <div className="catalog-print-header text-center mb-8 border-b-2 border-slate-200 pb-6 print:mb-4 print:pb-3">
-            <div className="flex flex-col items-center justify-center gap-3">
-              <img src="/logo-ag.png" alt="Logo" className="h-16 object-contain print:h-12" />
-              <div>
-                <h1 className="text-3xl font-bold text-slate-900 dark:text-white print:text-2xl">Catálogo de Produtos</h1>
+          <div className="catalog-print-header text-center mb-8 overflow-hidden rounded-t-2xl border-b-[8px] border-yellow-400 print:mb-4 print:rounded-none bg-red-600 print:bg-red-600 py-8 print:py-4 relative">
+            {/* Efeito de listras sutis no fundo (opcional, mas dá um ar de flyer) */}
+            <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white to-transparent"></div>
+            
+            <div className="flex flex-col items-center justify-center gap-3 relative z-10">
+              <div className="bg-white p-3 rounded-2xl shadow-lg border-2 border-white/50 print:p-2 print:shadow-none">
+                <img src="/logo-ag.png" alt="Logo" className="h-16 object-contain print:h-12" />
+              </div>
+              <div className="mt-2">
+                <h1 className="text-4xl font-black text-white print:text-2xl uppercase tracking-widest drop-shadow-md">
+                  Catálogo de Ofertas
+                </h1>
                 {codatvSelecionado && (
-                  <p className="text-base text-slate-500 mt-1">
-                    Ramo de Atividade: {atividades.find(a => String(a.codatv) === String(codatvSelecionado))?.ramo}
+                  <p className="text-xl font-bold text-yellow-300 mt-2 uppercase tracking-wider drop-shadow-sm print:text-sm">
+                    ► {atividades.find(a => String(a.codatv) === String(codatvSelecionado))?.ramo} ◄
                   </p>
                 )}
               </div>

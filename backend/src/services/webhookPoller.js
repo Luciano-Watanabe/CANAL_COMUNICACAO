@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const cacheService = require('./cacheService');
 
+const botReplyCache = new Map();
+
 class WebhookPoller {
     constructor() {
         this.interval = null;
@@ -171,6 +173,9 @@ class WebhookPoller {
             } else {
                 console.log(`[WebhookPoller] Cliente ${telefone} não encontrado na PCCLIENT. Mensagem arquivada.`);
             }
+            
+            await this.handleBotAutoReply(telefone, instanceName, conn);
+            
             return;
         }
 
@@ -181,62 +186,83 @@ class WebhookPoller {
         
         if (data.key.fromMe) return;
 
-        const remoteJid = data.key.remoteJid;
+        const fallbackRemoteJid = data.key.remoteJid;
         const pushName = data.pushName || 'Cliente';
-        const instanceName = payload.instance || 'padrao';
+        const fallbackInstanceName = payload.instance || 'padrao';
 
-        let textMessage = '';
-        let isAudio = false;
-        let audioBase64 = data.base64 || payload.base64 || (messageData && messageData.base64) || null;
-        let originalMessage = data;
+        let fallbackTextMessage = '';
+        let fallbackIsAudio = false;
+        let fallbackAudioBase64 = data.base64 || payload.base64 || (messageData && messageData.base64) || null;
+        let fallbackOriginalMessage = data;
 
         if (messageData.conversation) {
-            textMessage = messageData.conversation;
+            fallbackTextMessage = messageData.conversation;
         } else if (messageData.extendedTextMessage && messageData.extendedTextMessage.text) {
-            textMessage = messageData.extendedTextMessage.text;
+            fallbackTextMessage = messageData.extendedTextMessage.text;
         } else if (messageData.audioMessage) {
-            isAudio = true;
-            textMessage = `[AUDIO]${data.key.id}.ogg`;
+            fallbackIsAudio = true;
+            fallbackTextMessage = `[AUDIO]${data.key.id}.ogg`;
             console.log('AUDIO DETECTADO no FALLBACK!');
         } else {
-            textMessage = '[Mensagem não suportada / Mídia]';
+            fallbackTextMessage = '[Mensagem não suportada / Mídia]';
         }
 
-        if (!remoteJid) return;
-        const telefone = remoteJid.split('@')[0];
+        if (!fallbackRemoteJid) return;
+        const fallbackTelefone = fallbackRemoteJid.split('@')[0];
 
-        const codusur = await this.findCodusurPorTelefone(telefone, conn);
+        const fallbackCodusur = await this.findCodusurPorTelefone(fallbackTelefone, conn);
 
-        const msgObj = {
+        const fallbackMsgObj = {
             id: data.key.id,
-            chat_id: telefone,
+            chat_id: fallbackTelefone,
             sender: 'cliente',
-            text: textMessage,
+            text: fallbackTextMessage,
             timestamp: new Date().toISOString()
         };
 
         // --- Lógica de Retorno de Visitas ---
-        if (msgObj.text && msgObj.text.toLowerCase().startsWith('#retorno')) {
-            const handled = await this.processarRetornoVisita(telefone, msgObj.text, conn, require('../server').io, instanceName);
+        if (fallbackMsgObj.text && fallbackMsgObj.text.toLowerCase().startsWith('#retorno')) {
+            const handled = await this.processarRetornoVisita(fallbackTelefone, fallbackMsgObj.text, conn, require('../server').io, fallbackInstanceName);
             if (handled) return; // Se processou como retorno, não envia para o chat do cliente
         }
 
-        await this.saveMessage(msgObj, instanceName, conn, isAudio ? originalMessage : null, audioBase64);
+        await this.saveMessage(fallbackMsgObj, fallbackInstanceName, conn, fallbackIsAudio ? fallbackOriginalMessage : null, fallbackAudioBase64);
 
-        if (codusur) {
-            const roomName = `user_${codusur}`;
+        if (fallbackCodusur) {
+            const roomName = `user_${fallbackCodusur}`;
             try {
                 const axios = require('axios');
                 await axios.post('http://backend:3001/api/internal/emit', {
                     roomName,
                     eventName: 'nova_mensagem',
-                    payload: msgObj
+                    payload: fallbackMsgObj
                 });
             } catch (err) {
                 console.error('[WebhookPoller] Erro ao notificar backend via HTTP POST:', err.message);
             }
         } else {
-            console.log(`[WebhookPoller] Cliente ${telefone} não encontrado. Mensagem arquivada.`);
+            console.log(`[WebhookPoller] Cliente ${fallbackTelefone} não encontrado. Mensagem arquivada.`);
+        }
+        
+        await this.handleBotAutoReply(fallbackTelefone, fallbackInstanceName, conn);
+    }
+
+    async handleBotAutoReply(telefone, instanceName, conn) {
+        if (!instanceName) return;
+        const upperInstance = instanceName.toUpperCase();
+        
+        // Verifica se é a instância de envio (BOT_GESTOR ou contendo BOT)
+        if (upperInstance.includes('BOT_GESTOR') || upperInstance.includes('BOT')) {
+            const now = Date.now();
+            const lastReply = botReplyCache.get(telefone);
+            
+            // Só responde a cada 4 horas (14400000 ms) para não flodar o cliente se ele mandar várias mensagens
+            if (!lastReply || (now - lastReply > 14400000)) {
+                botReplyCache.set(telefone, now);
+                const botMessage = "🤖 *Mensagem Automática*\n\nOlá! Eu sou o assistente virtual (BOT).\nEste é um canal apenas para envios de catálogos e ofertas.\n\nPara tirar dúvidas ou realizar novos pedidos, por favor, *entre em contato diretamente com o seu vendedor.*";
+                await this.enviarMensagemBot(telefone, botMessage, conn, instanceName);
+                console.log(`[WebhookPoller] Auto-reply de BOT enviado para ${telefone}`);
+            }
         }
     }
 
