@@ -116,11 +116,18 @@ cron.schedule('* * * * *', async () => {
                     textoBase = '[Mensagem de Reativação]';
                 }
                 let campanhaSelecionada = null;
+                let enviarPreco = true;
                 if (typeof textoBase === 'string') {
                     const matchCampanha = textoBase.match(/^\[CAMPANHA:(.*?)\]/);
                     if (matchCampanha) {
                         campanhaSelecionada = matchCampanha[1];
                         textoBase = textoBase.substring(matchCampanha[0].length);
+                    }
+                    
+                    const matchSemPreco = textoBase.match(/^\[SEM_PRECO\]/);
+                    if (matchSemPreco) {
+                        enviarPreco = false;
+                        textoBase = textoBase.substring(matchSemPreco[0].length);
                     }
                 }
 
@@ -183,10 +190,12 @@ cron.schedule('* * * * *', async () => {
                             const qtunitcx = r[4] || 1;
                             
                             let precoStr = "";
-                            if (unidade === 'KG' && qtunitcx > 1) {
-                                precoStr = `Cx ${qtunitcx}KG: R$ ${(pvenda * qtunitcx).toFixed(2)}`;
-                            } else {
-                                precoStr = `R$ ${pvenda.toFixed(2)} / ${unidade}`;
+                            if (enviarPreco) {
+                                if (unidade === 'KG' && qtunitcx > 1) {
+                                    precoStr = `Cx ${qtunitcx}KG: R$ ${(pvenda * qtunitcx).toFixed(2)}`;
+                                } else {
+                                    precoStr = `R$ ${pvenda.toFixed(2)} / ${unidade}`;
+                                }
                             }
                             
                             const imgPath = getImagePath(codprod);
@@ -202,7 +211,7 @@ cron.schedule('* * * * *', async () => {
 
                         listaProdutos = '\n\n*Produtos sugeridos:*';
                         cards.forEach(c => {
-                            listaProdutos += `\n- ${c.title} (${c.text})`;
+                            listaProdutos += `\n- ${c.title}${c.text ? ` (${c.text})` : ''}`;
                         });
                     }
                 }

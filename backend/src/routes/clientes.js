@@ -731,7 +731,7 @@ router.post('/reativacao/fila', async (req, res) => {
             codcli: c.codcli,
             telefone: c.telefone || c.contato || '',
             codusur: codusur || c.vendedor_codusur || 9999, // default
-            mensagem: (c.campanha ? `[CAMPANHA:${c.campanha}]` : '') + (c.mensagem || c.mensagemCustom || ''),
+            mensagem: (c.campanha ? `[CAMPANHA:${c.campanha}]` : '') + (c.enviarPrecos === false ? `[SEM_PRECO]` : '') + (c.mensagem || c.mensagemCustom || ''),
             codatv1: c.codatv1 || null
         }));
 
