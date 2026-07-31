@@ -408,7 +408,7 @@ router.get('/esquecidos', async (req, res) => {
             const produtosPorRamo = {};
             for (const codatv1 of uniqueRamos) {
                 const sqlMix = `
-                    SELECT P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE
+                    SELECT P.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE, PE.QTUNIT AS EMB_QTUNIT, PE.FATORPRECO AS EMB_FATORPRECO, PE.TIPOEMBALAGEM AS EMB_TIPO
                     FROM (
                         SELECT M.CODPROD, SUM(M.QT) AS QTD, COUNT(DISTINCT M.CODCLI) AS CLI_QTD
                         FROM PCMOV M
@@ -435,7 +435,7 @@ router.get('/esquecidos', async (req, res) => {
                 let mixRes = await connection.execute(sqlMix, { codatv1 });
                 if (mixRes.rows.length === 0) {
                     const sqlMixFallback = `
-                        SELECT P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE
+                        SELECT P.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE, PE.QTUNIT AS EMB_QTUNIT, PE.FATORPRECO AS EMB_FATORPRECO, PE.TIPOEMBALAGEM AS EMB_TIPO
                         FROM PCPRODUT P
                         JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
                         WHERE EXISTS (
@@ -449,11 +449,32 @@ router.get('/esquecidos', async (req, res) => {
                             AND NVL(EMB.ENVIAFV, 'N') = 'S' 
                             AND EMB.DTINATIVO IS NULL
                         )
+                        OUTER APPLY (
+                            SELECT QTUNIT, NVL(FATORPRECO, 1) AS FATORPRECO, TIPOEMBALAGEM
+                            FROM PCEMBALAGEM PE2
+                            WHERE PE2.CODPROD = P.CODPROD
+                            AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                            AND PE2.DTINATIVO IS NULL
+                            ORDER BY PE2.QTUNIT DESC
+                            FETCH FIRST 1 ROWS ONLY
+                        ) PE
                         FETCH FIRST 10 ROWS ONLY
                     `;
                     mixRes = await connection.execute(sqlMixFallback);
                 }
-                produtosPorRamo[codatv1] = mixRes.rows.map(r => `✅ ${r[0]} - R$ ${r[1].toFixed(2)} / ${r[2] || 'UN'}`).join('\n');
+                produtosPorRamo[codatv1] = mixRes.rows.map(r => {
+                    const pvenda = r[2];
+                    const emb_qtunit = Number(r[4]) || 1;
+                    const emb_fatopreco = Number(r[5]) || 1;
+                    const emb_tipo = r[6];
+                    let precoStr = "";
+                    if (emb_tipo === 'P') {
+                        precoStr = `R$ ${((pvenda / emb_qtunit) * emb_fatopreco).toFixed(2)} / KG`;
+                    } else {
+                        precoStr = `R$ ${(pvenda / emb_qtunit).toFixed(2)} / UN`;
+                    }
+                    return `✅ ${r[1]} - ${precoStr}`;
+                }).join('\n');
             }
             
             esquecidos.forEach(c => {
@@ -572,7 +593,7 @@ router.post('/:codcli/reativar', async (req, res) => {
         if (codatv1) {
             const sqlMix = `
                 SELECT 
-                    CG.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE
+                    CG.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE, PE.QTUNIT AS EMB_QTUNIT, PE.FATORPRECO AS EMB_FATORPRECO, PE.TIPOEMBALAGEM AS EMB_TIPO
                 FROM (
                     SELECT M.CODPROD, SUM(M.QT) AS QTD_TOTAL, COUNT(DISTINCT M.CODCLI) AS QTD_CLIENTES_COMPRARAM
                     FROM PCMOV M
@@ -595,11 +616,20 @@ router.post('/:codcli/reativar', async (req, res) => {
                 ) CG
                 JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
                 LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                OUTER APPLY (
+                    SELECT QTUNIT, NVL(FATORPRECO, 1) AS FATORPRECO, TIPOEMBALAGEM
+                    FROM PCEMBALAGEM PE2
+                    WHERE PE2.CODPROD = P.CODPROD
+                    AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                    AND PE2.DTINATIVO IS NULL
+                    ORDER BY PE2.QTUNIT DESC
+                    FETCH FIRST 1 ROWS ONLY
+                ) PE
             `;
             let mixRes = await connection.execute(sqlMix, { codatv1 });
             if (mixRes.rows.length === 0) {
                 const sqlMixFallback = `
-                    SELECT P.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE
+                    SELECT P.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE, PE.QTUNIT AS EMB_QTUNIT, PE.FATORPRECO AS EMB_FATORPRECO, PE.TIPOEMBALAGEM AS EMB_TIPO
                     FROM PCPRODUT P
                     JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
                     WHERE EXISTS (
@@ -613,19 +643,42 @@ router.post('/:codcli/reativar', async (req, res) => {
                         AND NVL(EMB.ENVIAFV, 'N') = 'S' 
                         AND EMB.DTINATIVO IS NULL
                     )
+                    OUTER APPLY (
+                        SELECT QTUNIT, NVL(FATORPRECO, 1) AS FATORPRECO, TIPOEMBALAGEM
+                        FROM PCEMBALAGEM PE2
+                        WHERE PE2.CODPROD = P.CODPROD
+                        AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                        AND PE2.DTINATIVO IS NULL
+                        ORDER BY PE2.QTUNIT DESC
+                        FETCH FIRST 1 ROWS ONLY
+                    ) PE
                     FETCH FIRST 10 ROWS ONLY
                 `;
                 mixRes = await connection.execute(sqlMixFallback);
             }
             if (mixRes.rows.length > 0) {
-                const cards = mixRes.rows.map(r => ({
-                    codprod: r[0],
-                    title: r[1],
-                    text: `1x - R$ ${r[2].toFixed(2)} / ${r[3] || 'UN'}`,
-                    imagePath: getImagePath(r[0])
+                const processedCards = mixRes.rows.map(r => {
+                    const pvenda = r[2];
+                    const emb_qtunit = Number(r[4]) || 1;
+                    const emb_fatopreco = Number(r[5]) || 1;
+                    const emb_tipo = r[6];
+                    let precoStr = "";
+                    if (emb_tipo === 'P') {
+                        precoStr = `R$ ${((pvenda / emb_qtunit) * emb_fatopreco).toFixed(2)} / KG`;
+                    } else {
+                        precoStr = `R$ ${(pvenda / emb_qtunit).toFixed(2)} / UN`;
+                    }
+                    return { codprod: r[0], title: r[1], text: `1x - ${precoStr}`, precoStr };
+                });
+                
+                const cards = processedCards.map(c => ({
+                    codprod: c.codprod,
+                    title: c.title,
+                    text: c.text,
+                    imagePath: getImagePath(c.codprod)
                 }));
                 base64Data = await createMontage(cards);
-                txtProdutos = mixRes.rows.map(r => `✅ ${r[1]} - R$ ${r[2].toFixed(2)} / ${r[3] || 'UN'}`).join('\n');
+                txtProdutos = processedCards.map(c => `✅ ${c.title} - ${c.precoStr}`).join('\n');
             }
         }
 

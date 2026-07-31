@@ -140,7 +140,8 @@ cron.schedule('* * * * *', async () => {
                     }
                     const sqlMix = `
                         SELECT 
-                            CG.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE, NVL(P.QTUNITCX, 1) AS QTUNITCX
+                            CG.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE, NVL(P.QTUNITCX, 1) AS QTUNITCX,
+                            PE.QTUNIT AS EMB_QTUNIT, PE.FATORPRECO AS EMB_FATORPRECO, PE.TIPOEMBALAGEM AS EMB_TIPO
                         FROM (
                             SELECT M.CODPROD, SUM(M.QT) AS QTD_TOTAL, COUNT(DISTINCT M.CODCLI) AS QTD_CLIENTES_COMPRARAM
                             FROM PCMOV M
@@ -164,6 +165,15 @@ cron.schedule('* * * * *', async () => {
                         ) CG
                         JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
                         LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                        OUTER APPLY (
+                            SELECT QTUNIT, NVL(FATORPRECO, 1) AS FATORPRECO, TIPOEMBALAGEM
+                            FROM PCEMBALAGEM PE2
+                            WHERE PE2.CODPROD = P.CODPROD
+                            AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                            AND PE2.DTINATIVO IS NULL
+                            ORDER BY PE2.QTUNIT DESC
+                            FETCH FIRST 1 ROWS ONLY
+                        ) PE
                     `;
                     const bindsMix = { codatv1 };
                     if (campanhaSelecionada) bindsMix.campanha = campanhaSelecionada;
@@ -188,10 +198,19 @@ cron.schedule('* * * * *', async () => {
                             const pvenda = r[2];
                             const unidade = r[3] || 'UN';
                             const qtunitcx = r[4] || 1;
+                            const emb_qtunit = Number(r[5]) || 1;
+                            const emb_fatopreco = Number(r[6]) || 1;
+                            const emb_tipo = r[7];
                             
                             let precoStr = "";
                             if (enviarPreco) {
-                                precoStr = `R$ ${pvenda.toFixed(2)} / ${unidade}`;
+                                if (emb_tipo === 'P') {
+                                    const precoKg = (pvenda / emb_qtunit) * emb_fatopreco;
+                                    precoStr = `R$ ${precoKg.toFixed(2)} / KG`;
+                                } else {
+                                    const precoUn = pvenda / emb_qtunit;
+                                    precoStr = `R$ ${precoUn.toFixed(2)} / UN`;
+                                }
                             }
                             
                             const imgPath = getImagePath(codprod);
