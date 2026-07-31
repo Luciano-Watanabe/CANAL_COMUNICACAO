@@ -431,15 +431,8 @@ export default function Chat() {
         let pAtual = Number(prod.preco);
         if (perc !== 0) pAtual = pAtual * (1 + (perc / 100));
 
-        let text = `1x`; // Sempre enviamos qt=1 no carrinho por padrao ao sugerir
-        if (prod.qtunit && prod.fatopreco) {
-          const rawKg = (pAtual / Number(prod.qtunit)) * Number(prod.fatopreco);
-          const precoKg = (Math.round(rawKg * 100) / 100).toFixed(2).replace('.', ',');
-          const uni = prod.tipoembalagem === 'P' ? 'kg' : 'un';
-          text += ` - R$ ${precoKg}/${uni}`;
-        } else {
-          text += ` - R$ ${pAtual.toFixed(2).replace('.', ',')} un`;
-        }
+        const uni = prod.tipoembalagem === 'P' ? 'kg' : 'un';
+        let text = `1x - R$ ${pAtual.toFixed(2).replace('.', ',')}/${uni}`;
         
         cards.push({
             codprod: prod.codprod,
@@ -1486,11 +1479,7 @@ export default function Chat() {
                             <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm flex items-center gap-1">
                               <Tag size={12} /> R$ {Number(prod.preco).toFixed(2).replace('.', ',')}
                             </span>
-                            {prod.qtunit && prod.fatopreco && (
-                              <span className="text-slate-500 text-xs font-mono">
-                                R$ {((Number(prod.preco) / Number(prod.qtunit)) * Number(prod.fatopreco)).toFixed(2).replace('.', ',')}/{prod.tipoembalagem === 'P' ? 'kg' : 'un'}
-                              </span>
-                            )}
+                            {/* Multiplication logic removed for lowest fractional price display */}
                           </div>
                           <div className="flex justify-between items-center text-xs text-slate-500 mt-2">
                             <span>Emb: {prod.qtunit} {prod.unidade}</span>

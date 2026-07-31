@@ -149,12 +149,8 @@ export const CartPanel = ({ codcli, telefone }: { codcli: string, telefone?: str
                             let emb = `${sug.qtunit} ${sug.unidade || ''}`.trimEnd();
                             textoMsg += `\nEmbalagem: ${emb}`;
                           }
-                          if (sug.qtunit && sug.fatopreco) {
-                            const rawKg = (Number(sug.preco) / Number(sug.qtunit)) * Number(sug.fatopreco);
-                            const precoKg = (Math.round(rawKg * 100) / 100).toFixed(2).replace('.', ',');
-                            const uni = sug.tipoembalagem === 'P' ? 'kg' : 'un';
-                            textoMsg += `\nR$ ${precoKg}/${uni}`;
-                          }
+                          const uni = sug.tipoembalagem === 'P' ? 'kg' : 'un';
+                          textoMsg += `\nR$ ${Number(sug.preco).toFixed(2).replace('.', ',')}/${uni}`;
                           textoMsg += `\nValor Total: R$ ${Number(sug.preco).toFixed(2).replace('.', ',')}`;
 
                           fetch('/api/chat/send', {
