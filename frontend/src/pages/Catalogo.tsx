@@ -146,7 +146,7 @@ export default function Catalogo() {
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white print:text-2xl">Catálogo de Produtos</h1>
                 {codatvSelecionado && (
                   <p className="text-base text-slate-500 mt-1">
-                    Categoria: {atividades.find(a => String(a.codatv) === String(codatvSelecionado))?.ramo}
+                    Ramo de Atividade: {atividades.find(a => String(a.codatv) === String(codatvSelecionado))?.ramo}
                   </p>
                 )}
               </div>
