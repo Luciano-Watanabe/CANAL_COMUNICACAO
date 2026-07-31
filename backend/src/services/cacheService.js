@@ -5,6 +5,7 @@ class CacheService {
         this.clientes = [];
         this.vendedores = [];
         this.hierarchyMap = {}; // { codusur_vendedor: { supervisor: codusur_sup, gerente: codusur_ger } }
+        this.globalConfigs = {};
         this.isLoaded = false;
         this.interval = null;
     }
@@ -247,6 +248,19 @@ class CacheService {
                 console.error(`[CACHE] Erro ao carregar MIX Geral:`, e.message);
             }
 
+            // 6. Load Configurações Globais
+            console.log('[CACHE] Carregando Configurações Globais...');
+            try {
+                const configRes = await conn.execute(`SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES`);
+                const configs = {};
+                configRes.rows.forEach(row => {
+                    configs[row[0]] = row[1];
+                });
+                this.globalConfigs = configs;
+            } catch (e) {
+                console.error(`[CACHE] Erro ao carregar Configurações Globais:`, e.message);
+            }
+
             this.isLoaded = true;
             console.log(`[CACHE] Sucesso: ${this.vendedores.length} vendedores e ${this.clientes.length} clientes carregados na memória.`);
 
@@ -279,12 +293,33 @@ class CacheService {
         return this.hierarchyMap[vendedorCodusur] || { supervisor: null, gerente: null };
     }
 
+    updateVendedorCache(codusur, telefone) {
+        const vendedor = this.vendedores.find(v => v.CODUSUR === String(codusur));
+        if (vendedor) {
+            vendedor.TELEFONE1 = telefone;
+            vendedor.TELEFONE2 = null;
+        }
+    }
+
     getMixAtividade(codatv1) {
         return this.mixAtividadeCache[codatv1] || [];
     }
 
     getMixGeral() {
         return this.mixGeralCache || [];
+    }
+
+    updateConfigCache(chave, valor) {
+        this.globalConfigs[chave] = valor;
+    }
+
+    getDestinoFinal(telefoneOriginal) {
+        const testMode = this.globalConfigs['MODO_TESTE_GESTOR'];
+        const testNumber = this.globalConfigs['NUMERO_TESTE_GESTOR'];
+        if (testMode === 'S' && testNumber) {
+            return testNumber;
+        }
+        return telefoneOriginal;
     }
 }
 

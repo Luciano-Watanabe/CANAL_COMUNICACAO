@@ -29,7 +29,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     { name: 'Catálogo', path: '/catalogo', icon: BookOpen },
   ];
 
-  if (userRole === 'GERENTE') {
+  if (userRole === 'GERENTE' || userRole === 'BOT_GESTOR') {
     links.push({ name: 'Configurações', path: '/configuracoes', icon: Settings });
   }
   

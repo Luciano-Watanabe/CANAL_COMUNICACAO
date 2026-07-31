@@ -16,9 +16,14 @@ export default function Configuracoes() {
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
   const isGerente = user?.role?.toUpperCase() === 'GERENTE';
+  const isBotGestor = user?.role?.toUpperCase() === 'BOT_GESTOR';
+  const hasAccess = isGerente || isBotGestor;
+
+  const [modoTeste, setModoTeste] = useState(false);
+  const [numeroTeste, setNumeroTeste] = useState('');
 
   useEffect(() => {
-    if (!isGerente) return;
+    if (!hasAccess) return;
 
     const fetchData = async () => {
       try {
@@ -36,6 +41,12 @@ export default function Configuracoes() {
           }
           if (dataGlob.configs['GROQ_API_KEY']) {
             setGroqApiKey(dataGlob.configs['GROQ_API_KEY']);
+          }
+          if (dataGlob.configs['MODO_TESTE_GESTOR']) {
+            setModoTeste(dataGlob.configs['MODO_TESTE_GESTOR'] === 'S');
+          }
+          if (dataGlob.configs['NUMERO_TESTE_GESTOR']) {
+            setNumeroTeste(dataGlob.configs['NUMERO_TESTE_GESTOR']);
           }
         }
       } catch (err) {
@@ -55,7 +66,12 @@ export default function Configuracoes() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          configs: { EVOLUTION_API_URL: globalUrl, GROQ_API_KEY: groqApiKey }
+          configs: { 
+            EVOLUTION_API_URL: globalUrl, 
+            GROQ_API_KEY: groqApiKey,
+            MODO_TESTE_GESTOR: modoTeste ? 'S' : 'N',
+            NUMERO_TESTE_GESTOR: numeroTeste
+          }
         })
       });
       const data = await response.json();
@@ -105,12 +121,12 @@ export default function Configuracoes() {
     }
   };
 
-  if (!isGerente) {
+  if (!hasAccess) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-10 text-center animate-fade-in">
         <ShieldAlert size={64} className="text-rose-500/50 mb-4" />
         <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-2">Acesso Restrito</h2>
-        <p className="text-slate-500 max-w-md">Esta página é exclusiva para Gerentes. Você não tem permissão para visualizar as configurações do sistema.</p>
+        <p className="text-slate-500 max-w-md">Esta página é exclusiva para Gerentes ou Bot Gestor. Você não tem permissão para visualizar as configurações do sistema.</p>
       </div>
     );
   }
@@ -144,6 +160,40 @@ export default function Configuracoes() {
           />
         </button>
       </div>
+
+      {isBotGestor && (
+        <div className="glass-card p-6 mb-6 flex flex-col md:flex-row gap-4 items-center bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50">
+          <div className="flex-1">
+            <h3 className="font-bold text-amber-800 dark:text-amber-400 flex items-center gap-2">
+              <ShieldAlert size={20} /> Modo Teste do Sistema (Exclusivo Bot Gestor)
+            </h3>
+            <p className="text-sm text-amber-700/80 dark:text-amber-500/80 mt-1 mb-3">
+              Se marcado, <b>TODAS</b> as mensagens enviadas pela aplicação (clientes ou vendedores) serão direcionadas apenas para o número informado abaixo.
+            </p>
+            <input 
+              type="text" 
+              value={numeroTeste}
+              onChange={(e) => setNumeroTeste(e.target.value)}
+              placeholder="Ex: 5511999999999"
+              className="w-full md:w-64 bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-amber-300 dark:border-amber-600 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-amber-500"
+            />
+          </div>
+          <button
+            onClick={() => setModoTeste(!modoTeste)}
+            className={clsx(
+              "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2",
+              modoTeste ? "bg-amber-600" : "bg-slate-300 dark:bg-slate-600"
+            )}
+          >
+            <span
+              className={clsx(
+                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                modoTeste ? "translate-x-6" : "translate-x-1"
+              )}
+            />
+          </button>
+        </div>
+      )}
 
       <div className="glass-card p-6 flex flex-col md:flex-row gap-4 items-end bg-primary-50 dark:bg-slate-800/50 border border-primary-100 dark:border-slate-700">
         <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-4">

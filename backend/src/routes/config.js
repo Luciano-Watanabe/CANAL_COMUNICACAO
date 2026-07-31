@@ -1,6 +1,7 @@
 const express = require('express');
 const oracledb = require('oracledb');
 const router = express.Router();
+const cacheService = require('../services/cacheService');
 
 try {
     oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
@@ -109,6 +110,8 @@ router.post('/global', async (req, res) => {
             `;
             await connection.execute(sql, { chave, valor: valor || '' }, { autoCommit: true });
             
+            cacheService.updateConfigCache(chave, valor || '');
+
             if (chave === 'PRIVACY_MODE' && global.io) {
                 global.io.emit('privacy_mode_changed', { mode: valor === 'S' });
             }

@@ -74,6 +74,9 @@ router.put('/:codusur', async (req, res) => {
             return res.status(404).json({ success: false, message: 'Vendedor não encontrado' });
         }
 
+        // Atualiza a memória cache para evitar dessincronização
+        cacheService.updateVendedorCache(codusur, telefone);
+
         res.json({ success: true, message: 'Telefone atualizado com sucesso' });
     } catch (err) {
         console.error('Erro ao atualizar vendedor:', err);
