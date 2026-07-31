@@ -191,11 +191,7 @@ cron.schedule('* * * * *', async () => {
                             
                             let precoStr = "";
                             if (enviarPreco) {
-                                if (unidade === 'KG' && qtunitcx > 1) {
-                                    precoStr = `Cx ${qtunitcx}KG: R$ ${(pvenda * qtunitcx).toFixed(2)}`;
-                                } else {
-                                    precoStr = `R$ ${pvenda.toFixed(2)} / ${unidade}`;
-                                }
+                                precoStr = `R$ ${pvenda.toFixed(2)} / ${unidade}`;
                             }
                             
                             const imgPath = getImagePath(codprod);
