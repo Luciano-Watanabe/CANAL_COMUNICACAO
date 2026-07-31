@@ -7,11 +7,17 @@ try {
 }
 const initializeOracleDatabase = require('./scripts/init_oracle');
 const WebhookPoller = require('./services/webhookPoller');
+const cacheService = require('./services/cacheService');
 
 console.log('[WORKER] Inicializando processos em background...');
 
-initializeOracleDatabase().then(() => {
+initializeOracleDatabase().then(async () => {
     console.log('[WORKER] Banco inicializado. Carregando Crons e Poller...');
+    
+    // Inicializa o cache para que os crons tenham acesso as configs globais
+    await cacheService.loadAll();
+    cacheService.startAutoRefresh();
+
     
     // Carrega os crons
     require('./services/statusCron');

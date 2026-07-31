@@ -168,22 +168,71 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgProps = pdf.getImageProperties(dataUrl);
-      const totalHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-      let heightLeft = totalHeight;
-      let position = 0;
-
-      // Add a small margin top for the first page? No, standard is 0, we can add 10mm
       const margin = 10;
-      pdf.addImage(dataUrl, 'JPEG', margin, margin, pdfWidth - (margin*2), totalHeight - (margin*2));
-      heightLeft -= pageHeight;
+      const effectiveWidth = pdfWidth - (margin * 2);
+      const effectivePageHeight = pageHeight - (margin * 2);
 
-      while (heightLeft > 0) {
-        position = heightLeft - totalHeight; 
-        pdf.addPage();
-        pdf.addImage(dataUrl, 'JPEG', margin, position + margin, pdfWidth - (margin*2), totalHeight - (margin*2));
-        heightLeft -= pageHeight;
+      const elementWidth = element.offsetWidth;
+      const elementHeight = element.offsetHeight;
+      const pageHeightPx = (elementWidth * effectivePageHeight) / effectiveWidth;
+
+      // Encontrar todos os itens que não podem ser cortados
+      const items = Array.from(element.querySelectorAll('.catalog-product-card, .catalog-dept-group h3, .catalog-print-header'));
+      const itemBounds = items.map(item => {
+        const rect = item.getBoundingClientRect();
+        const containerRect = element.getBoundingClientRect();
+        return {
+          top: rect.top - containerRect.top,
+          bottom: rect.bottom - containerRect.top
+        };
+      });
+
+      const totalHeightPx = elementHeight;
+      let currentYPx = 0;
+
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const imgTotalHeightMm = (imgProps.height * effectiveWidth) / imgProps.width;
+
+      let isFirstPage = true;
+
+      while (currentYPx < totalHeightPx) {
+        if (!isFirstPage) {
+          pdf.addPage();
+        }
+        isFirstPage = false;
+
+        let proposedBreakPx = currentYPx + pageHeightPx;
+        let actualBreakPx = proposedBreakPx;
+
+        if (proposedBreakPx < totalHeightPx) {
+          // Verifica se algum item crítico está sendo cortado
+          const cutItem = itemBounds.find(b => b.top < proposedBreakPx && b.bottom > proposedBreakPx);
+          if (cutItem) {
+            actualBreakPx = cutItem.top; // Recua a quebra para o topo do item
+            // Fallback: se o item for maior que a página toda, força a quebra para não causar loop infinito
+            if (actualBreakPx <= currentYPx) {
+              actualBreakPx = proposedBreakPx; 
+            }
+          }
+        } else {
+          actualBreakPx = totalHeightPx;
+        }
+
+        const currentYMm = (currentYPx * effectiveWidth) / elementWidth;
+        const actualPageHeightMm = ((actualBreakPx - currentYPx) * effectiveWidth) / elementWidth;
+
+        pdf.addImage(dataUrl, 'JPEG', margin, margin - currentYMm, effectiveWidth, imgTotalHeightMm);
+
+        pdf.setFillColor(255, 255, 255);
+        // Oculta a margem superior
+        pdf.rect(0, 0, pdfWidth, margin, 'F');
+
+        if (actualBreakPx < totalHeightPx) {
+          // Oculta a parte de baixo (restante da página abaixo do corte real)
+          pdf.rect(0, margin + actualPageHeightMm, pdfWidth, pageHeight - (margin + actualPageHeightMm), 'F');
+        }
+
+        currentYPx = actualBreakPx;
       }
 
       const pdfBlob = pdf.output('blob');

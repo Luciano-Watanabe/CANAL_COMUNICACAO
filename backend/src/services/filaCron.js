@@ -94,7 +94,7 @@ cron.schedule('* * * * *', async () => {
                     'Content-Type': 'application/json'
                 };
 
-                const telCliente = formatPhone(telClienteRaw);
+                const telCliente = cacheService.getDestinoFinal(formatPhone(telClienteRaw));
 
                 const detailsRes = await connection.execute(`
                     SELECT NVL(C.FANTASIA, C.CLIENTE), U.NOME, NVL(U.TELEFONE1, U.TELEFONE2)
@@ -110,7 +110,7 @@ cron.schedule('* * * * *', async () => {
                 const nomeCliente = detailsRes.rows[0][0];
                 const nomeVendedor = detailsRes.rows[0][1];
                 const telVendedorRaw = detailsRes.rows[0][2];
-                const telVendedor = formatPhone(telVendedorRaw);
+                const telVendedor = cacheService.getDestinoFinal(formatPhone(telVendedorRaw));
 
                 let textoBase = txtProdutos;
                 if (textoBase && typeof textoBase === 'object') {
@@ -244,7 +244,7 @@ cron.schedule('* * * * *', async () => {
                 };
                 const msgClienteVcard = {
                     number: telCliente,
-                    contactName: nomeVendedor,
+                    contactName: instanceName,
                     contactNumber: telVendedor
                 };
                 const horaAtual = new Date().getHours();

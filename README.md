@@ -23,6 +23,7 @@ Alguns cenários clássicos que você pode enfrentar (e como resolver):
     `docker compose build --no-cache frontend` seguido de `docker compose up -d --force-recreate frontend`.
 *   **Erro de Banco Oracle NJS-116:** Ocorre porque o ERP usa *Password Verifiers* legados. A solução já está implementada: O backend ativa o *Thick Mode* (`oracledb.initOracleClient`). Certifique-se de não remover a instalação do Oracle Instant Client no Dockerfile do worker/backend.
 *   **Erros ORA-00001 (Restrição Exclusiva) nos Crons:** Tratado usando `MERGE INTO` (Upsert) nos processos automatizados em vez de `INSERT`, evitando duplicidades em caso de concorrência.
+*   **Mensagens sendo enviadas para apenas um número (ignorando cadastros):** Isso ocorre quando a flag `MODO_TESTE_GESTOR` está ativada no banco de dados. Para desativar, certifique-se de definir a chave `MODO_TESTE_GESTOR` como `N` na tabela `CANAL_CONFIGURACOES` (ou na tela de configurações) e reinicie os containers com `docker compose restart backend worker` para atualizar o cache em memória.
 
 ---
 
