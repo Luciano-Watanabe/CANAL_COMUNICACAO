@@ -10,10 +10,8 @@ let isProcessingFila = false;
 cron.schedule('* * * * *', async () => {
     if (isProcessingFila) return;
 
-    const currentHour = new Date().getHours();
-    // Horário comercial das 8h às 18h (8:00 até 17:59)
-    if (currentHour < 8 || currentHour >= 18) {
-        return; // Fora do horário, não processa a fila
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return; // Fora do horário configurado, não processa a fila
     }
 
     isProcessingFila = true;

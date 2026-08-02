@@ -59,6 +59,9 @@ async function enviarMensagemEvolution(botGestor, telefone, texto) {
 
 // Roda a cada 5 minutos
 cron.schedule('*/5 * * * *', async () => {
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return;
+    }
     console.log('[VISITAS CRON] Verificando visitas agendadas para sinalizar os vendedores...');
     
     let connection;

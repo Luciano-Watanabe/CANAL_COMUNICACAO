@@ -151,7 +151,10 @@ router.get('/chart', async (req, res) => {
 
 // Enviar nova mensagem para a Evolution API
 router.post('/send', async (req, res) => {
-    const { codusur, telefone, texto } = req.body;
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+    }
+    const { codusur, telefone, texto, messageId } = req.body;
 
     if (!codusur || !telefone || !texto) {
         return res.status(400).json({ success: false, error: 'Dados incompletos' });
@@ -271,7 +274,10 @@ const getImagePath = (codprod) => {
 };
 
 router.post('/send-produto', async (req, res) => {
-    const { codusur, telefone, codprod, text } = req.body;
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+    }
+    const { codusur, telefone, codprod, isCatalogoMode, legenda, idBase64Map, text } = req.body;
     console.log(`[CHAT] Recebido pedido send-produto: usr=${codusur}, tel=${telefone}, prod=${codprod}`);
 
     if (!codusur || !telefone || !codprod) {
@@ -352,8 +358,8 @@ router.post('/send-produto', async (req, res) => {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'apikey': token,
-                        'instance': instance
+                    'apikey': token,
+                    'instance': instance
                     },
                     body: JSON.stringify(bodyPayloadV2)
                 });
@@ -483,6 +489,9 @@ router.post('/send-produto', async (req, res) => {
 const { createMontage } = require('../services/imageMontage');
 
 router.post('/send-carousel', async (req, res) => {
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+    }
     const { codusur, telefone, cards, message } = req.body;
     console.log(`[CHAT] Recebido pedido send-carousel (convertido para Flyer): usr=${codusur}, tel=${telefone}, cards=${cards?.length}`);
 
@@ -621,6 +630,9 @@ const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/send-media', upload.single('file'), async (req, res) => {
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+    }
     const { codusur, telefone, caption } = req.body;
     const file = req.file;
 

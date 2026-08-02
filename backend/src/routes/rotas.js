@@ -279,6 +279,9 @@ router.get('/:codusur', async (req, res) => {
 
 // Disparar rota presencial para o vendedor
 router.post('/:codusur/disparar', async (req, res) => {
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+    }
     const { codusur } = req.params;
     const { dia, clientes, templates = [] } = req.body;
 

@@ -21,6 +21,9 @@ function getNextDelay() {
 
 // Roda todo dia as 08:00
 cron.schedule('0 8 * * *', async () => {
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return;
+    }
     console.log('[AUTOMAÇÕES CRON] Iniciando verificação diária de automações às 08:00...');
     
     let connection;

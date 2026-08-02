@@ -476,6 +476,9 @@ router.get('/esquecidos', async (req, res) => {
 });
 
 router.post('/:codcli/reativar', async (req, res) => {
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return res.status(403).json({ success: false, message: 'Fora do horário permitido para envios.' });
+    }
     const { codcli } = req.params;
     const { codusur } = req.body;
     

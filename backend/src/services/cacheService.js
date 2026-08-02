@@ -324,6 +324,39 @@ class CacheService {
         }
         return telefoneOriginal;
     }
+
+    isWithinAllowedSchedule() {
+        const now = new Date();
+        const currentHour = now.getHours();
+        const currentDay = now.getDay();
+
+        let cronDiasSemana = [1, 2, 3, 4, 5];
+        let cronHoraInicio = 8;
+        let cronHoraFim = 18;
+
+        try {
+            const configDias = this.globalConfigs['CRON_DIAS_SEMANA'];
+            if (configDias) cronDiasSemana = JSON.parse(configDias);
+            
+            const configHoraInicio = this.globalConfigs['CRON_HORA_INICIO'];
+            if (configHoraInicio !== undefined && configHoraInicio !== '') cronHoraInicio = parseInt(configHoraInicio, 10);
+            
+            const configHoraFim = this.globalConfigs['CRON_HORA_FIM'];
+            if (configHoraFim !== undefined && configHoraFim !== '') cronHoraFim = parseInt(configHoraFim, 10);
+        } catch (e) {
+            console.error('[CACHE] Erro ao carregar configurações de horário, usando padrão:', e);
+        }
+
+        if (!cronDiasSemana.includes(currentDay)) {
+            return false;
+        }
+
+        if (currentHour < cronHoraInicio || currentHour >= cronHoraFim) {
+            return false;
+        }
+
+        return true;
+    }
 }
 
 // Export a single instance (singleton)

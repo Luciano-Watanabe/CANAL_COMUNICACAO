@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, User, ShieldAlert } from 'lucide-react';
+import { Save, User, ShieldAlert, Clock } from 'lucide-react';
 import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 import { usePrivacy } from '../contexts/PrivacyContext';
 import clsx from 'clsx';
@@ -21,6 +21,11 @@ export default function Configuracoes() {
 
   const [modoTeste, setModoTeste] = useState(false);
   const [numeroTeste, setNumeroTeste] = useState('');
+
+  // Cron schedule config
+  const [cronDiasSemana, setCronDiasSemana] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [cronHoraInicio, setCronHoraInicio] = useState(8);
+  const [cronHoraFim, setCronHoraFim] = useState(18);
 
   useEffect(() => {
     if (!hasAccess) return;
@@ -48,6 +53,15 @@ export default function Configuracoes() {
           if (dataGlob.configs['NUMERO_TESTE_GESTOR']) {
             setNumeroTeste(dataGlob.configs['NUMERO_TESTE_GESTOR']);
           }
+          if (dataGlob.configs['CRON_DIAS_SEMANA']) {
+            try { setCronDiasSemana(JSON.parse(dataGlob.configs['CRON_DIAS_SEMANA'])); } catch (e) {}
+          }
+          if (dataGlob.configs['CRON_HORA_INICIO']) {
+            setCronHoraInicio(parseInt(dataGlob.configs['CRON_HORA_INICIO'], 10));
+          }
+          if (dataGlob.configs['CRON_HORA_FIM']) {
+            setCronHoraFim(parseInt(dataGlob.configs['CRON_HORA_FIM'], 10));
+          }
         }
       } catch (err) {
         console.error('Erro ao buscar configurações:', err);
@@ -70,7 +84,10 @@ export default function Configuracoes() {
             EVOLUTION_API_URL: globalUrl, 
             GROQ_API_KEY: groqApiKey,
             MODO_TESTE_GESTOR: modoTeste ? 'S' : 'N',
-            NUMERO_TESTE_GESTOR: numeroTeste
+            NUMERO_TESTE_GESTOR: numeroTeste,
+            CRON_DIAS_SEMANA: JSON.stringify(cronDiasSemana),
+            CRON_HORA_INICIO: cronHoraInicio.toString(),
+            CRON_HORA_FIM: cronHoraFim.toString()
           }
         })
       });
@@ -86,6 +103,12 @@ export default function Configuracoes() {
     } finally {
       setSavingGlobal(false);
     }
+  };
+
+  const toggleDiaSemana = (dia: number) => {
+    setCronDiasSemana(prev => 
+      prev.includes(dia) ? prev.filter(d => d !== dia) : [...prev, dia].sort()
+    );
   };
 
   const handleChange = (codusur: string, field: string, value: string) => {
@@ -194,6 +217,78 @@ export default function Configuracoes() {
           </button>
         </div>
       )}
+
+      <div className="glass-card p-6 flex flex-col md:flex-row gap-4 items-center bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50">
+        <div className="flex-1 w-full">
+          <h3 className="font-bold text-blue-800 dark:text-blue-400 flex items-center gap-2 mb-3">
+            <Clock size={20} /> Agendamento do Cron de Envios
+          </h3>
+          <p className="text-sm text-blue-700/80 dark:text-blue-500/80 mb-4">
+            Defina em quais dias da semana e horários as mensagens da fila de reativação serão enviadas automaticamente.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Dias de Funcionamento</label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: 0, label: 'Dom' },
+                  { value: 1, label: 'Seg' },
+                  { value: 2, label: 'Ter' },
+                  { value: 3, label: 'Qua' },
+                  { value: 4, label: 'Qui' },
+                  { value: 5, label: 'Sex' },
+                  { value: 6, label: 'Sáb' },
+                ].map(dia => (
+                  <button
+                    key={dia.value}
+                    onClick={() => toggleDiaSemana(dia.value)}
+                    className={clsx(
+                      "px-3 py-1.5 text-sm font-medium rounded-md border transition-colors",
+                      cronDiasSemana.includes(dia.value)
+                        ? "bg-blue-600 border-blue-600 text-white"
+                        : "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                    )}
+                  >
+                    {dia.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Hora Inicial</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={cronHoraInicio}
+                    onChange={(e) => setCronHoraInicio(Number(e.target.value))}
+                    className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 pr-8 text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="absolute right-3 top-2 text-slate-400">h</span>
+                </div>
+              </div>
+              <div className="flex-1">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Hora Final</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={cronHoraFim}
+                    onChange={(e) => setCronHoraFim(Number(e.target.value))}
+                    className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 pr-8 text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="absolute right-3 top-2 text-slate-400">h</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="glass-card p-6 flex flex-col md:flex-row gap-4 items-end bg-primary-50 dark:bg-slate-800/50 border border-primary-100 dark:border-slate-700">
         <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-4">

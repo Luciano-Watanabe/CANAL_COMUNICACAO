@@ -331,6 +331,9 @@ class WebhookPoller {
     }
 
     async enviarMensagemBot(telefone, texto, conn, instanceName) {
+        if (!cacheService.isWithinAllowedSchedule()) {
+            return;
+        }
         try {
             const fetch = require('node-fetch');
             const resultTokens = await conn.execute(`

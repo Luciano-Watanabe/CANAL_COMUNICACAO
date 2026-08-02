@@ -29,6 +29,9 @@ async function getTokensAndUrls(connection, vendedoresArray) {
 
 // Tarefa que roda todo minuto
 cron.schedule('* * * * *', async () => {
+    if (!cacheService.isWithinAllowedSchedule()) {
+        return;
+    }
     let connection;
     try {
         connection = await oracledb.getConnection({
