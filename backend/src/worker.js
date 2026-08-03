@@ -28,6 +28,7 @@ initializeOracleDatabase().then(async () => {
     require('./services/cnpjCron');
     require('./services/ieCron');
     require('./services/geradorRotasCron');
+    require('./services/geolocalizacaoWorker'); // Worker de geolocalização (1 cliente a cada 1.5s)
     
     // Inicia o Webhook Poller
     const poller = new WebhookPoller();

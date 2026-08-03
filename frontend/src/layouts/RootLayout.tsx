@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import clsx from 'clsx';
-import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, Sun, Moon, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, Sun, Moon, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
@@ -39,6 +39,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     links.push({ name: 'Clientes Inativos', path: '/inativos', icon: Users });
     links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
     links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
+    links.push({ name: 'Geolocalização', path: '/geolocalizacao', icon: MapPin });
   }
 
   if (userRole === 'BOT_GESTOR') {
@@ -49,6 +50,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     links.push({ name: 'Rotas de Visitas', path: '/rotas', icon: Calendar });
     links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
     links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
+    links.push({ name: 'Geolocalização', path: '/geolocalizacao', icon: MapPin });
   }
 
   return (

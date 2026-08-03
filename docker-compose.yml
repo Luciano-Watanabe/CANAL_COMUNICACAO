@@ -39,6 +39,8 @@ services:
       - ORACLE_USER=${ORACLE_USER}
       - ORACLE_PASS=${ORACLE_PASS}
       - ORACLE_CONN_STR=${ORACLE_CONN_STR}
+      - LOCATIONIQ_API_KEY=${LOCATIONIQ_API_KEY}
+      - GEOAPIFY_API_KEY=${GEOAPIFY_API_KEY}
       # Diretório de imagens dos produtos
       - IMAGES_DIR=/app/imagens_produtos
     volumes:
@@ -79,6 +81,8 @@ services:
       - ORACLE_USER=${ORACLE_USER}
       - ORACLE_PASS=${ORACLE_PASS}
       - ORACLE_CONN_STR=${ORACLE_CONN_STR}
+      - LOCATIONIQ_API_KEY=${LOCATIONIQ_API_KEY}
+      - GEOAPIFY_API_KEY=${GEOAPIFY_API_KEY}
       # Diretório de imagens dos produtos
       - IMAGES_DIR=/app/imagens_produtos
       # URL pública do backend acessível externamente (para Evolution API baixar PDFs)

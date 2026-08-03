@@ -14,6 +14,7 @@ import Rotas from './pages/Rotas';
 import AnaliseCNPJ from './pages/AnaliseCNPJ';
 import AnaliseIE from './pages/AnaliseIE';
 import Catalogo from './pages/Catalogo';
+import Geolocalizacao from './pages/Geolocalizacao';
 import ProtectedRoute from './components/ProtectedRoute';
 import { SocketProvider } from './contexts/SocketContext';
 
@@ -50,6 +51,7 @@ function App() {
             <Route path="/analisecnpj" element={<AnaliseCNPJ />} />
             <Route path="/analise-ie" element={<AnaliseIE />} />
             <Route path="/catalogo" element={<Catalogo />} />
+            <Route path="/geolocalizacao" element={<Geolocalizacao />} />
           </Route>
         </Route>
       </Routes>
@@ -58,3 +60,4 @@ function App() {
 }
 
 export default App;
+

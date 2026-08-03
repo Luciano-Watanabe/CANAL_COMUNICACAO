@@ -10,6 +10,8 @@ export default function Configuracoes() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [globalUrl, setGlobalUrl] = useState('');
   const [groqApiKey, setGroqApiKey] = useState('');
+  const [locationIqToken, setLocationIqToken] = useState('');
+  const [geoapifyToken, setGeoapifyToken] = useState('');
   const [savingGlobal, setSavingGlobal] = useState(false);
   const { isPrivacyMode, setPrivacyMode, maskData } = usePrivacy();
 
@@ -47,6 +49,12 @@ export default function Configuracoes() {
           if (dataGlob.configs['GROQ_API_KEY']) {
             setGroqApiKey(dataGlob.configs['GROQ_API_KEY']);
           }
+          if (dataGlob.configs['LOCATIONIQ_API_KEY']) {
+            setLocationIqToken(dataGlob.configs['LOCATIONIQ_API_KEY']);
+          }
+          if (dataGlob.configs['GEOAPIFY_API_KEY']) {
+            setGeoapifyToken(dataGlob.configs['GEOAPIFY_API_KEY']);
+          }
           if (dataGlob.configs['MODO_TESTE_GESTOR']) {
             setModoTeste(dataGlob.configs['MODO_TESTE_GESTOR'] === 'S');
           }
@@ -83,6 +91,8 @@ export default function Configuracoes() {
           configs: { 
             EVOLUTION_API_URL: globalUrl, 
             GROQ_API_KEY: groqApiKey,
+            LOCATIONIQ_API_KEY: locationIqToken,
+            GEOAPIFY_API_KEY: geoapifyToken,
             MODO_TESTE_GESTOR: modoTeste ? 'S' : 'N',
             NUMERO_TESTE_GESTOR: numeroTeste,
             CRON_DIAS_SEMANA: JSON.stringify(cronDiasSemana),
@@ -315,6 +325,32 @@ export default function Configuracoes() {
               value={groqApiKey}
               onChange={(e) => setGroqApiKey(e.target.value)}
               placeholder="gsk_..."
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Token LocationIQ (Geolocalização)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Fallback 1 para busca de coordenadas.</p>
+            <input 
+              type="text" 
+              value={locationIqToken}
+              onChange={(e) => setLocationIqToken(e.target.value)}
+              placeholder="pk..."
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Token Geoapify (Geolocalização)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Fallback 2 para busca de coordenadas.</p>
+            <input 
+              type="text" 
+              value={geoapifyToken}
+              onChange={(e) => setGeoapifyToken(e.target.value)}
+              placeholder="c64..."
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
           </div>
