@@ -49,6 +49,7 @@ const metricasRoutes = require('./routes/metricas');
 const rotasRoutes = require('./routes/rotas');
 const catalogoRoutes = require('./routes/catalogo');
 const geolocalizacaoRoutes = require('./routes/geolocalizacao');
+const prospeccaoRoutes = require('./routes/prospeccao');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/clientes', clientesRoutes);
@@ -63,6 +64,7 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/templates_paginas', mensagensTemplatesRoutes);
 app.use('/api/automacoes', automacoesRoutes);
+app.use('/api/prospeccao', prospeccaoRoutes);
 app.use('/api', avisosRoutes);
 app.use('/api', dashboardRoutes);
 app.use('/api', campanhasRoutes);

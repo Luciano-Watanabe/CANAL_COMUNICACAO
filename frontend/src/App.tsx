@@ -15,6 +15,7 @@ import AnaliseCNPJ from './pages/AnaliseCNPJ';
 import AnaliseIE from './pages/AnaliseIE';
 import Catalogo from './pages/Catalogo';
 import Geolocalizacao from './pages/Geolocalizacao';
+import Prospeccao from './pages/Prospeccao';
 import ProtectedRoute from './components/ProtectedRoute';
 import { SocketProvider } from './contexts/SocketContext';
 
@@ -52,6 +53,7 @@ function App() {
             <Route path="/analise-ie" element={<AnaliseIE />} />
             <Route path="/catalogo" element={<Catalogo />} />
             <Route path="/geolocalizacao" element={<Geolocalizacao />} />
+            <Route path="/prospeccao" element={<Prospeccao />} />
           </Route>
         </Route>
       </Routes>

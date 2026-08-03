@@ -12,6 +12,8 @@ export default function Configuracoes() {
   const [groqApiKey, setGroqApiKey] = useState('');
   const [locationIqToken, setLocationIqToken] = useState('');
   const [geoapifyToken, setGeoapifyToken] = useState('');
+  const [cnpjaToken, setCnpjaToken] = useState('');
+  const [cnpjPaginas, setCnpjPaginas] = useState(3);
   const [savingGlobal, setSavingGlobal] = useState(false);
   const { isPrivacyMode, setPrivacyMode, maskData } = usePrivacy();
 
@@ -55,6 +57,12 @@ export default function Configuracoes() {
           if (dataGlob.configs['GEOAPIFY_API_KEY']) {
             setGeoapifyToken(dataGlob.configs['GEOAPIFY_API_KEY']);
           }
+          if (dataGlob.configs['CNPJA_API_KEY']) {
+            setCnpjaToken(dataGlob.configs['CNPJA_API_KEY']);
+          }
+          if (dataGlob.configs['CNPJ_TRANSPARENCIA_PAGINAS']) {
+            setCnpjPaginas(parseInt(dataGlob.configs['CNPJ_TRANSPARENCIA_PAGINAS'], 10) || 3);
+          }
           if (dataGlob.configs['MODO_TESTE_GESTOR']) {
             setModoTeste(dataGlob.configs['MODO_TESTE_GESTOR'] === 'S');
           }
@@ -93,6 +101,8 @@ export default function Configuracoes() {
             GROQ_API_KEY: groqApiKey,
             LOCATIONIQ_API_KEY: locationIqToken,
             GEOAPIFY_API_KEY: geoapifyToken,
+            CNPJA_API_KEY: cnpjaToken,
+            CNPJ_TRANSPARENCIA_PAGINAS: cnpjPaginas.toString(),
             MODO_TESTE_GESTOR: modoTeste ? 'S' : 'N',
             NUMERO_TESTE_GESTOR: numeroTeste,
             CRON_DIAS_SEMANA: JSON.stringify(cronDiasSemana),
@@ -351,6 +361,33 @@ export default function Configuracoes() {
               value={geoapifyToken}
               onChange={(e) => setGeoapifyToken(e.target.value)}
               placeholder="c64..."
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Token CNPJA (Busca de Leads B2B)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Usado pelo Radar de Leads para prospecção (cnpja.com).</p>
+            <input 
+              type="text" 
+              value={cnpjaToken}
+              onChange={(e) => setCnpjaToken(e.target.value)}
+              placeholder="Sua chave do CNPJA"
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Páginas CNPJ Transparência
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Quantas páginas o robô gratuito deve varrer (Max: 10).</p>
+            <input 
+              type="number" 
+              min="1"
+              max="10"
+              value={cnpjPaginas}
+              onChange={(e) => setCnpjPaginas(Number(e.target.value))}
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
           </div>

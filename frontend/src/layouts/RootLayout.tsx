@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import clsx from 'clsx';
-import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, Sun, Moon, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, Sun, Moon, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin, Target } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
@@ -40,6 +40,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
     links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
     links.push({ name: 'Geolocalização', path: '/geolocalizacao', icon: MapPin });
+    links.push({ name: 'Radar de Leads', path: '/prospeccao', icon: Target });
   }
 
   if (userRole === 'BOT_GESTOR') {
@@ -51,6 +52,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
     links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
     links.push({ name: 'Geolocalização', path: '/geolocalizacao', icon: MapPin });
+    links.push({ name: 'Radar de Leads', path: '/prospeccao', icon: Target });
   }
 
   return (
