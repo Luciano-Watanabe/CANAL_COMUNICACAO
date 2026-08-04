@@ -74,6 +74,9 @@ router.get('/global', async (req, res) => {
         if (!configs['GROQ_API_KEY'] && process.env.GROQ_API_KEY) {
             configs['GROQ_API_KEY'] = process.env.GROQ_API_KEY;
         }
+        if (!configs['GROK_API_KEY'] && process.env.GROK_API_KEY) {
+            configs['GROK_API_KEY'] = process.env.GROK_API_KEY;
+        }
 
         res.json({ success: true, configs });
     } catch (err) {

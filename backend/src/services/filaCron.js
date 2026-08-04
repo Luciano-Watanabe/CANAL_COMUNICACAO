@@ -131,6 +131,18 @@ cron.schedule('* * * * *', async () => {
                         enviarPreco = false;
                         textoBase = textoBase.substring(matchSemPreco[0].length);
                     }
+                    
+                    const matchGrok = textoBase.match(/^\[GROK_GENERATE\](\{.*?\})\|/);
+                    if (matchGrok) {
+                        try {
+                            const grokPayload = JSON.parse(matchGrok[1]);
+                            textoBase = textoBase.substring(matchGrok[0].length);
+                            // We will process this grokPayload later down the line, saving it to a variable
+                            row.grokPayload = grokPayload;
+                        } catch (e) {
+                            console.error('Erro ao parsear GROK_GENERATE:', e);
+                        }
+                    }
                 }
 
                 let base64Data = null;
@@ -241,9 +253,68 @@ cron.schedule('* * * * *', async () => {
                     finalClientText = String(finalClientText).replace(/¿/g, '\u2705');
                 }
                 
+                // --- CHAMADA API GROK ---
+                if (row.grokPayload) {
+                    try {
+                        const globalConfigRes = await connection.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'GROQ_API_KEY'`);
+                        let grokApiKey = globalConfigRes.rows.length > 0 ? globalConfigRes.rows[0][0] : process.env.GROQ_API_KEY;
+                        
+                        if (grokApiKey) {
+                            const horaAtual = new Date().getHours();
+                            let saudacao = 'Bom dia';
+                            if (horaAtual >= 12 && horaAtual < 18) saudacao = 'Boa tarde';
+                            else if (horaAtual >= 18) saudacao = 'Boa noite';
+                            
+                            const grokData = row.grokPayload;
+                            const prompt = `Gere uma mensagem de reativação de WhatsApp para o cliente ${grokData.clienteNome}.
+- Ramo de Atividade do Cliente: ${grokData.ramo}
+- Tema/Tom da Mensagem: ${grokData.tema}
+- Tempo sem comprar: ${grokData.diasCompra} dias (não cite o tempo exato, use apenas para dar ênfase na saudade ou na urgência)
+- Nome da nossa Empresa (quem está enviando): ${instanceName}
+- Saudação: ${saudacao}
+
+Regras: 
+1. Seja 60% informal, leve e humano.
+2. Use emojis de forma controlada.
+3. Não use o nome de um vendedor, o contato está sendo feito de forma corporativa pela equipe da empresa ${instanceName}.
+4. A mensagem DEVE ser curta e direta, com tamanho entre 300 a 450 caracteres.
+5. Apenas retorne o texto da mensagem, sem aspas e sem markdown extra.`;
+                            
+                            console.log(`[FILA CRON] Chamando GROK para CODCLI=${codcli}...`);
+                            
+                            const grokRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+                                messages: [
+                                    { role: "system", content: "Você é um assistente de vendas focado em reativar clientes inativos pelo WhatsApp de forma amigável e empática." },
+                                    { role: "user", content: prompt }
+                                ],
+                                model: "llama-3.3-70b-versatile",
+                                stream: false,
+                                temperature: 0.7
+                            }, {
+                                headers: {
+                                    'Authorization': `Bearer ${grokApiKey}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                timeout: 15000
+                            });
+                            
+                            if (grokRes.data && grokRes.data.choices && grokRes.data.choices[0] && grokRes.data.choices[0].message) {
+                                finalClientText = grokRes.data.choices[0].message.content.trim();
+                                console.log(`[FILA CRON] Grok respondeu com sucesso para CODCLI=${codcli}`);
+                            }
+                        } else {
+                            console.warn(`[FILA CRON] GROK_API_KEY não configurada. Usando mensagem padrão.`);
+                        }
+                    } catch (e) {
+                        console.error('[FILA CRON] Erro ao chamar GROK:', e.response ? JSON.stringify(e.response.data) : e.message);
+                        // Continua com texto base como fallback
+                    }
+                }
+                // --------------------------
+                
                 const msgClienteTxt = {
                     number: telCliente,
-                    text: finalClientText
+                    text: finalClientText + (listaProdutos || '')
                 };
                 const msgClienteVcard = {
                     number: telCliente,
@@ -421,14 +492,17 @@ cron.schedule('* * * * *', async () => {
                         await sendEvo('text', msgClienteTxt);
                     }
                 } else if (base64Data) {
-                    // Imagem de Reativação com mix de produtos para o cliente
+                    // Envia a mensagem de texto (gerada pela IA) primeiro
+                    await sendEvo('text', msgClienteTxt);
+                    
+                    // Imagem de Reativação com mix de produtos para o cliente (sem a legenda longa)
                     await sendEvo('media', {
                         number: telCliente,
                         mediatype: 'image',
                         mimetype: 'image/jpeg',
                         fileName: `Ofertas_${codcli}.jpg`,
                         media: base64Data,
-                        caption: msgClienteTxt.text
+                        caption: ''
                     });
                 } else {
                     // Só texto para o cliente

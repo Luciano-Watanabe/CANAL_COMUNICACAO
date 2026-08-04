@@ -10,6 +10,7 @@ export default function Configuracoes() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [globalUrl, setGlobalUrl] = useState('');
   const [groqApiKey, setGroqApiKey] = useState('');
+  const [grokApiKey, setGrokApiKey] = useState('');
   const [locationIqToken, setLocationIqToken] = useState('');
   const [geoapifyToken, setGeoapifyToken] = useState('');
   const [cnpjaToken, setCnpjaToken] = useState('');
@@ -50,6 +51,9 @@ export default function Configuracoes() {
           }
           if (dataGlob.configs['GROQ_API_KEY']) {
             setGroqApiKey(dataGlob.configs['GROQ_API_KEY']);
+          }
+          if (dataGlob.configs['GROK_API_KEY']) {
+            setGrokApiKey(dataGlob.configs['GROK_API_KEY']);
           }
           if (dataGlob.configs['LOCATIONIQ_API_KEY']) {
             setLocationIqToken(dataGlob.configs['LOCATIONIQ_API_KEY']);
@@ -99,6 +103,7 @@ export default function Configuracoes() {
           configs: { 
             EVOLUTION_API_URL: globalUrl, 
             GROQ_API_KEY: groqApiKey,
+            GROK_API_KEY: grokApiKey,
             LOCATIONIQ_API_KEY: locationIqToken,
             GEOAPIFY_API_KEY: geoapifyToken,
             CNPJA_API_KEY: cnpjaToken,
@@ -329,12 +334,35 @@ export default function Configuracoes() {
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
               Chave de API do Groq (Transcrição de Áudio)
             </label>
-            <p className="text-xs text-slate-500 mb-3">Chave para transcrever áudios (inicia com gsk_...).</p>
+            <p className="text-xs text-slate-500 mb-3">
+              Chave para transcrever áudios (inicia com gsk_...).{' '}
+              <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                Clique aqui para obter seu TOKEN
+              </a>
+            </p>
             <input 
               type="password" 
               value={groqApiKey}
               onChange={(e) => setGroqApiKey(e.target.value)}
               placeholder="gsk_..."
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Chave de API do GROK (xAI - Geração de Textos)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">
+              Chave para geração de textos com IA (xai-...).{' '}
+              <a href="https://console.x.ai/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                Clique aqui para obter seu TOKEN
+              </a>
+            </p>
+            <input 
+              type="password" 
+              value={grokApiKey}
+              onChange={(e) => setGrokApiKey(e.target.value)}
+              placeholder="xai-..."
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
           </div>

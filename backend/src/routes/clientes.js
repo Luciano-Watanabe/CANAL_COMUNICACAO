@@ -734,13 +734,26 @@ router.post('/reativacao/fila', async (req, res) => {
             VALUES (SEQ_CANAL_REATIVACAO_FILA.NEXTVAL, :codcli, :telefone, :codusur, :mensagem, :codatv1, 'PENDENTE', SYSDATE)
         `;
 
-        const binds = fila.map(c => ({
-            codcli: c.codcli,
-            telefone: c.telefone || c.contato || '',
-            codusur: codusur || c.vendedor_codusur || 9999, // default
-            mensagem: (c.campanha ? `[CAMPANHA:${c.campanha}]` : '') + (c.enviarPrecos === false ? `[SEM_PRECO]` : '') + (c.mensagem || c.mensagemCustom || ''),
-            codatv1: c.codatv1 || null
-        }));
+        const binds = fila.map(c => {
+            let msgText = (c.campanha ? `[CAMPANHA:${c.campanha}]` : '') + (c.enviarPrecos === false ? `[SEM_PRECO]` : '') + (c.mensagem || c.mensagemCustom || '');
+            if (c.usarIA) {
+                const grokData = {
+                    tema: c.temaIA || '',
+                    diasCompra: c.diasCompra || 0,
+                    ramo: c.ramo_atividade || '',
+                    clienteNome: c.fantasia || c.cliente || '',
+                    vendedorNome: c.vendedor || ''
+                };
+                msgText = `[GROK_GENERATE]${JSON.stringify(grokData)}|` + msgText;
+            }
+            return {
+                codcli: c.codcli,
+                telefone: c.telefone || c.contato || '',
+                codusur: codusur || c.vendedor_codusur || 9999, // default
+                mensagem: msgText,
+                codatv1: c.codatv1 || null
+            };
+        });
 
         await connection.executeMany(sql, binds, { autoCommit: true });
 

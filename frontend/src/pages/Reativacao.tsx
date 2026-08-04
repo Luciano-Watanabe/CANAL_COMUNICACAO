@@ -23,7 +23,7 @@ export default function Reativacao() {
   // Templates e Configuração
   const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
-  const [clientConfigs, setClientConfigs] = useState<Record<string, { enviarPrecos: boolean; tipoMensagemId: number | null; campanha: string }>>({});
+  const [clientConfigs, setClientConfigs] = useState<Record<string, { enviarPrecos: boolean; tipoMensagemId: number | null; campanha: string; usarIA: boolean; temaIA: string }>>({});
 
   const [whatsappStatus, setWhatsappStatus] = useState<Record<string, 'loading'|'exists'|'missing'|'error'>>({});
 
@@ -64,11 +64,13 @@ export default function Reativacao() {
     return {
       enviarPrecos: true,
       tipoMensagemId: templates.length > 0 ? templates[0].id : null,
-      campanha: ''
+      campanha: '',
+      usarIA: false,
+      temaIA: ''
     };
   };
 
-  const handleClientConfigChange = (codcli: string, field: 'enviarPrecos' | 'tipoMensagemId' | 'campanha', value: any) => {
+  const handleClientConfigChange = (codcli: string, field: 'enviarPrecos' | 'tipoMensagemId' | 'campanha' | 'usarIA' | 'temaIA', value: any) => {
     setClientConfigs(prev => ({
       ...prev,
       [codcli]: {
@@ -92,7 +94,9 @@ export default function Reativacao() {
         mensagemTipo: t ? t.tipo : 'Padrão',
         mensagemCustom: t ? t.template : '',
         enviarPrecos: cConfig.enviarPrecos,
-        campanha: cConfig.campanha
+        campanha: cConfig.campanha,
+        usarIA: cConfig.usarIA,
+        temaIA: cConfig.temaIA
       }];
     });
   };
@@ -163,7 +167,9 @@ export default function Reativacao() {
         mensagemTipo: t ? t.tipo : 'Padrão',
         mensagemCustom: t ? t.template : '',
         enviarPrecos: cConfig.enviarPrecos,
-        campanha: cConfig.campanha
+        campanha: cConfig.campanha,
+        usarIA: cConfig.usarIA,
+        temaIA: cConfig.temaIA
       }));
       setQueue(prev => [...prev, ...clientsToAdd]);
     }
@@ -433,7 +439,27 @@ export default function Reativacao() {
                           <option value="BLACKFRIDAY">BLACKFRIDAY</option>
                           <option value="JORNAL">JORNAL</option>
                         </select>
-                        <label className="flex items-center gap-2 text-xs text-gray-300">
+                        <div className="flex flex-col gap-1 mt-1 p-2 bg-slate-900/50 rounded border border-blue-500/20">
+                          <label className="flex items-center gap-2 text-xs text-blue-300 font-medium">
+                            <input 
+                              type="checkbox"
+                              className="rounded bg-slate-800 border-white/10 text-blue-500 focus:ring-blue-500"
+                              checked={getClientConfig(c.codcli).usarIA}
+                              onChange={(e) => handleClientConfigChange(c.codcli, 'usarIA', e.target.checked)}
+                            />
+                            Personalizar com IA (GROK)
+                          </label>
+                          {getClientConfig(c.codcli).usarIA && (
+                            <input
+                              type="text"
+                              placeholder="Ex: Oferta de Carnaval"
+                              className="bg-slate-800 border border-slate-700 text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-blue-500 w-full"
+                              value={getClientConfig(c.codcli).temaIA || ''}
+                              onChange={(e) => handleClientConfigChange(c.codcli, 'temaIA', e.target.value)}
+                            />
+                          )}
+                        </div>
+                        <label className="flex items-center gap-2 text-xs text-gray-300 mt-1">
                           <input 
                             type="checkbox"
                             className="rounded bg-slate-800 border-white/10 text-blue-500 focus:ring-blue-500"
