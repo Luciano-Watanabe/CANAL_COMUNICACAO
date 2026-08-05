@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, Send, AlertTriangle, Users, X, List, Play, Square, PenTool } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 import { ModalGerenciarTemplates } from '../components/ModalGerenciarTemplates';
@@ -11,6 +11,9 @@ export default function Reativacao() {
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [selectedVendedor, setSelectedVendedor] = useState('');
   const [viewMessage, setViewMessage] = useState<string | null>(null);
+  
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
 
   // Queue State
   const [queue, setQueue] = useState<any[]>([]);
@@ -103,16 +106,22 @@ export default function Reativacao() {
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
+  // Use useMemo to avoid creating a new object on every render
   const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
+  const user = useMemo(() => userStr ? JSON.parse(userStr) : null, [userStr]);
   
-  const fetchInativos = async (search: string = '') => {
+  const fetchInativos = async (search: string = '', currentPage: number = 1) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/clientes/esquecidos?codusur=${user?.matricula}&role=${user?.role}&dias=-1&vendedorId=${selectedVendedor}&busca=${encodeURIComponent(search)}`);
+      const response = await fetch(`/api/clientes/esquecidos?codusur=${user?.matricula}&role=${user?.role}&dias=-1&vendedorId=${selectedVendedor}&busca=${encodeURIComponent(search)}&page=${currentPage}&limit=50`);
       const data = await response.json();
       if (data.success) {
-        setClientes(data.esquecidos || []);
+        if (currentPage === 1) {
+          setClientes(data.esquecidos || []);
+        } else {
+          setClientes(prev => [...prev, ...(data.esquecidos || [])]);
+        }
+        setHasMore((data.esquecidos || []).length === 50);
       }
     } catch (err) {
       console.error('Erro ao buscar inativos:', err);
@@ -122,14 +131,22 @@ export default function Reativacao() {
   };
 
   useEffect(() => {
+    setPage(1);
+    setHasMore(true);
     const delayDebounceFn = setTimeout(() => {
       if (user?.matricula) {
-        fetchInativos(searchTerm);
+        fetchInativos(searchTerm, 1);
       }
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
   }, [user?.matricula, selectedVendedor, searchTerm]);
+
+  useEffect(() => {
+    if (page > 1 && user?.matricula) {
+      fetchInativos(searchTerm, page);
+    }
+  }, [page]);
 
   useEffect(() => {
     if (user?.role?.toUpperCase() === 'BOT_GESTOR' || user?.role?.toUpperCase() === 'GERENTE' || user?.role?.toUpperCase() === 'SUPERVISOR') {
@@ -491,6 +508,21 @@ export default function Reativacao() {
               )}
             </tbody>
           </table>
+          <div className="p-4 border-t border-[var(--border-color)]">
+            {!loading && (
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); setPage(p => p + 1); }}
+                disabled={!hasMore}
+                className="w-full bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed py-3 border border-slate-700"
+              >
+                {hasMore ? "Carregar mais (+50 registros)" : "Todos os registros carregados"}
+              </button>
+            )}
+            {loading && page > 1 && (
+              <div className="py-3 text-center text-slate-400 text-sm">Carregando mais...</div>
+            )}
+          </div>
         </div>
       </div>
       

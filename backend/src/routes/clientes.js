@@ -238,9 +238,12 @@ router.get('/esquecidos', async (req, res) => {
 
     const diasFiltro = parseInt(dias) || 30;
     const roleUpper = (role || 'VENDEDOR').toUpperCase();
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = (page - 1) * limit;
     
     let extraFilter = '';
-    let queryParams = { cod: codusur, dias: diasFiltro };
+    let queryParams = { cod: codusur, dias: diasFiltro, offset, limit };
     
     if (vendedorId && vendedorId.trim() !== '') {
         extraFilter += ' AND C.CODUSUR1 = :vendedorId ';
@@ -299,8 +302,8 @@ router.get('/esquecidos', async (req, res) => {
                       JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
                       WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - :dias
                   )
-                ORDER BY DIAS_COMPRA DESC
-                FETCH FIRST 50 ROWS ONLY
+                ORDER BY DIAS_COMPRA DESC, C.CODCLI ASC
+                OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
             `;
         } else if (roleUpper === 'GERENTE') {
             sql = `
@@ -328,8 +331,8 @@ router.get('/esquecidos', async (req, res) => {
                       JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
                       WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - :dias
                   )
-                ORDER BY DIAS_COMPRA DESC
-                FETCH FIRST 50 ROWS ONLY
+                ORDER BY DIAS_COMPRA DESC, C.CODCLI ASC
+                OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
             `;
         } else if (roleUpper === 'SUPERVISOR') {
             sql = `
@@ -357,8 +360,8 @@ router.get('/esquecidos', async (req, res) => {
                       JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
                       WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - :dias
                   )
-                ORDER BY DIAS_COMPRA DESC
-                FETCH FIRST 50 ROWS ONLY
+                ORDER BY DIAS_COMPRA DESC, C.CODCLI ASC
+                OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
             `;
         } else if (roleUpper === 'VENDEDOR') {
             sql = `
@@ -385,8 +388,8 @@ router.get('/esquecidos', async (req, res) => {
                       JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
                       WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - :dias
                   )
-                ORDER BY DIAS_COMPRA DESC
-                FETCH FIRST 50 ROWS ONLY
+                ORDER BY DIAS_COMPRA DESC, C.CODCLI ASC
+                OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
             `;
         }
 

@@ -8,16 +8,23 @@ export const RadarPositivacao = ({ user }: { user: any }) => {
   const [esquecidos, setEsquecidos] = useState<any[]>([]);
   const [diasFiltro, setDiasFiltro] = useState(30);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
 
-  const fetchEsquecidos = async () => {
+  const fetchEsquecidos = async (currentPage: number) => {
     if (!user) return;
     
     setLoading(true);
     try {
-      const res = await fetch(`/api/clientes/esquecidos?codusur=${user.matricula}&role=${user.role}&dias=${diasFiltro}`);
+      const res = await fetch(`/api/clientes/esquecidos?codusur=${user.matricula}&role=${user.role}&dias=${diasFiltro}&page=${currentPage}&limit=50`);
       const data = await res.json();
       if (data.success) {
-        setEsquecidos(data.esquecidos);
+        if (currentPage === 1) {
+          setEsquecidos(data.esquecidos);
+        } else {
+          setEsquecidos(prev => [...prev, ...data.esquecidos]);
+        }
+        setHasMore(data.esquecidos.length === 50);
       }
     } catch (e) {
       console.error('Erro ao buscar esquecidos', e);
@@ -27,8 +34,16 @@ export const RadarPositivacao = ({ user }: { user: any }) => {
   };
 
   useEffect(() => {
-    fetchEsquecidos();
+    setPage(1);
+    setHasMore(true);
+    fetchEsquecidos(1);
   }, [user, diasFiltro]);
+
+  useEffect(() => {
+    if (page > 1) {
+      fetchEsquecidos(page);
+    }
+  }, [page]);
 
 
 
@@ -55,7 +70,7 @@ export const RadarPositivacao = ({ user }: { user: any }) => {
         Clientes inativos (sem pedido ou conversa)
       </p>
 
-      {loading ? (
+      {loading && page === 1 ? (
         <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">Carregando...</div>
       ) : esquecidos.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-6 text-center">
@@ -65,7 +80,7 @@ export const RadarPositivacao = ({ user }: { user: any }) => {
       ) : (
         <div className="flex flex-col gap-3 overflow-y-auto pr-2 custom-scrollbar flex-1 max-h-[400px]">
           {esquecidos.map((cli, idx) => (
-            <div key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-xl shadow-sm flex items-center justify-between">
+            <div key={`${cli.codcli}-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-3 rounded-xl shadow-sm flex items-center justify-between">
               <div className="flex-1 min-w-0 pr-4">
                 <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate" title={cli.cliente}>
                   {cli.codcli} - {maskData(cli.cliente)}
@@ -87,6 +102,18 @@ export const RadarPositivacao = ({ user }: { user: any }) => {
               </div>
             </div>
           ))}
+          {loading && page > 1 && (
+            <div className="py-2 text-center text-slate-400 text-xs">Carregando mais...</div>
+          )}
+          {!loading && (
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={!hasMore}
+              className="py-2 mt-2 w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {hasMore ? "Carregar mais (+50 registros)" : "Todos os registros carregados"}
+            </button>
+          )}
         </div>
       )}
     </div>
