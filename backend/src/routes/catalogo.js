@@ -185,7 +185,7 @@ router.post('/send-whatsapp', upload.single('pdf'), async (req, res) => {
             return res.status(400).json({ success: false, error: 'Arquivo PDF não enviado.' });
         }
 
-        const { clientes, vendedorId, telefoneVendedor, ramoNome, codusurLogged, mensagemPadrao } = req.body;
+        const { clientes, vendedorId, telefoneVendedor, ramoNome, codusurLogged, mensagemPadrao, usarIA, temaIA } = req.body;
         if (!clientes) {
             return res.status(400).json({ success: false, error: 'Lista de clientes vazia.' });
         }
@@ -214,13 +214,29 @@ router.post('/send-whatsapp', upload.single('pdf'), async (req, res) => {
                 VALUES (SEQ_CANAL_REATIVACAO_FILA.NEXTVAL, :codcli, :telefone, :codusur, :mensagem, :codatv1, 'PENDENTE', SYSDATE)
             `;
             
-            const binds = clientesList.map(c => ({
-                codcli: c.codcli,
-                telefone: c.telefone || '',
-                codusur: codusurLogged || vendedorId || 9999,
-                mensagem: msgTexto,
-                codatv1: null // Nao precisamos usar no filaCron pq não vai processar imagem de produto individual
-            }));
+            const isUsarIA = String(usarIA) === 'true';
+
+            const binds = clientesList.map(c => {
+                let currentMsg = msgTexto;
+
+                if (isUsarIA) {
+                    const grokData = {
+                        clienteNome: c.nome || 'Cliente',
+                        diasCompra: c.diasCompra || 30, // Fallback caso não venha preenchido
+                        ramo: ramoNome || 'Geral',
+                        tema: temaIA || 'Educado e Amigável'
+                    };
+                    currentMsg = `[GROK_GENERATE]${JSON.stringify(grokData)}|` + currentMsg;
+                }
+
+                return {
+                    codcli: c.codcli,
+                    telefone: c.telefone || '',
+                    codusur: codusurLogged || vendedorId || 9999,
+                    mensagem: currentMsg,
+                    codatv1: null // Nao precisamos usar no filaCron pq não vai processar imagem de produto individual
+                };
+            });
 
             await conn.executeMany(sqlInsert, binds, { autoCommit: true });
 

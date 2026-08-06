@@ -6,6 +6,7 @@ interface Cliente {
   codcli: number;
   fantasia: string;
   telefone: string;
+  diasCompra?: number;
 }
 
 interface ModalProps {
@@ -29,6 +30,9 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
   const [templates, setTemplates] = useState<any[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | ''>('');
   const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false);
+
+  const [usarIA, setUsarIA] = useState(false);
+  const [temaIA, setTemaIA] = useState('Educado e Amigável');
 
   const [whatsappStatus, setWhatsappStatus] = useState<Record<number, 'loading'|'exists'|'missing'|'error'>>({});
 
@@ -246,7 +250,8 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
         .map(c => ({
           codcli: c.codcli,
           nome: c.fantasia,
-          telefone: c.telefone.split(',')[0].trim()
+          telefone: c.telefone.split(',')[0].trim(),
+          diasCompra: c.diasCompra
         }));
 
       formData.append('clientes', JSON.stringify(clis));
@@ -259,6 +264,9 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
       const t = templates.find(temp => temp.id === selectedTemplateId);
       formData.append('mensagemPadrao', t ? t.template : '');
       formData.append('tipoMensagem', t ? t.tipo : '');
+      
+      formData.append('usarIA', String(usarIA));
+      formData.append('temaIA', temaIA);
 
       // 3. Send
       await onSend(formData);
@@ -428,6 +436,45 @@ export default function ModalWhatsAppCatalogo({ isOpen, onClose, vendedores, ati
                 <input type="checkbox" checked disabled className="rounded text-blue-500 opacity-70" />
                 <span>O PDF sempre será enviado com a mensagem</span>
               </div>
+            </div>
+
+            <div className="bg-gradient-to-r from-blue-900/20 to-purple-900/20 border border-blue-500/30 p-4 rounded-xl space-y-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div className="relative">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only"
+                    checked={usarIA}
+                    onChange={(e) => setUsarIA(e.target.checked)}
+                  />
+                  <div className={`block w-10 h-6 rounded-full transition-colors ${usarIA ? 'bg-blue-500' : 'bg-slate-700'}`}></div>
+                  <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${usarIA ? 'translate-x-4' : ''}`}></div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-white flex items-center gap-2">
+                    Personalizar com IA (GROK)
+                    <span className="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Novo</span>
+                  </div>
+                  <div className="text-xs text-slate-400">Gera uma mensagem única para cada cliente.</div>
+                </div>
+              </label>
+
+              {usarIA && (
+                <div className="pl-13 animate-fade-in">
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Tom/Foco da Mensagem (IA)</label>
+                  <select 
+                    className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm"
+                    value={temaIA}
+                    onChange={(e) => setTemaIA(e.target.value)}
+                  >
+                    <option value="Educado e Amigável">Educado e Amigável (Padrão)</option>
+                    <option value="Foco na Saudade (Sumido)">Foco na Saudade (Sumido)</option>
+                    <option value="Urgência/Promoção">Urgência/Promoção</option>
+                    <option value="Foco no Ramo de Atividade">Foco no Ramo de Atividade</option>
+                    <option value="Curto e Direto">Curto e Direto</option>
+                  </select>
+                </div>
+              )}
             </div>
 
             <div>

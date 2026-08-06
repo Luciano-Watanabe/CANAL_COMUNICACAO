@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Send, AlertTriangle, Users, X, List, Play, Square, PenTool } from 'lucide-react';
+import { Search, Send, AlertTriangle, Users, X, List, Play, Square, PenTool, Calendar } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 import { ModalGerenciarTemplates } from '../components/ModalGerenciarTemplates';
 
@@ -8,6 +8,7 @@ export default function Reativacao() {
   const [clientes, setClientes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [diasInativos, setDiasInativos] = useState('-1');
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [selectedVendedor, setSelectedVendedor] = useState('');
   const [viewMessage, setViewMessage] = useState<string | null>(null);
@@ -113,7 +114,7 @@ export default function Reativacao() {
   const fetchInativos = async (search: string = '', currentPage: number = 1) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/clientes/esquecidos?codusur=${user?.matricula}&role=${user?.role}&dias=-1&vendedorId=${selectedVendedor}&busca=${encodeURIComponent(search)}&page=${currentPage}&limit=50`);
+      const response = await fetch(`/api/clientes/esquecidos?codusur=${user?.matricula}&role=${user?.role}&dias=${diasInativos}&vendedorId=${selectedVendedor}&busca=${encodeURIComponent(search)}&page=${currentPage}&limit=50`);
       const data = await response.json();
       if (data.success) {
         if (currentPage === 1) {
@@ -140,7 +141,7 @@ export default function Reativacao() {
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [user?.matricula, selectedVendedor, searchTerm]);
+  }, [user?.matricula, selectedVendedor, searchTerm, diasInativos]);
 
   useEffect(() => {
     if (page > 1 && user?.matricula) {
@@ -334,6 +335,20 @@ export default function Reativacao() {
           />
         </div>
         
+        <div className="flex items-center gap-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-lg px-4 py-2.5 w-full lg:w-auto overflow-hidden">
+          <Calendar className="w-5 h-5 text-gray-400 shrink-0" />
+          <select
+            value={diasInativos}
+            onChange={(e) => setDiasInativos(e.target.value)}
+            className="bg-transparent text-gray-100 focus:outline-none focus:ring-0 cursor-pointer w-full lg:w-auto"
+          >
+            <option value="-1" style={{ color: '#000', backgroundColor: '#fff' }}>Todos os Inativos</option>
+            <option value="30" style={{ color: '#000', backgroundColor: '#fff' }}>Mais de 30 dias</option>
+            <option value="60" style={{ color: '#000', backgroundColor: '#fff' }}>Mais de 60 dias</option>
+            <option value="90" style={{ color: '#000', backgroundColor: '#fff' }}>Mais de 90 dias</option>
+          </select>
+        </div>
+
         {vendedores.length > 0 && (
           <div className="flex items-center gap-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-lg px-4 py-2.5 w-full lg:w-auto overflow-hidden">
             <Users className="w-5 h-5 text-gray-400 shrink-0" />
