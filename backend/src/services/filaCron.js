@@ -266,10 +266,40 @@ cron.schedule('* * * * *', async () => {
                             else if (horaAtual >= 18) saudacao = 'Boa noite';
                             
                             const grokData = row.grokPayload;
-                            const prompt = `Gere uma mensagem de reativação de WhatsApp para o cliente ${grokData.clienteNome}.
+                            const isCatalogo = grokData.contexto === 'catalogo';
+
+                            const systemPrompt = isCatalogo
+                                ? "Você é um consultor de vendas avisando o cliente sobre ofertas, lançamentos e um novo catálogo de produtos."
+                                : "Você é um assistente de vendas focado em reativar clientes inativos pelo WhatsApp de forma amigável e empática.";
+
+                            let prompt = '';
+                            if (isCatalogo) {
+                                prompt = `Gere uma mensagem de WhatsApp enviando um catálogo de produtos para o cliente ${grokData.clienteNome}.
 - Ramo de Atividade do Cliente: ${grokData.ramo}
 - Tema/Tom da Mensagem: ${grokData.tema}
-- Tempo sem comprar: ${grokData.diasCompra} dias (não cite o tempo exato, use apenas para dar ênfase na saudade ou na urgência)
+- Nome da nossa Empresa (quem está enviando): ${instanceName}
+- Saudação: ${saudacao}
+
+Regras: 
+1. Seja 60% informal, leve e humano.
+2. Use emojis de forma controlada.
+3. Não use o nome de um vendedor, o contato está sendo feito de forma corporativa pela equipe da empresa ${instanceName}.
+4. A mensagem DEVE ser curta e direta, com tamanho entre 200 a 350 caracteres.
+5. Fale que o catálogo com ofertas ou novidades está no PDF em anexo.
+6. Apenas retorne o texto da mensagem, sem aspas e sem markdown extra.`;
+                            } else {
+                                const diasStr = parseInt(grokData.diasCompra, 10);
+                                let instrucaoDias = '';
+                                if (!isNaN(diasStr) && diasStr <= 30) {
+                                    instrucaoDias = `${diasStr} dias (Como faz pouco tempo, o cliente é recorrente. Não fale de 'saudade' nem aja como se ele tivesse sumido. Apenas ofereça um bom atendimento de rotina)`;
+                                } else {
+                                    instrucaoDias = `${grokData.diasCompra} dias (não cite o tempo exato, use apenas para dar ênfase na saudade ou na urgência)`;
+                                }
+
+                                prompt = `Gere uma mensagem de reativação de WhatsApp para o cliente ${grokData.clienteNome}.
+- Ramo de Atividade do Cliente: ${grokData.ramo}
+- Tema/Tom da Mensagem: ${grokData.tema}
+- Tempo sem comprar: ${instrucaoDias}
 - Nome da nossa Empresa (quem está enviando): ${instanceName}
 - Saudação: ${saudacao}
 
@@ -279,12 +309,13 @@ Regras:
 3. Não use o nome de um vendedor, o contato está sendo feito de forma corporativa pela equipe da empresa ${instanceName}.
 4. A mensagem DEVE ser curta e direta, com tamanho entre 300 a 450 caracteres.
 5. Apenas retorne o texto da mensagem, sem aspas e sem markdown extra.`;
+                            }
                             
-                            console.log(`[FILA CRON] Chamando GROK para CODCLI=${codcli}...`);
+                            console.log(`[FILA CRON] Chamando GROK para CODCLI=${codcli} | Contexto=${grokData.contexto || 'reativacao'}...`);
                             
                             const grokRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
                                 messages: [
-                                    { role: "system", content: "Você é um assistente de vendas focado em reativar clientes inativos pelo WhatsApp de forma amigável e empática." },
+                                    { role: "system", content: systemPrompt },
                                     { role: "user", content: prompt }
                                 ],
                                 model: "llama-3.3-70b-versatile",

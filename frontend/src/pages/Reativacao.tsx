@@ -9,6 +9,7 @@ export default function Reativacao() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [diasInativos, setDiasInativos] = useState('-1');
+  const [ignorarRecentes, setIgnorarRecentes] = useState(false);
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [selectedVendedor, setSelectedVendedor] = useState('');
   const [viewMessage, setViewMessage] = useState<string | null>(null);
@@ -114,7 +115,7 @@ export default function Reativacao() {
   const fetchInativos = async (search: string = '', currentPage: number = 1) => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/clientes/esquecidos?codusur=${user?.matricula}&role=${user?.role}&dias=${diasInativos}&vendedorId=${selectedVendedor}&busca=${encodeURIComponent(search)}&page=${currentPage}&limit=50`);
+      const response = await fetch(`/api/clientes/esquecidos?codusur=${user?.matricula}&role=${user?.role}&dias=${diasInativos}&vendedorId=${selectedVendedor}&busca=${encodeURIComponent(search)}&ignorarRecentes=${ignorarRecentes}&page=${currentPage}&limit=50`);
       const data = await response.json();
       if (data.success) {
         if (currentPage === 1) {
@@ -141,7 +142,7 @@ export default function Reativacao() {
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [user?.matricula, selectedVendedor, searchTerm, diasInativos]);
+  }, [user?.matricula, selectedVendedor, searchTerm, diasInativos, ignorarRecentes]);
 
   useEffect(() => {
     if (page > 1 && user?.matricula) {
@@ -247,6 +248,25 @@ export default function Reativacao() {
     }
   };
 
+  const handleClearQueue = async () => {
+    if (!confirm('Tem certeza que deseja cancelar e apagar todos os envios pendentes?')) return;
+    try {
+      const res = await fetch(`/api/clientes/reativacao/fila/limpar?codusur=${user?.matricula}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Fila limpa com sucesso!');
+        fetchFilaStatus();
+      } else {
+        alert('Erro ao limpar fila: ' + data.message);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao comunicar com servidor para limpar a fila.');
+    }
+  };
+
   const clearQueue = () => {
     setQueue([]);
   };
@@ -348,6 +368,16 @@ export default function Reativacao() {
             <option value="90" style={{ color: '#000', backgroundColor: '#fff' }}>Mais de 90 dias</option>
           </select>
         </div>
+        
+        <label className="flex items-center gap-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-lg px-4 py-2.5 cursor-pointer hover:bg-white/5 transition-colors">
+          <input 
+            type="checkbox" 
+            checked={ignorarRecentes}
+            onChange={(e) => setIgnorarRecentes(e.target.checked)}
+            className="rounded border-gray-600 bg-transparent text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+          />
+          <span className="text-gray-300 text-sm whitespace-nowrap">Ocultar contatados (7 dias)</span>
+        </label>
 
         {vendedores.length > 0 && (
           <div className="flex items-center gap-2 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-lg px-4 py-2.5 w-full lg:w-auto overflow-hidden">
@@ -601,6 +631,14 @@ export default function Reativacao() {
               <button onClick={() => setFilaFilter('PROCESSANDO')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${filaFilter === 'PROCESSANDO' ? 'bg-blue-500/20 text-blue-300' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>Processando</button>
               <button onClick={() => setFilaFilter('ENVIADO')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${filaFilter === 'ENVIADO' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>Enviados</button>
               <button onClick={() => setFilaFilter('ERRO')} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${filaFilter === 'ERRO' ? 'bg-rose-500/20 text-rose-300' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>Erros</button>
+              
+              <button 
+                onClick={handleClearQueue} 
+                className="ml-auto px-3 py-1.5 rounded-full text-xs font-bold bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 border border-rose-500/30 transition-colors"
+                title="Cancelar envios pendentes e com erro"
+              >
+                Limpar Tudo
+              </button>
             </div>
 
             <div className="p-6 flex-1 overflow-y-auto">

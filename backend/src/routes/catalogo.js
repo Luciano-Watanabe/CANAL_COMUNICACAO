@@ -221,6 +221,7 @@ router.post('/send-whatsapp', upload.single('pdf'), async (req, res) => {
 
                 if (isUsarIA) {
                     const grokData = {
+                        contexto: 'catalogo',
                         clienteNome: c.nome || 'Cliente',
                         diasCompra: c.diasCompra || 30, // Fallback caso não venha preenchido
                         ramo: ramoNome || 'Geral',

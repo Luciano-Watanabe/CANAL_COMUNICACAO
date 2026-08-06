@@ -231,7 +231,7 @@ router.get('/:codcli/pedidos', async (req, res) => {
 });
 
 router.get('/esquecidos', async (req, res) => {
-    const { codusur, role, dias, vendedorId } = req.query;
+    const { codusur, role, dias, vendedorId, ignorarRecentes } = req.query;
     if (!codusur || codusur === 'undefined' || codusur === 'null' || isNaN(Number(codusur))) {
         return res.json({ success: true, esquecidos: [] });
     }
@@ -268,6 +268,15 @@ router.get('/esquecidos', async (req, res) => {
         OR EXISTS (SELECT 1 FROM VW_CANAL_CLIENTES WHERE CODCLI = C.CODCLI AND TELEFONE IS NOT NULL)
     ) `;
 
+    if (String(ignorarRecentes) === 'true') {
+        extraFilter += ` AND NOT EXISTS (
+            SELECT 1 FROM CANAL_REATIVACAO_FILA F WHERE F.CODCLI = C.CODCLI AND F.DATA_CRIACAO >= TRUNC(SYSDATE) - 7
+        ) AND NOT EXISTS (
+            SELECT 1 FROM CANAL_MENSAGENS M JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
+            WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - 7
+        ) `;
+    }
+
     let connection;
     try {
         connection = await oracledb.getConnection({
@@ -296,12 +305,7 @@ router.get('/esquecidos', async (req, res) => {
                   AND :cod IS NOT NULL
                   ${extraFilter}
                   AND UPPER(C.CLIENTE) NOT LIKE '%CONSUMIDOR FINAL%'
-                  AND NOT EXISTS (
-                      SELECT 1 
-                      FROM CANAL_MENSAGENS M
-                      JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
-                      WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - :dias
-                  )
+
                 ORDER BY DIAS_COMPRA DESC, C.CODCLI ASC
                 OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
             `;
@@ -325,12 +329,7 @@ router.get('/esquecidos', async (req, res) => {
                   AND C.DTEXCLUSAO IS NULL
                   ${extraFilter}
                   AND UPPER(C.CLIENTE) NOT LIKE '%CONSUMIDOR FINAL%'
-                  AND NOT EXISTS (
-                      SELECT 1 
-                      FROM CANAL_MENSAGENS M
-                      JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
-                      WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - :dias
-                  )
+
                 ORDER BY DIAS_COMPRA DESC, C.CODCLI ASC
                 OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
             `;
@@ -354,12 +353,7 @@ router.get('/esquecidos', async (req, res) => {
                   AND C.DTEXCLUSAO IS NULL
                   ${extraFilter}
                   AND UPPER(C.CLIENTE) NOT LIKE '%CONSUMIDOR FINAL%'
-                  AND NOT EXISTS (
-                      SELECT 1 
-                      FROM CANAL_MENSAGENS M
-                      JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
-                      WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - :dias
-                  )
+
                 ORDER BY DIAS_COMPRA DESC, C.CODCLI ASC
                 OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
             `;
@@ -382,12 +376,7 @@ router.get('/esquecidos', async (req, res) => {
                   AND C.DTEXCLUSAO IS NULL
                   ${extraFilter}
                   AND UPPER(C.CLIENTE) NOT LIKE '%CONSUMIDOR FINAL%'
-                  AND NOT EXISTS (
-                      SELECT 1 
-                      FROM CANAL_MENSAGENS M
-                      JOIN VW_CANAL_CLIENTES V ON V.TELEFONE = M.TELEFONE_CLIENTE
-                      WHERE V.CODCLI = C.CODCLI AND M.DATA_HORA >= TRUNC(SYSDATE) - :dias
-                  )
+
                 ORDER BY DIAS_COMPRA DESC, C.CODCLI ASC
                 OFFSET :offset ROWS FETCH NEXT :limit ROWS ONLY
             `;
@@ -741,6 +730,7 @@ router.post('/reativacao/fila', async (req, res) => {
             let msgText = (c.campanha ? `[CAMPANHA:${c.campanha}]` : '') + (c.enviarPrecos === false ? `[SEM_PRECO]` : '') + (c.mensagem || c.mensagemCustom || '');
             if (c.usarIA) {
                 const grokData = {
+                    contexto: 'reativacao',
                     tema: c.temaIA || '',
                     diasCompra: c.diasCompra || 0,
                     ramo: c.ramo_atividade || '',
@@ -784,10 +774,10 @@ router.get('/reativacao/fila/status', async (req, res) => {
         let sql = `
             SELECT STATUS, COUNT(*) AS QTD 
             FROM CANAL_REATIVACAO_FILA 
-            WHERE DATA_CRIACAO >= TRUNC(SYSDATE)
+            WHERE DATA_CRIACAO >= TRUNC(SYSDATE - 1)
         `;
         let params = {};
-        if (codusur) {
+        if (codusur && codusur !== 'undefined' && codusur !== 'null') {
             sql += ` AND CODUSUR = :codusur`;
             params.codusur = codusur;
         }
@@ -832,7 +822,7 @@ router.get('/reativacao/fila/items', async (req, res) => {
             WHERE DATA_CRIACAO >= TRUNC(SYSDATE) - 7
         `;
         let params = {};
-        if (codusur) {
+        if (codusur && codusur !== 'undefined' && codusur !== 'null') {
             sql += ` AND CODUSUR = :codusur`;
             params.codusur = codusur;
         }
@@ -884,6 +874,38 @@ router.delete('/reativacao/historico/:codcli', async (req, res) => {
     } catch (err) {
         console.error('Erro ao limpar historico:', err);
         return res.status(500).json({ success: false, message: 'Erro ao limpar histórico' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+router.delete('/reativacao/fila/limpar', async (req, res) => {
+    const { codusur } = req.query;
+    if (!codusur || codusur === 'undefined' || codusur === 'null') {
+        return res.status(400).json({ success: false, message: 'codusur é obrigatório' });
+    }
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const sql = `
+            DELETE FROM CANAL_REATIVACAO_FILA
+            WHERE CODUSUR = :codusur AND STATUS IN ('PENDENTE', 'ERRO')
+        `;
+        
+        const result = await connection.execute(sql, { codusur }, { autoCommit: true });
+        
+        return res.json({ success: true, message: 'Fila limpa com sucesso!', deletedCount: result.rowsAffected });
+    } catch (err) {
+        console.error('Erro ao limpar a fila:', err);
+        return res.status(500).json({ success: false, message: 'Erro ao limpar a fila' });
     } finally {
         if (connection) {
             try { await connection.close(); } catch (e) {}
