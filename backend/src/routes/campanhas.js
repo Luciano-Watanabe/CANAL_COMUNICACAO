@@ -119,7 +119,11 @@ router.get('/campanhas', async (req, res) => {
             ORDER BY DATA_PROGRAMADA DESC
         `;
         
-        const result = await connection.execute(sql);
+        const result = await connection.execute(sql, [], {
+            fetchInfo: {
+                "VENDEDORES_DESTINO": { type: oracledb.STRING }
+            }
+        });
         
         const agendamentos = result.rows.map(row => ({
             id: row[0],

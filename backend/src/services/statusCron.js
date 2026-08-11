@@ -27,11 +27,17 @@ async function getTokensAndUrls(connection, vendedoresArray) {
     }
 }
 
+let isProcessingStatus = false;
+
 // Tarefa que roda todo minuto
 cron.schedule('* * * * *', async () => {
+    if (isProcessingStatus) return;
+
     if (!cacheService.isWithinAllowedSchedule()) {
         return;
     }
+    
+    isProcessingStatus = true;
     let connection;
     try {
         connection = await oracledb.getConnection({
@@ -45,9 +51,13 @@ cron.schedule('* * * * *', async () => {
             SELECT ID, ARQUIVO_PATH, LEGENDA, VENDEDORES_DESTINO
             FROM CANAL_AGENDAMENTO_STATUS
             WHERE STATUS_ENVIO = 'PENDENTE'
-            AND DATA_PROGRAMADA <= CURRENT_TIMESTAMP
+            AND DATA_PROGRAMADA <= :agora
         `;
-        const result = await connection.execute(sql);
+        const result = await connection.execute(sql, { agora: new Date() }, {
+            fetchInfo: {
+                "VENDEDORES_DESTINO": { type: oracledb.STRING }
+            }
+        });
 
         for (const row of result.rows) {
             const id = row[0];
@@ -132,6 +142,7 @@ cron.schedule('* * * * *', async () => {
         if (connection) {
             try { await connection.close(); } catch (e) {}
         }
+        isProcessingStatus = false;
     }
 });
 

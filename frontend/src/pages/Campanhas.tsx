@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { ImagePlus, Calendar, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ImagePlus, Calendar, CheckCircle2, XCircle, Clock, ChevronDown } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 export default function Campanhas() {
@@ -8,9 +8,21 @@ export default function Campanhas() {
   const [file, setFile] = useState<File | null>(null);
   const [legenda, setLegenda] = useState('');
   const [dataHora, setDataHora] = useState('');
-  const [vendedores, setVendedores] = useState('TODOS');
+  const [vendedores, setVendedores] = useState<string[]>(['TODOS']);
   const [vendedoresList, setVendedoresList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     fetchAgendamentos();
@@ -57,7 +69,7 @@ export default function Campanhas() {
     formData.append('imagem', file);
     formData.append('legenda', legenda);
     formData.append('data_programada', formattedDate);
-    formData.append('vendedores', vendedores);
+    formData.append('vendedores', vendedores.includes('TODOS') ? 'TODOS' : JSON.stringify(vendedores));
     const userStr = localStorage.getItem('user');
     const user = userStr ? JSON.parse(userStr) : {};
     formData.append('criado_por', user.nome || 'Gerente');
@@ -103,7 +115,7 @@ export default function Campanhas() {
       const ids = JSON.parse(vendedoresStr);
       const names = ids.map((id: string) => {
         const v = vendedoresList.find(v => String(v.codusur) === String(id));
-        return v ? v.nome : `Vendedor ${id}`;
+        return v ? maskData(v.nome) : `Vendedor ${id}`;
       });
       return names.join(', ');
     } catch (e) {
@@ -159,20 +171,71 @@ export default function Campanhas() {
               />
             </div>
 
-            <div>
+            <div ref={dropdownRef} className="relative">
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Destinatários</label>
-              <select 
-                value={vendedores}
-                onChange={e => setVendedores(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-blue-500 transition-all text-slate-900 dark:text-white outline-none"
+              
+              <div 
+                className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 cursor-pointer flex justify-between items-center text-slate-900 dark:text-white transition-all hover:bg-slate-100 dark:hover:bg-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
               >
-                <option value="TODOS">Todos os Vendedores</option>
-                {vendedoresList.map(v => (
-                  <option key={v.codusur} value={JSON.stringify([v.codusur])}>
-                    {maskData(v.nome)}
-                  </option>
-                ))}
-              </select>
+                <span className="truncate pr-4">
+                  {vendedores.includes('TODOS') 
+                    ? 'Todos os Vendedores' 
+                    : `${vendedores.length} Vendedor(es) selecionado(s)`
+                  }
+                </span>
+                <ChevronDown className={`w-5 h-5 text-slate-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+              </div>
+
+              {dropdownOpen && (
+                <div className="absolute z-10 w-full mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                  <div className="p-2 space-y-1">
+                    <label className="flex items-center space-x-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer transition-colors">
+                      <input 
+                        type="checkbox" 
+                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700"
+                        checked={vendedores.includes('TODOS')}
+                        onChange={() => {
+                          setVendedores(['TODOS']);
+                          setDropdownOpen(false);
+                        }}
+                      />
+                      <span className="text-sm font-medium text-slate-900 dark:text-slate-200">Todos os Vendedores</span>
+                    </label>
+
+                    {vendedoresList.map(v => (
+                      <label key={v.codusur} className="flex items-center space-x-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg cursor-pointer transition-colors">
+                        <input 
+                          type="checkbox" 
+                          className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-700"
+                          checked={vendedores.includes(String(v.codusur))}
+                          onChange={(e) => {
+                            const val = String(v.codusur);
+                            let newVendedores = [...vendedores];
+                            
+                            if (newVendedores.includes('TODOS')) {
+                              newVendedores = [];
+                            }
+
+                            if (e.target.checked) {
+                              newVendedores.push(val);
+                            } else {
+                              newVendedores = newVendedores.filter(item => item !== val);
+                            }
+
+                            if (newVendedores.length === 0) {
+                              newVendedores = ['TODOS'];
+                            }
+
+                            setVendedores(newVendedores);
+                          }}
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300">{maskData(v.nome)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <button 
