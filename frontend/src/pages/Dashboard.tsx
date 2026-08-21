@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, MessageSquare, TrendingUp, Clock, Send, Megaphone, Trophy } from 'lucide-react';
-import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 import { useSocket } from '../contexts/SocketContext';
 import { TeamRanking } from '../components/TeamRanking';
@@ -26,6 +26,7 @@ export default function Dashboard() {
   const [rankingProdutosMesData, setRankingProdutosMesData] = useState<any[]>([]);
   const [departamentos, setDepartamentos] = useState<any[]>([]);
   const [selectedDepto, setSelectedDepto] = useState<string>('');
+  const [sacStats, setSacStats] = useState<any>(null);
 
   const [rankingClientesData, setRankingClientesData] = useState<any[]>([]);
   const [rankingClientesMesData, setRankingClientesMesData] = useState<any[]>([]);
@@ -94,12 +95,22 @@ export default function Dashboard() {
         if (chartJson.success) {
           setChartData(chartJson.chartData);
         }
+
+        try {
+          const resSac = await fetch('/api/sac/stats');
+          if (resSac.ok) {
+            setSacStats(await resSac.json());
+          }
+        } catch (e) {
+          console.error('Erro stats SAC:', e);
+        }
       } catch (err) {
         console.error(err);
       }
     };
+
     fetchDados();
-  }, []);
+  }, [maskData]);
 
   useEffect(() => {
     if (!socket) return;
@@ -270,6 +281,82 @@ export default function Dashboard() {
         </div>
         {userMatricula && <WhatsAppMonitor codusur={userMatricula} />}
       </div>
+
+      {sacStats && (
+        <>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-white mt-8 mb-4">Métricas SAC</h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="glass-card p-6 flex items-center justify-between animate-slide-up" style={{ animationDelay: '100ms' }}>
+              <div>
+                <p className="text-slate-500 font-medium text-sm">Tickets Abertos</p>
+                <p className="text-3xl font-bold text-slate-800 dark:text-white mt-1">{sacStats.totalAbertos}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-red-500/10 text-red-500">
+                <MessageSquare size={28} />
+              </div>
+            </div>
+            <div className="glass-card p-6 flex items-center justify-between animate-slide-up" style={{ animationDelay: '200ms' }}>
+              <div>
+                <p className="text-slate-500 font-medium text-sm">Resolvidos Hoje</p>
+                <p className="text-3xl font-bold text-slate-800 dark:text-white mt-1">{sacStats.resolvidosHoje}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-500">
+                <Trophy size={28} />
+              </div>
+            </div>
+            <div className="glass-card p-6 flex items-center justify-between animate-slide-up" style={{ animationDelay: '300ms' }}>
+              <div>
+                <p className="text-slate-500 font-medium text-sm">Avaliação Média</p>
+                <p className="text-3xl font-bold text-slate-800 dark:text-white mt-1">{sacStats.mediaAvaliacao} ⭐</p>
+              </div>
+              <div className="p-3 rounded-xl bg-amber-500/10 text-amber-500">
+                <TrendingUp size={28} />
+              </div>
+            </div>
+            <div className="glass-card p-6 flex items-center justify-between animate-slide-up" style={{ animationDelay: '400ms' }}>
+              <div>
+                <p className="text-slate-500 font-medium text-sm">SLA Médio</p>
+                <p className="text-3xl font-bold text-slate-800 dark:text-white mt-1">{sacStats.slaHoras} h</p>
+              </div>
+              <div className="p-3 rounded-xl bg-blue-500/10 text-blue-500">
+                <Clock size={28} />
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '500ms' }}>
+              <h3 className="font-semibold text-lg text-slate-800 dark:text-white mb-4">Volume por Departamento</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sacStats.volumeDepartamento}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <XAxis dataKey="nome" tick={{fill: '#64748b'}} />
+                    <YAxis tick={{fill: '#64748b'}} />
+                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff'}} />
+                    <Bar dataKey="total" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            
+            <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '600ms' }}>
+              <h3 className="font-semibold text-lg text-slate-800 dark:text-white mb-4">Top 5 Clientes (Tickets)</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sacStats.topClientes} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                    <XAxis type="number" tick={{fill: '#64748b'}} />
+                    <YAxis dataKey="nome" type="category" width={100} tick={{fontSize: 11, fill: '#64748b'}} />
+                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff'}} />
+                    <Bar dataKey="total" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, i) => {

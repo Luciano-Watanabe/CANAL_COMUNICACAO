@@ -5,6 +5,7 @@ try {
 } catch (err) {
     console.warn('[WORKER] Aviso: Falha ao inicializar o Thick mode do Oracle. Pode ser que o Instant Client não esteja presente no container.', err.message);
 }
+
 const initializeOracleDatabase = require('./scripts/init_oracle');
 const WebhookPoller = require('./services/webhookPoller');
 const cacheService = require('./services/cacheService');
@@ -12,6 +13,7 @@ const cacheService = require('./services/cacheService');
 console.log('[WORKER] Inicializando processos em background...');
 
 initializeOracleDatabase().then(async () => {
+
     console.log('[WORKER] Banco inicializado. Carregando Crons e Poller...');
     
     // Inicializa o cache para que os crons tenham acesso as configs globais

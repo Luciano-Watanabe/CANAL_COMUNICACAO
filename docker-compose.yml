@@ -46,8 +46,11 @@ services:
     volumes:
       - ./backend:/app
       - /app/node_modules
-      - ${HOST_IMAGES_DIR:-/mnt/fotos_prod}:/app/imagens_produtos # Diretório real de imagens no host
-      
+      # Diretório real de imagens no host
+      - ${HOST_IMAGES_DIR:-/mnt/fotos_prod}:/app/imagens_produtos 
+      # Pastas para o BOT SAC
+      - /mnt/danfe_boletos:/app/danfe_boletos
+      - /mnt/SAC:/app/SAC
     depends_on:
       - db
     networks:
@@ -91,6 +94,9 @@ services:
       - ./backend:/app
       - /app/node_modules
       - ${HOST_IMAGES_DIR:-/mnt/fotos_prod}:/app/imagens_produtos
+      # Pastas para o BOT SAC
+      - /mnt/danfe_boletos:/app/danfe_boletos
+      - /mnt/SAC:/app/SAC
     depends_on:
       - db
       - backend

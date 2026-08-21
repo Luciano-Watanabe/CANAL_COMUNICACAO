@@ -23,11 +23,12 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
+app.use('/SAC/UPLOAD', express.static(path.join(__dirname, '../SAC/UPLOAD')));
 global.io = io; // Disponibiliza o io globalmente para os controllers
 
 const webhookRoutes = require('./routes/webhook');
 const authRoutes = require('./routes/auth');
+const sacRoutes = require('./routes/sac');
 const clientesRoutes = require('./routes/clientes');
 const contatosRoutes = require('./routes/contatos');
 const configRoutes = require('./routes/config');
@@ -61,6 +62,7 @@ app.use('/api/visitas', visitasRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/rotas', rotasRoutes);
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/sac', sacRoutes);
 app.use('/api/templates', templatesRoutes);
 app.use('/api/templates_paginas', mensagensTemplatesRoutes);
 app.use('/api/automacoes', automacoesRoutes);
@@ -170,18 +172,23 @@ app.post('/api/internal/emit', (req, res) => {
 const PORT = process.env.PORT || 3001;
 const initializeOracleDatabase = require('./scripts/init_oracle');
 const cacheService = require('./services/cacheService');
+const oraclePool = require('./services/oraclePool');
 
-initializeOracleDatabase().then(() => {
-    // Inicia a API imediatamente para não recusar conexões (ex: Tela de Login)
-    server.listen(PORT, () => {
-        console.log(`Backend server running on port ${PORT}`);
-        console.log(`(Crons and Pollers are now running in the worker process)`);
-    });
+// Inicia o pool Oracle antes de qualquer coisa
+oraclePool.initPool()
+    .then(() => initializeOracleDatabase())
+    .then(() => {
+        // Inicia a API imediatamente para não recusar conexões (ex: Tela de Login)
+        server.listen(PORT, () => {
+            console.log(`Backend server running on port ${PORT}`);
+            console.log(`(Crons and Pollers are now running in the worker process)`);
+        });
 
-    // Inicia o carregamento do cache pesado em background
-    cacheService.loadAll().then(() => {
-        cacheService.startAutoRefresh();
+        // Inicia o carregamento do cache pesado em background
+        cacheService.loadAll().then(() => {
+            cacheService.startAutoRefresh();
+        });
+    })
+    .catch(err => {
+        console.error('Falha crítica ao inicializar o banco:', err);
     });
-}).catch(err => {
-    console.error('Falha crítica ao inicializar o banco:', err);
-});

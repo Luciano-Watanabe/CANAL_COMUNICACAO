@@ -135,6 +135,28 @@ const TABLES = [
         TELEFONE VARCHAR2(50) PRIMARY KEY,
         TEM_WHATS CHAR(1),
         DATA_VERIFICACAO TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE CANAL_BOT_STATE (
+        TELEFONE VARCHAR2(50) PRIMARY KEY,
+        ESTADO_ATUAL VARCHAR2(100),
+        DADOS_TEMPORARIOS CLOB,
+        ATUALIZADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE CANAL_SAC_DEPARTAMENTOS (
+        ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        NOME VARCHAR2(100),
+        DEPARTAMENTO_PAI_ID NUMBER,
+        ATIVO CHAR(1) DEFAULT 'S'
+    )`,
+    `CREATE TABLE CANAL_SAC_TICKETS (
+        ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        TELEFONE VARCHAR2(50),
+        CODCLI NUMBER,
+        DEPARTAMENTO_ID NUMBER,
+        DESCRICAO CLOB,
+        STATUS VARCHAR2(50) DEFAULT 'ABERTO',
+        CRIADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ATUALIZADO_EM TIMESTAMP
     )`
 ];
 
@@ -196,6 +218,29 @@ async function initializeOracleDatabase() {
             await conn.execute(`INSERT INTO CANAL_WEBHOOK_STATE (ID, LAST_PROCESSED_ID) SELECT 1, 0 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM CANAL_WEBHOOK_STATE WHERE ID = 1)`);
             await conn.commit();
         } catch(e) {}
+
+        // 3. Migrações: adicionar colunas que podem não existir em tabelas já criadas
+        const ALTER_COLUMNS = [
+            `ALTER TABLE CANAL_MENSAGENS ADD (MEDIA_MIMETYPE VARCHAR2(100))`,
+            `ALTER TABLE CANAL_MENSAGENS ADD (MEDIA_TYPE VARCHAR2(50))`,
+            `ALTER TABLE CANAL_MENSAGENS ADD (MEDIA_URL VARCHAR2(1000))`,
+            `ALTER TABLE CANAL_MENSAGENS ADD (ARQUIVO_LOCAL VARCHAR2(1000))`,
+            `ALTER TABLE CANAL_MENSAGENS ADD (STATUS VARCHAR2(50))`,
+            `ALTER TABLE CANAL_MENSAGENS ADD (LIDA CHAR(1) DEFAULT 'N')`,
+        ];
+        for (const alterSql of ALTER_COLUMNS) {
+            try {
+                await conn.execute(alterSql);
+                console.log(`✅ [STARTUP] Coluna adicionada: ${alterSql.substring(0, 80)}...`);
+            } catch (err) {
+                // ORA-01430: column being added already exists in the table
+                if (err.errorNum === 1430) {
+                    // Ignora, já existe
+                } else {
+                    console.error(`⚠️ [STARTUP] Erro ao adicionar coluna: ${alterSql}`, err.message);
+                }
+            }
+        }
 
         console.log('🎉 [STARTUP] Banco de dados Oracle inicializado perfeitamente! Pronto para operar.');
     } catch (err) {

@@ -25,7 +25,8 @@ router.get('/vendedores', async (req, res) => {
                 U.CARGO,
                 T.API_TOKEN,
                 T.INSTANCE_NAME,
-                T.API_URL
+                T.API_URL,
+                T.NOME_ATENDENTE
             FROM VW_CANAL_USUARIOS U
             LEFT JOIN CANAL_TOKENS_EVOLUTION T ON U.CODUSUR = T.CODUSUR
             ORDER BY U.NOME
@@ -38,7 +39,8 @@ router.get('/vendedores', async (req, res) => {
             cargo: row[2],
             api_token: row[3] || '',
             instance_name: row[4] || '',
-            api_url: row[5] || ''
+            api_url: row[5] || '',
+            nome_atendente: row[6] || ''
         }));
 
         res.json({ success: true, vendedores });
@@ -131,9 +133,8 @@ router.post('/global', async (req, res) => {
     }
 });
 
-// Salvar ou atualizar o token de um vendedor
 router.post('/token', async (req, res) => {
-    const { codusur, api_token, instance_name, api_url } = req.body;
+    const { codusur, api_token, instance_name, api_url, nome_atendente } = req.body;
 
     if (!codusur) {
         return res.status(400).json({ success: false, message: 'Código do usuário é obrigatório.' });
@@ -150,20 +151,21 @@ router.post('/token', async (req, res) => {
         // MERGE statement is Oracle's standard way to UPSERT
         const sql = `
             MERGE INTO CANAL_TOKENS_EVOLUTION T
-            USING (SELECT :codusur AS CODUSUR, :api_token AS API_TOKEN, :instance_name AS INSTANCE_NAME, :api_url AS API_URL FROM DUAL) S
+            USING (SELECT :codusur AS CODUSUR, :api_token AS API_TOKEN, :instance_name AS INSTANCE_NAME, :api_url AS API_URL, :nome_atendente AS NOME_ATENDENTE FROM DUAL) S
             ON (T.CODUSUR = S.CODUSUR)
             WHEN MATCHED THEN 
-                UPDATE SET T.API_TOKEN = S.API_TOKEN, T.INSTANCE_NAME = S.INSTANCE_NAME, T.API_URL = S.API_URL, T.DATA_ATUALIZACAO = SYSDATE
+                UPDATE SET T.API_TOKEN = S.API_TOKEN, T.INSTANCE_NAME = S.INSTANCE_NAME, T.API_URL = S.API_URL, T.NOME_ATENDENTE = S.NOME_ATENDENTE, T.DATA_ATUALIZACAO = SYSDATE
             WHEN NOT MATCHED THEN 
-                INSERT (CODUSUR, API_TOKEN, INSTANCE_NAME, API_URL) 
-                VALUES (S.CODUSUR, S.API_TOKEN, S.INSTANCE_NAME, S.API_URL)
+                INSERT (CODUSUR, API_TOKEN, INSTANCE_NAME, API_URL, NOME_ATENDENTE) 
+                VALUES (S.CODUSUR, S.API_TOKEN, S.INSTANCE_NAME, S.API_URL, S.NOME_ATENDENTE)
         `;
         
         await connection.execute(sql, {
             codusur, 
             api_token: api_token || '', 
             instance_name: instance_name || '', 
-            api_url: api_url || ''
+            api_url: api_url || '',
+            nome_atendente: nome_atendente || ''
         }, { autoCommit: true });
 
         res.json({ success: true, message: 'Configurações salvas com sucesso!' });

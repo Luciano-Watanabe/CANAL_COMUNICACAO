@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import clsx from 'clsx';
-import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, Sun, Moon, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin, Target } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, Sun, Moon, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin, Target, Headset, ShieldAlert } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
@@ -26,8 +26,13 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'Carteira de Clientes', path: '/clientes', icon: Users },
     { name: 'Chat (Atendimento)', path: '/chat', icon: MessageSquare },
+    { name: 'SAC', path: '/sac', icon: Headset },
     { name: 'Catálogo', path: '/catalogo', icon: BookOpen },
   ];
+
+  if (userRole === 'GERENTE' || userRole === 'BOT_GESTOR' || userRole === 'SUPERVISOR') {
+    links.push({ name: 'Logs Identificação', path: '/logs-identificacao', icon: ShieldAlert });
+  }
 
   if (userRole === 'GERENTE' || userRole === 'BOT_GESTOR') {
     links.push({ name: 'Configurações', path: '/configuracoes', icon: Settings });
@@ -145,7 +150,11 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
 
 export default function RootLayout() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved === 'dark';
+    return false; // light default
+  });
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const { socket } = useSocket();
@@ -156,8 +165,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (isDark) {
       document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
     }
   }, [isDark]);
 

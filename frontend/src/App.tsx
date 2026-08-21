@@ -16,6 +16,8 @@ import AnaliseIE from './pages/AnaliseIE';
 import Catalogo from './pages/Catalogo';
 import Geolocalizacao from './pages/Geolocalizacao';
 import Prospeccao from './pages/Prospeccao';
+import SAC from './pages/SAC';
+import LogIdentificacao from './pages/LogIdentificacao';
 import ProtectedRoute from './components/ProtectedRoute';
 import { SocketProvider } from './contexts/SocketContext';
 
@@ -54,6 +56,8 @@ function App() {
             <Route path="/catalogo" element={<Catalogo />} />
             <Route path="/geolocalizacao" element={<Geolocalizacao />} />
             <Route path="/prospeccao" element={<Prospeccao />} />
+            <Route path="/sac" element={<SAC />} />
+            <Route path="/logs-identificacao" element={<LogIdentificacao />} />
           </Route>
         </Route>
       </Routes>

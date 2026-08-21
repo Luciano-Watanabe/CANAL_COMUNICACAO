@@ -14,8 +14,24 @@ async function run() {
         password: process.env.ORACLE_PASS || 'oracle',
         connectString: process.env.ORACLE_CONN_STR || 'localhost/XEPDB1'
     });
-    const res = await conn.execute(`SELECT column_name, data_type FROM user_tab_columns WHERE table_name = 'CANAL_MENSAGENS'`);
-    console.log(res.rows);
+
+    let sql = `
+        CREATE TABLE CANAL_LOG_IDENTIFICACAO_CLIENTE (
+            ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            TELEFONE VARCHAR2(20),
+            DOCUMENTO_INFORMADO VARCHAR2(50),
+            CODCLI_LOCALIZADO NUMBER,
+            OPCAO_USADA VARCHAR2(100),
+            DATA_HORA DATE DEFAULT SYSDATE
+        )
+    `;
+    try {
+        await conn.execute(sql);
+        console.log("Table CANAL_LOG_IDENTIFICACAO_CLIENTE created.");
+    } catch (e) {
+        console.log("Table CANAL_LOG_IDENTIFICACAO_CLIENTE might already exist:", e.message);
+    }
+    
     await conn.close();
 }
 run().catch(console.error);

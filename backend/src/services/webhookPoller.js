@@ -2,6 +2,8 @@ const oracledb = require('oracledb');
 const fs = require('fs');
 const path = require('path');
 const cacheService = require('./cacheService');
+const SacBotService = require('./SacBotService');
+
 
 const botReplyCache = new Map();
 
@@ -10,6 +12,7 @@ class WebhookPoller {
         this.interval = null;
         this.isRunning = false;
         this.pollIntervalMs = 5000; // Poll every 5 seconds
+        this.sacBotService = new SacBotService(this);
     }
 
     start() {
@@ -118,17 +121,32 @@ class WebhookPoller {
             
             let textMessage = '';
             let isAudio = false;
-            let audioBase64 = data.base64 || payload.base64 || (data.Message && data.Message.base64) || null;
+            
+            // Busca base64 em vários locais possíveis no payload da GO
+            let audioBase64 = data.base64 || payload.base64 || data.Message?.base64 || data.Message?.documentMessage?.base64 || data.Message?.imageMessage?.base64 || data.Message?.videoMessage?.base64 || data.Message?.audioMessage?.base64 || null;
             let originalMessage = data;
 
             if (data.Message) {
                 textMessage = data.Message.conversation || 
-                              data.Message.extendedTextMessage?.text;
+                              data.Message.extendedTextMessage?.text ||
+                              data.Message.imageMessage?.caption ||
+                              data.Message.videoMessage?.caption ||
+                              data.Message.documentMessage?.caption;
+
                 if (!textMessage) {
                     if (data.Message.audioMessage) {
                         isAudio = true;
                         textMessage = `[AUDIO]${info.ID}.ogg`;
                         console.log('AUDIO DETECTADO no GO! id=', info.ID);
+                    } else if (data.Message.documentMessage) {
+                        textMessage = `[DOCUMENTO] ${data.Message.documentMessage.fileName || 'documento.pdf'}`;
+                        console.log('DOCUMENTO DETECTADO no GO!');
+                    } else if (data.Message.imageMessage) {
+                        textMessage = `[IMAGEM] ${info.ID}.jpg`;
+                        console.log('IMAGEM DETECTADA no GO!');
+                    } else if (data.Message.videoMessage) {
+                        textMessage = `[VIDEO] ${info.ID}.mp4`;
+                        console.log('VIDEO DETECTADO no GO!');
                     } else {
                         textMessage = '[Mensagem não suportada / Mídia]';
                     }
@@ -155,7 +173,7 @@ class WebhookPoller {
                 if (handled) return; // Se processou como retorno, não envia para o chat do cliente
             }
 
-            await this.saveMessage(msgObj, instanceName, conn, isAudio ? originalMessage : null, audioBase64);
+            await this.saveMessage(msgObj, instanceName, conn, originalMessage, audioBase64);
 
             if (codusur) {
                 const roomName = `user_${codusur}`;
@@ -174,6 +192,31 @@ class WebhookPoller {
                 console.log(`[WebhookPoller] Cliente ${telefone} não encontrado na PCCLIENT. Mensagem arquivada.`);
             }
             
+            // Verifica se a instância é a do SAC BOT
+            let isSacBot = false;
+            try {
+                const sacBotRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
+                if (sacBotRes.rows.length > 0 && sacBotRes.rows[0][0]) {
+                    const sacCodusur = sacBotRes.rows[0][0];
+                    const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
+                    if (instRes.rows.length > 0) {
+                        const dbInstanceName = instRes.rows[0][0];
+                        console.log(`[WebhookPoller] Debug SAC BOT: SAC_BOT_CODUSUR=${sacCodusur}, dbInstanceName="${dbInstanceName}", currentInstanceName="${instanceName}"`);
+                        if (dbInstanceName === instanceName) {
+                            isSacBot = true;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("[WebhookPoller] Erro ao checar SAC_BOT_CODUSUR", e);
+            }
+
+            if (isSacBot) {
+                // Roteia para o BOT do SAC e não envia autoReply padrão
+                await this.sacBotService.handleMessage(telefone, textMessage, instanceName, conn, isAudio, audioBase64, originalMessage);
+                return;
+            }
+
             await this.handleBotAutoReply(telefone, instanceName, conn);
             
             return;
@@ -199,10 +242,25 @@ class WebhookPoller {
             fallbackTextMessage = messageData.conversation;
         } else if (messageData.extendedTextMessage && messageData.extendedTextMessage.text) {
             fallbackTextMessage = messageData.extendedTextMessage.text;
+        } else if (messageData.imageMessage && messageData.imageMessage.caption) {
+            fallbackTextMessage = messageData.imageMessage.caption;
+        } else if (messageData.videoMessage && messageData.videoMessage.caption) {
+            fallbackTextMessage = messageData.videoMessage.caption;
+        } else if (messageData.documentMessage && messageData.documentMessage.caption) {
+            fallbackTextMessage = messageData.documentMessage.caption;
         } else if (messageData.audioMessage) {
             fallbackIsAudio = true;
             fallbackTextMessage = `[AUDIO]${data.key.id}.ogg`;
             console.log('AUDIO DETECTADO no FALLBACK!');
+        } else if (messageData.documentMessage) {
+            fallbackTextMessage = `[DOCUMENTO] ${messageData.documentMessage.fileName || 'documento.pdf'}`;
+            console.log('DOCUMENTO DETECTADO no FALLBACK!');
+        } else if (messageData.imageMessage) {
+            fallbackTextMessage = `[IMAGEM] ${data.key.id}.jpg`;
+            console.log('IMAGEM DETECTADA no FALLBACK!');
+        } else if (messageData.videoMessage) {
+            fallbackTextMessage = `[VIDEO] ${data.key.id}.mp4`;
+            console.log('VIDEO DETECTADO no FALLBACK!');
         } else {
             fallbackTextMessage = '[Mensagem não suportada / Mídia]';
         }
@@ -226,7 +284,7 @@ class WebhookPoller {
             if (handled) return; // Se processou como retorno, não envia para o chat do cliente
         }
 
-        await this.saveMessage(fallbackMsgObj, fallbackInstanceName, conn, fallbackIsAudio ? fallbackOriginalMessage : null, fallbackAudioBase64);
+        await this.saveMessage(fallbackMsgObj, fallbackInstanceName, conn, fallbackOriginalMessage, fallbackAudioBase64);
 
         if (fallbackCodusur) {
             const roomName = `user_${fallbackCodusur}`;
@@ -244,6 +302,30 @@ class WebhookPoller {
             console.log(`[WebhookPoller] Cliente ${fallbackTelefone} não encontrado. Mensagem arquivada.`);
         }
         
+        // Verifica se a instância é a do SAC BOT
+        let fallbackIsSacBot = false;
+        try {
+            const sacBotRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
+            if (sacBotRes.rows.length > 0 && sacBotRes.rows[0][0]) {
+                const sacCodusur = sacBotRes.rows[0][0];
+                const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
+                if (instRes.rows.length > 0) {
+                    const dbInstanceName = instRes.rows[0][0];
+                    console.log(`[WebhookPoller] Debug SAC BOT Fallback: SAC_BOT_CODUSUR=${sacCodusur}, dbInstanceName="${dbInstanceName}", currentInstanceName="${fallbackInstanceName}"`);
+                    if (dbInstanceName === fallbackInstanceName) {
+                        fallbackIsSacBot = true;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("[WebhookPoller] Erro ao checar SAC_BOT_CODUSUR no fallback", e);
+        }
+
+        if (fallbackIsSacBot) {
+            await this.sacBotService.handleMessage(fallbackTelefone, fallbackTextMessage, fallbackInstanceName, conn, fallbackIsAudio, fallbackAudioBase64, data);
+            return;
+        }
+
         await this.handleBotAutoReply(fallbackTelefone, fallbackInstanceName, conn);
     }
 
@@ -270,9 +352,20 @@ class WebhookPoller {
         // Encontra primeiro o RCA correspondente pela tabela de clientes, ou outro critério
         // Usamos PCCLIENT para buscar o RCA (CODUSUR) que atende esse telefone (campo TELENT ou TELCOB)
         const result = await conn.execute(`
-            SELECT CODUSUR1 FROM PCCLIENT 
-            WHERE REPLACE(REPLACE(REPLACE(REPLACE(TELENT, ' ', ''), '-', ''), '(', ''), ')', '') = :tel
-               OR REPLACE(REPLACE(REPLACE(REPLACE(TELCOB, ' ', ''), '-', ''), '(', ''), ')', '') = :tel
+            SELECT C.CODUSUR1
+            FROM PCCLIENT C
+            LEFT JOIN PCCONTATO CT ON C.CODCLI = CT.CODCLI AND (
+                REPLACE(REPLACE(REPLACE(REPLACE(CT.TELEFONE, ' ', ''), '-', ''), '(', ''), ')', '') = :tel OR
+                REPLACE(REPLACE(REPLACE(REPLACE(CT.CELULAR, ' ', ''), '-', ''), '(', ''), ')', '') = :tel
+            )
+            WHERE 
+                REPLACE(REPLACE(REPLACE(REPLACE(C.TELCELENT, ' ', ''), '-', ''), '(', ''), ')', '') = :tel OR
+                REPLACE(REPLACE(REPLACE(REPLACE(C.TELENT, ' ', ''), '-', ''), '(', ''), ')', '') = :tel OR
+                REPLACE(REPLACE(REPLACE(REPLACE(C.TELCOM, ' ', ''), '-', ''), '(', ''), ')', '') = :tel OR
+                REPLACE(REPLACE(REPLACE(REPLACE(C.TELCOB, ' ', ''), '-', ''), '(', ''), ')', '') = :tel OR
+                REPLACE(REPLACE(REPLACE(REPLACE(CT.TELEFONE, ' ', ''), '-', ''), '(', ''), ')', '') = :tel OR
+                REPLACE(REPLACE(REPLACE(REPLACE(CT.CELULAR, ' ', ''), '-', ''), '(', ''), ')', '') = :tel
+            FETCH FIRST 1 ROWS ONLY
         `, { tel: telefone });
         
         if (result.rows.length > 0) return result.rows[0][0];
@@ -331,11 +424,8 @@ class WebhookPoller {
     }
 
     async enviarMensagemBot(telefone, texto, conn, instanceName) {
-        if (!cacheService.isWithinAllowedSchedule()) {
-            return;
-        }
         try {
-            const fetch = require('node-fetch');
+            const axios = require('axios');
             const resultTokens = await conn.execute(`
                 SELECT API_TOKEN, COALESCE(API_URL, (SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'EVOLUTION_API_URL')) AS URL_BASE 
                 FROM CANAL_TOKENS_EVOLUTION WHERE INSTANCE_NAME = :inst
@@ -344,18 +434,114 @@ class WebhookPoller {
             if (resultTokens.rows.length > 0) {
                 const apiToken = resultTokens.rows[0][0];
                 const urlBase = resultTokens.rows[0][1];
-                let p = '55' + telefone;
+                let p = telefone.startsWith('55') ? telefone : '55' + telefone;
                 p = cacheService.getDestinoFinal(p);
 
-                const url = `${urlBase}/message/sendText/${instanceName}`;
-                await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'apikey': apiToken },
-                    body: JSON.stringify({ number: p, text: texto })
-                });
+                // Evolution API Padrão
+                const urlEvo = `${urlBase}/message/sendText/${instanceName}`;
+                const headersEvo = { 'Content-Type': 'application/json', 'apikey': apiToken };
+
+                // Evo Go (Golang API)
+                const urlEvoGo = `${urlBase}/send/text`;
+                const headersEvoGo = { 'Content-Type': 'application/json', 'apikey': apiToken, 'instance': instanceName };
+
+                console.log(`[WebhookPoller] Enviando msg BOT... Tentando Evolution API Padrão (${urlEvo})`);
+                
+                try {
+                    const response = await axios.post(urlEvo, { number: p, text: texto }, { headers: headersEvo });
+                    if (response.status >= 200 && response.status < 300) {
+                        console.log(`[WebhookPoller] Mensagem do BOT enviada com sucesso para ${p} (Evo Padrão)`);
+                    }
+                } catch (e) {
+                    if (e.response && e.response.status === 404) {
+                        console.log(`[WebhookPoller] Rota padrão retornou 404. Tentando formato EVO GO (${urlEvoGo})...`);
+                        const responseGo = await axios.post(urlEvoGo, { number: p, text: texto }, { headers: headersEvoGo });
+                        if (responseGo.status >= 200 && responseGo.status < 300) {
+                            console.log(`[WebhookPoller] Mensagem do BOT enviada com sucesso para ${p} (Evo Go). Data:`, JSON.stringify(responseGo.data));
+                        } else {
+                            console.log(`[WebhookPoller] Falha ao enviar Evo Go. Status:`, responseGo.status, responseGo.data);
+                        }
+                    } else {
+                        throw e;
+                    }
+                }
+            } else {
+                console.error(`[WebhookPoller] Não encontrou token/URL para a instância: ${instanceName} no banco de dados!`);
             }
         } catch(e) {
             console.error('[WebhookPoller] Erro ao enviar resposta do bot:', e.message);
+            if (e.response && e.response.data) {
+                console.error('[WebhookPoller] Detalhes do Erro API Evo:', JSON.stringify(e.response.data));
+            }
+        }
+    }
+
+    async enviarDocumentoBot(telefone, base64Data, fileName, mimeType, conn, instanceName) {
+        try {
+            const resultTokens = await conn.execute(`
+                SELECT API_TOKEN, COALESCE(API_URL, (SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'EVOLUTION_API_URL')) AS URL_BASE 
+                FROM CANAL_TOKENS_EVOLUTION WHERE INSTANCE_NAME = :inst
+            `, [instanceName]);
+
+            if (resultTokens.rows.length > 0) {
+                const apiToken = resultTokens.rows[0][0];
+                const urlBase = resultTokens.rows[0][1];
+
+                const cacheService = require('./cacheService');
+                let p = telefone.startsWith('55') ? telefone : '55' + telefone;
+                p = cacheService.getDestinoFinal(p);
+
+                // Evolution Padrão
+                const urlEvo = `${urlBase}/message/sendMedia/${instanceName}`;
+                
+                // Limpar prefixo base64 se houver
+                let cleanBase64 = base64Data;
+                if (cleanBase64.includes('base64,')) {
+                    cleanBase64 = cleanBase64.split('base64,')[1];
+                }
+
+                const typeGo = mimeType.includes('image') ? 'image' : 'document';
+                
+                const payloadEvo = {
+                    number: p,
+                    mediatype: typeGo,
+                    mimetype: mimeType,
+                    media: base64Data,
+                    fileName: fileName
+                };
+                
+                const headersEvo = { 'Content-Type': 'application/json', 'apikey': apiToken };
+                
+                const urlEvoGo = `${urlBase}/send/media`;
+                const payloadEvoGo = {
+                    number: p,
+                    type: typeGo,
+                    url: cleanBase64,
+                    filename: fileName
+                };
+                const headersEvoGo = { 'Content-Type': 'application/json', 'apikey': apiToken, 'instance': instanceName };
+
+                console.log(`[WebhookPoller] Enviando doc BOT... Tentando Evo Padrão (${urlEvo})`);
+                
+                try {
+                    const response = await axios.post(urlEvo, payloadEvo, { headers: headersEvo });
+                    if (response.status >= 200 && response.status < 300) {
+                        console.log(`[WebhookPoller] Doc do BOT enviado com sucesso para ${p} (Evo Padrão)`);
+                    }
+                } catch (e) {
+                    if (e.response && e.response.status === 404) {
+                        console.log(`[WebhookPoller] Rota padrão retornou 404. Tentando Evo GO (${urlEvoGo})...`);
+                        const responseGo = await axios.post(urlEvoGo, payloadEvoGo, { headers: headersEvoGo });
+                        if (responseGo.status >= 200 && responseGo.status < 300) {
+                            console.log(`[WebhookPoller] Doc do BOT enviado com sucesso para ${p} (Evo Go)`);
+                        }
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+        } catch(e) {
+            console.error('[WebhookPoller] Erro ao enviar documento bot:', e.message);
         }
     }
 
@@ -377,18 +563,52 @@ class WebhookPoller {
                 console.warn(`[WebhookPoller] Instância não cadastrada: ${instanceName}`);
                 return;
             }
-               // --- Lógica de Download e Transcrição de Áudio ---
-            if (originalMessage) {
-                try {
-                    const axios = require('axios');
-                    const uploadsDir = path.join(__dirname, '../../uploads');
-                    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-                    const filePath = path.join(uploadsDir, `${msgObj.id}.ogg`);
+                    // --- Lógica de Download de Mídia (Áudio, Imagem, Vídeo, Documento) ---
+            let mediaUrl = null;
+            let mediaType = null;
+            let mediaMime = null;
+            let filePath = null;
 
-                    // 1. Tenta usar o base64 que já veio no payload do webhook
-                    if (!audioBase64) {
-                        // Tenta rota Evolution API padrão
-                        if (urlBase && apiToken) {
+            if (originalMessage && originalMessage.Message) {
+                const msg = originalMessage.Message;
+                let mediaInfo = msg.audioMessage || msg.imageMessage || msg.videoMessage || msg.documentMessage;
+                
+                if (mediaInfo) {
+                    if (msg.audioMessage) mediaType = 'audio';
+                    else if (msg.imageMessage) mediaType = 'image';
+                    else if (msg.videoMessage) mediaType = 'video';
+                    else if (msg.documentMessage) mediaType = 'document';
+
+                    mediaMime = mediaInfo.mimetype || '';
+
+                    try {
+                        const axios = require('axios');
+                        let subFolder = 'Documentos';
+                        if (mediaType === 'image') subFolder = 'Imagens';
+                        else if (mediaType === 'video') subFolder = 'Video';
+                        else if (mediaType === 'audio' || mediaType === 'voice') subFolder = 'Audio';
+                        
+                        const uploadsDir = path.join(__dirname, '../../SAC/UPLOAD', subFolder);
+                        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+                        
+                        let ext = 'bin';
+                        if (mediaMime.includes('audio/ogg')) ext = 'ogg';
+                        else if (mediaMime.includes('audio/mp4')) ext = 'm4a';
+                        else if (mediaMime.includes('audio/')) ext = 'mp3';
+                        else if (mediaMime.includes('image/jpeg')) ext = 'jpg';
+                        else if (mediaMime.includes('image/png')) ext = 'png';
+                        else if (mediaMime.includes('video/mp4')) ext = 'mp4';
+                        else if (mediaMime.includes('pdf')) ext = 'pdf';
+                        else if (mediaInfo.fileName) {
+                            const parts = mediaInfo.fileName.split('.');
+                            if (parts.length > 1) ext = parts.pop();
+                        }
+
+                        const fileName = `${msgObj.id}.${ext}`;
+                        filePath = path.join(uploadsDir, fileName);
+
+                        // 1. Tenta usar o base64 que já veio no payload
+                        if (!audioBase64 && urlBase && apiToken) {
                             try {
                                 const response = await axios.post(
                                     `${urlBase}/chat/getBase64FromMediaMessage/${instanceName}`,
@@ -397,120 +617,170 @@ class WebhookPoller {
                                 );
                                 if (response.data && response.data.base64) {
                                     audioBase64 = response.data.base64;
-                                    console.log('[WebhookPoller] base64 obtido via Evolution API');
                                 }
                             } catch(e) {
-                                console.warn('[WebhookPoller] Falha ao baixar via Evolution API:', e.response?.data || e.message);
+                                console.warn('[WebhookPoller] Falha ao baixar via Evolution API (v1):', e.message);
                             }
                         }
-                    }
 
-                    if (!audioBase64 && urlBase && apiToken) {
-                        // Tenta rota Evolution GO com o corpo correto
-                        // O Evolution GO precisa dos campos do audioMessage mapeados do payload recebido
-                        try {
-                            const goInstanceName = instanceName;
-                            const audioInfo = originalMessage.Message && originalMessage.Message.audioMessage;
-                            
-                            if (audioInfo) {
-                                const downloadBody = {
-                                    message: {
-                                        audioMessage: {
-                                            PTT: audioInfo.PTT || false,
-                                            URL: audioInfo.URL || '',
-                                            directPath: audioInfo.directPath || '',
-                                            fileEncSHA256: audioInfo.fileEncSHA256 || '',
-                                            fileLength: audioInfo.fileLength || 0,
-                                            fileSHA256: audioInfo.fileSHA256 || '',
-                                            mediaKey: audioInfo.mediaKey || '',
-                                            mediaKeyTimestamp: audioInfo.mediaKeyTimestamp || 0,
-                                            mimetype: audioInfo.mimetype || 'audio/ogg; codecs=opus',
-                                            seconds: audioInfo.seconds || 0,
-                                            waveform: audioInfo.waveform || ''
-                                        }
-                                    }
-                                };
-                                console.log('[WebhookPoller] Chamando Evolution GO /message/downloadmedia...');
+                        if (!audioBase64 && urlBase && apiToken) {
+                            // Tenta rota Evolution GO
+                            try {
+                                const downloadBody = { message: originalMessage.Message };
                                 const goResponse = await axios.post(
                                     `${urlBase}/message/downloadmedia`,
                                     downloadBody,
-                                    { headers: { 'apikey': apiToken, 'instance': goInstanceName, 'Content-Type': 'application/json' } }
+                                    { headers: { 'apikey': apiToken, 'instance': instanceName, 'Content-Type': 'application/json' } }
                                 );
                                 if (goResponse.data) {
                                     audioBase64 = goResponse.data.base64 || (goResponse.data.data && goResponse.data.data.base64) || null;
-                                    if (audioBase64) console.log('[WebhookPoller] base64 obtido via Evolution GO');
-                                    else console.warn('[WebhookPoller] Evolution GO respondeu mas sem base64:', JSON.stringify(goResponse.data).substring(0, 200));
                                 }
-                            } else {
-                                console.warn('[WebhookPoller] originalMessage.Message.audioMessage não encontrado no payload');
+                            } catch(e) {
+                                console.warn('[WebhookPoller] Falha ao baixar via Evolution GO:', e.message);
                             }
-                        } catch(e) {
-                            console.warn('[WebhookPoller] Falha ao baixar via Evolution GO:', e.response?.data || e.message);
                         }
-                    }
 
-                    // 2. Salva o arquivo em disco se tiver base64
-                    if (audioBase64) {
-                        let base64Data = audioBase64;
-                        if (base64Data.includes('base64,')) {
-                            base64Data = base64Data.split('base64,')[1];
-                        }
-                        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-                        console.log(`[WebhookPoller] Audio salvo em ${filePath}`);
-                    }
-
-                    // 3. Transcreve com Groq (se o arquivo existir)
-                    if (fs.existsSync(filePath)) {
-                        try {
-                            let groqKey = process.env.GROQ_API_KEY;
-                            const groqResult = await conn.execute(
-                                `SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'GROQ_API_KEY'`
-                            );
-                            if (groqResult.rows.length > 0 && groqResult.rows[0][0]) {
-                                groqKey = groqResult.rows[0][0];
+                        // 2. Salva o arquivo em disco se tiver base64
+                        if (audioBase64) {
+                            let base64Data = audioBase64;
+                            if (base64Data.includes('base64,')) {
+                                base64Data = base64Data.split('base64,')[1];
                             }
-
-                            if (groqKey && groqKey !== 'SUA_CHAVE_AQUI') {
-                                const OpenAI = require('openai');
-                                const openai = new OpenAI({
-                                    apiKey: groqKey,
-                                    baseURL: 'https://api.groq.com/openai/v1',
-                                });
-                                const transcription = await openai.audio.transcriptions.create({
-                                    file: fs.createReadStream(filePath),
-                                    model: 'whisper-large-v3',
-                                    language: 'pt',
-                                });
-                                if (transcription && transcription.text) {
-                                    const transcricaoTag = `\n\n[TRANSCRICAO] ${transcription.text}`;
-                                    // Garante que não ultrapasse 4000 chars do VARCHAR2
-                                    const baseText = msgObj.text.substring(0, 3900);
-                                    msgObj.text = (baseText + transcricaoTag).substring(0, 4000);
-                                    console.log(`[WebhookPoller] Audio transcrito: ${transcription.text}`);
-                                }
-                            } else {
-                                console.warn('[WebhookPoller] GROQ_API_KEY não configurada. Transcrição pulada.');
-                            }
-                        } catch (tErr) {
-                            console.error('[WebhookPoller] Erro na transcrição Groq:', tErr.message || tErr);
+                            fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+                            console.log(`[WebhookPoller] Mídia salva em ${filePath}`);
+                            mediaUrl = `/SAC/UPLOAD/${subFolder}/${fileName}`;
                         }
-                    } else {
-                        console.warn(`[WebhookPoller] Arquivo de audio não encontrado para transcrever: ${filePath}. base64 disponível: ${!!audioBase64}`);
+                    } catch(e) {
+                        console.error('[WebhookPoller] Erro no processamento de mídia:', e);
                     }
-                } catch(e) {
-                    console.error('[WebhookPoller] Erro no processamento de audio:', e);
                 }
             }
 
-            await conn.execute(`
-                INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO)
-                VALUES (:id, :cod, :tel, 'IN', :txt)
-            `, {
-                id: msgObj.id,
-                cod: codusur,
-                tel: msgObj.chat_id,
-                txt: msgObj.text
-            }, { autoCommit: true });
+            // 3. Transcreve com Groq (apenas se for áudio)
+            let transcriptionText = null;
+            if (mediaType === 'audio') {
+                if (filePath && fs.existsSync(filePath)) {
+                    try {
+                        let groqKey = process.env.GROQ_API_KEY;
+                        const groqResult = await conn.execute(
+                            `SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'GROQ_API_KEY'`
+                        );
+                        if (groqResult.rows.length > 0 && groqResult.rows[0][0]) {
+                            groqKey = groqResult.rows[0][0];
+                        }
+
+                        if (groqKey && groqKey !== 'SUA_CHAVE_AQUI') {
+                            const OpenAI = require('openai');
+                            const openai = new OpenAI({
+                                apiKey: groqKey,
+                                baseURL: 'https://api.groq.com/openai/v1',
+                            });
+                            const transcription = await openai.audio.transcriptions.create({
+                                file: fs.createReadStream(filePath),
+                                model: 'whisper-large-v3',
+                                language: 'pt',
+                            });
+                            if (transcription && transcription.text) {
+                                transcriptionText = transcription.text;
+                                console.log(`[WebhookPoller] Audio transcrito: ${transcription.text}`);
+                            }
+                        } else {
+                            console.warn('[WebhookPoller] GROQ_API_KEY não configurada. Transcrição pulada.');
+                        }
+                    } catch (tErr) {
+                        console.error('[WebhookPoller] Erro na transcrição Groq:', tErr.message || tErr);
+                    }
+                } else {
+                    console.warn(`[WebhookPoller] Arquivo de audio não encontrado para transcrever: ${filePath}. base64 disponível: ${!!audioBase64}`);
+                }
+            }
+
+            let ticketId = null;
+            try {
+                const stateRes = await conn.execute(`SELECT DADOS_TEMPORARIOS FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, { tel: msgObj.chat_id });
+                if (stateRes.rows.length > 0 && stateRes.rows[0][0]) {
+                    let rawData = stateRes.rows[0][0];
+                    if (rawData && typeof rawData.getData === 'function') {
+                        rawData = await rawData.getData();
+                    }
+                    if (rawData) {
+                        const dados = JSON.parse(rawData);
+                        if (dados.ticketId) ticketId = dados.ticketId;
+                    }
+                }
+            } catch(e) {
+                console.error('[WebhookPoller] Erro ao obter ticketId no saveMessage:', e);
+            }
+            
+            // Não busca mais automaticamente tickets abertos.
+            // O ticketId será preenchido se o usuário estiver em qualquer bolha de Ticket que já tenha gerado o ID.
+
+            const insertMessage = async (idMsg, textoStr, mUrl, mType, mMime, tipoStr) => {
+                await conn.execute(`
+                    INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE, TICKET_ID)
+                    VALUES (:id, :cod, :tel, 'IN', :txt, :mUrl, :mType, :mMime, :tId)
+                `, {
+                    id: idMsg,
+                    cod: codusur,
+                    tel: msgObj.chat_id.replace('@s.whatsapp.net', '').replace('@g.us', '').substring(0, 20),
+                    txt: textoStr,
+                    mUrl: mUrl,
+                    mType: mType,
+                    mMime: mMime,
+                    tId: ticketId
+                }, { autoCommit: true });
+            };
+
+            if (ticketId) {
+                if (mediaUrl) {
+                    let tipoMidia = 'documento';
+                    if (mediaType === 'image') tipoMidia = 'imagem';
+                    else if (mediaType === 'audio') tipoMidia = 'audio';
+                    else if (mediaType === 'video') tipoMidia = 'video';
+                    
+                    // Insere a mídia: TEXTO recebe a URL também
+                    await insertMessage(msgObj.id, mediaUrl, mediaUrl, mediaType, mediaMime, tipoMidia);
+                    
+                    // Verifica se havia legenda / texto digitado além da mídia
+                    let isPlaceholder = false;
+                    if (msgObj.text && (msgObj.text.startsWith('[AUDIO]') || msgObj.text.startsWith('[DOCUMENTO]') || msgObj.text.startsWith('[IMAGEM]') || msgObj.text.startsWith('[VIDEO]') || msgObj.text.startsWith('[Mensagem não suportada'))) {
+                        isPlaceholder = true;
+                    }
+
+                    if (msgObj.text && msgObj.text.trim().length > 0 && !isPlaceholder) {
+                        await insertMessage(msgObj.id + '_legenda', msgObj.text, null, null, null, 'texto');
+                    }
+                    
+                    if (transcriptionText) {
+                        await insertMessage(msgObj.id + '_transcricao', `Transcrição do Áudio: ${transcriptionText}`, null, null, null, 'texto');
+                    }
+                } else {
+                    // Mensagem de Texto Simples
+                    await insertMessage(msgObj.id, msgObj.text, null, null, null, 'texto');
+                }
+
+                await conn.execute(`UPDATE CANAL_SAC_TICKETS SET ATUALIZADO_EM = SYSDATE WHERE ID = :tId`, { tId: ticketId }, { autoCommit: true });
+            } else {
+                if (transcriptionText) {
+                    const transcricaoTag = `\n\n[TRANSCRICAO] ${transcriptionText}`;
+                    const baseText = msgObj.text.substring(0, 3900);
+                    msgObj.text = (baseText + transcricaoTag).substring(0, 4000);
+                }
+
+                await conn.execute(`
+                    INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE, TICKET_ID)
+                    VALUES (:id, :cod, :tel, 'IN', :txt, :mUrl, :mType, :mMime, :tId)
+                `, {
+                    id: msgObj.id,
+                    cod: codusur,
+                    tel: msgObj.chat_id.replace('@s.whatsapp.net', '').replace('@g.us', '').substring(0, 20),
+                    txt: msgObj.text,
+                    mUrl: mediaUrl,
+                    mType: mediaType,
+                    mMime: mediaMime,
+                    tId: ticketId
+                }, { autoCommit: true });
+            }
             
             console.log(`[WebhookPoller] Mensagem de ${msgObj.chat_id} salva para RCA ${codusur}`);
         } catch (dbErr) {

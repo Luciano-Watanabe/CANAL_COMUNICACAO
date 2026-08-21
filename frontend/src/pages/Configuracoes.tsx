@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, User, ShieldAlert, Clock } from 'lucide-react';
+import { Save, User, ShieldAlert, Clock, Plus, Settings2 } from 'lucide-react';
 import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 import { usePrivacy } from '../contexts/PrivacyContext';
 import clsx from 'clsx';
@@ -15,7 +15,10 @@ export default function Configuracoes() {
   const [geoapifyToken, setGeoapifyToken] = useState('');
   const [cnpjaToken, setCnpjaToken] = useState('');
   const [cnpjPaginas, setCnpjPaginas] = useState(3);
+  const [contatoFinanceiro, setContatoFinanceiro] = useState('');
+  const [contatoCompras, setContatoCompras] = useState('');
   const [savingGlobal, setSavingGlobal] = useState(false);
+  const [sacBotCodusur, setSacBotCodusur] = useState('');
   const { isPrivacyMode, setPrivacyMode, maskData } = usePrivacy();
 
   const userStr = localStorage.getItem('user');
@@ -31,6 +34,13 @@ export default function Configuracoes() {
   const [cronDiasSemana, setCronDiasSemana] = useState<number[]>([1, 2, 3, 4, 5]);
   const [cronHoraInicio, setCronHoraInicio] = useState(8);
   const [cronHoraFim, setCronHoraFim] = useState(18);
+
+  // Departments Config
+  const [departamentos, setDepartamentos] = useState<any[]>([]);
+  const [novoDeptoNome, setNovoDeptoNome] = useState('');
+  const [novoDeptoPai, setNovoDeptoPai] = useState('');
+  const [savingDepto, setSavingDepto] = useState(false);
+  const [filtroDeptoTable, setFiltroDeptoTable] = useState<string>('');
 
   useEffect(() => {
     if (!hasAccess) return;
@@ -67,6 +77,12 @@ export default function Configuracoes() {
           if (dataGlob.configs['CNPJ_TRANSPARENCIA_PAGINAS']) {
             setCnpjPaginas(parseInt(dataGlob.configs['CNPJ_TRANSPARENCIA_PAGINAS'], 10) || 3);
           }
+          if (dataGlob.configs['CONTATO_FINANCEIRO']) {
+            setContatoFinanceiro(dataGlob.configs['CONTATO_FINANCEIRO']);
+          }
+          if (dataGlob.configs['CONTATO_COMPRAS']) {
+            setContatoCompras(dataGlob.configs['CONTATO_COMPRAS']);
+          }
           if (dataGlob.configs['MODO_TESTE_GESTOR']) {
             setModoTeste(dataGlob.configs['MODO_TESTE_GESTOR'] === 'S');
           }
@@ -82,6 +98,16 @@ export default function Configuracoes() {
           if (dataGlob.configs['CRON_HORA_FIM']) {
             setCronHoraFim(parseInt(dataGlob.configs['CRON_HORA_FIM'], 10));
           }
+          if (dataGlob.configs['SAC_BOT_CODUSUR']) {
+            setSacBotCodusur(dataGlob.configs['SAC_BOT_CODUSUR']);
+          }
+        }
+        
+        // Fetch Departamentos SAC
+        const resDeptos = await fetch('/api/sac/departamentos');
+        if (resDeptos.ok) {
+          const dataDeptos = await resDeptos.json();
+          setDepartamentos(dataDeptos);
         }
       } catch (err) {
         console.error('Erro ao buscar configurações:', err);
@@ -108,11 +134,14 @@ export default function Configuracoes() {
             GEOAPIFY_API_KEY: geoapifyToken,
             CNPJA_API_KEY: cnpjaToken,
             CNPJ_TRANSPARENCIA_PAGINAS: cnpjPaginas.toString(),
+            CONTATO_FINANCEIRO: contatoFinanceiro,
+            CONTATO_COMPRAS: contatoCompras,
             MODO_TESTE_GESTOR: modoTeste ? 'S' : 'N',
             NUMERO_TESTE_GESTOR: numeroTeste,
             CRON_DIAS_SEMANA: JSON.stringify(cronDiasSemana),
             CRON_HORA_INICIO: cronHoraInicio.toString(),
-            CRON_HORA_FIM: cronHoraFim.toString()
+            CRON_HORA_FIM: cronHoraFim.toString(),
+            SAC_BOT_CODUSUR: sacBotCodusur
           }
         })
       });
@@ -127,6 +156,28 @@ export default function Configuracoes() {
       alert('Erro ao salvar.');
     } finally {
       setSavingGlobal(false);
+    }
+  };
+
+  const handleSelectSacBot = async (codusur: string | number) => {
+    const codStr = String(codusur);
+    setSacBotCodusur(codStr);
+    try {
+      const response = await fetch('/api/config/global', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          configs: { SAC_BOT_CODUSUR: codStr }
+        })
+      });
+      if (response.ok) {
+        alert('Configuração do BOT do SAC salva com sucesso!');
+      } else {
+        alert('Erro ao gravar no banco de dados.');
+      }
+    } catch(err) {
+      console.error(err);
+      alert('Erro de conexão ao salvar BOT do SAC.');
     }
   };
 
@@ -166,6 +217,48 @@ export default function Configuracoes() {
       alert('Erro ao salvar token');
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const handleSaveDepto = async () => {
+    if (!novoDeptoNome.trim()) return;
+    setSavingDepto(true);
+    try {
+      const response = await fetch('/api/sac/departamentos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: novoDeptoNome,
+          departamentoPaiId: novoDeptoPai ? Number(novoDeptoPai) : null
+        })
+      });
+      if (response.ok) {
+        setNovoDeptoNome('');
+        setNovoDeptoPai('');
+        const resDeptos = await fetch('/api/sac/departamentos');
+        setDepartamentos(await resDeptos.json());
+      } else {
+        alert('Erro ao criar departamento.');
+      }
+    } catch(err) {
+      console.error(err);
+      alert('Erro de conexão ao criar departamento.');
+    } finally {
+      setSavingDepto(false);
+    }
+  };
+
+  const toggleDeptoAtivo = async (id: number, ativoAtual: string) => {
+    try {
+      await fetch(`/api/sac/departamentos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ativo: ativoAtual === 'S' ? false : true })
+      });
+      const resDeptos = await fetch('/api/sac/departamentos');
+      setDepartamentos(await resDeptos.json());
+    } catch(err) {
+      console.error(err);
     }
   };
 
@@ -419,6 +512,32 @@ export default function Configuracoes() {
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
           </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Contato do Financeiro (WhatsApp)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Usado na opção 9 (Fornecedor) do Bot.</p>
+            <input 
+              type="text" 
+              value={contatoFinanceiro}
+              onChange={(e) => setContatoFinanceiro(e.target.value)}
+              placeholder="Ex: 5511999999999"
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Contato de Compras (WhatsApp)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Usado na opção 9 (Fornecedor) do Bot.</p>
+            <input 
+              type="text" 
+              value={contatoCompras}
+              onChange={(e) => setContatoCompras(e.target.value)}
+              placeholder="Ex: 5511999999999"
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
         </div>
         <button 
           onClick={saveGlobalConfig}
@@ -435,17 +554,19 @@ export default function Configuracoes() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700">
-                <th className="py-4 px-6 font-semibold text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">Usuário</th>
-                <th className="py-4 px-6 font-semibold text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">Nome da Instância</th>
-                <th className="py-4 px-6 font-semibold text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">URL Base da API</th>
-                <th className="py-4 px-6 font-semibold text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">Token Evolution (Global / Instance)</th>
-                <th className="py-4 px-6 font-semibold text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider">Status WhatsApp</th>
-                <th className="py-4 px-6 font-semibold text-slate-500 dark:text-slate-400 text-xs uppercase tracking-wider text-right">Ação</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs">Vendedor / Gestor</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs">Nome da Instância</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs">Apresentação (Atendente)</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs">API URL Global / Específica</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs">API Token (Evolution)</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs">Status do WhatsApp</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs text-center" title="Quem será o robô de triagem">Bot Oficial?</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs text-right">Ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
               {loading ? (
-                <tr><td colSpan={6} className="py-10 text-center text-slate-500">Carregando vendedores...</td></tr>
+                <tr><td colSpan={8} className="py-10 text-center text-slate-500">Carregando vendedores...</td></tr>
               ) : vendedores.length === 0 ? (
                 <tr><td colSpan={6} className="py-10 text-center text-slate-500">Nenhum vendedor encontrado.</td></tr>
               ) : (
@@ -474,6 +595,15 @@ export default function Configuracoes() {
                     <td className="py-4 px-6">
                       <input 
                         type="text" 
+                        value={v.nome_atendente || ''} 
+                        onChange={(e) => handleChange(v.codusur, 'nome_atendente', e.target.value)}
+                        placeholder="Ex: Ana (Robô)"
+                        className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500"
+                      />
+                    </td>
+                    <td className="py-4 px-6">
+                      <input 
+                        type="text" 
                         value={v.api_url || ''} 
                         onChange={(e) => handleChange(v.codusur, 'api_url', e.target.value)}
                         placeholder="https://api.evolution.com..."
@@ -492,6 +622,16 @@ export default function Configuracoes() {
                     <td className="py-4 px-6 min-w-[200px]">
                       {v.instance_name ? <WhatsAppMonitor codusur={v.codusur} /> : <span className="text-xs text-slate-400">Instância não informada</span>}
                     </td>
+                    <td className="py-4 px-6 text-center">
+                      <input 
+                        type="radio" 
+                        name="sacBot"
+                        checked={String(sacBotCodusur) === String(v.codusur)}
+                        onChange={() => handleSelectSacBot(v.codusur)}
+                        className="w-4 h-4 text-primary-600 bg-slate-100 border-slate-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
+                        title="Marcar este usuário como BOT SAC"
+                      />
+                    </td>
                     <td className="py-4 px-6 text-right">
                       <button 
                         onClick={() => handleSave(v)}
@@ -505,6 +645,103 @@ export default function Configuracoes() {
                   </tr>
                 ))
               )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="glass-card p-6 flex flex-col mt-6">
+        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4">
+          <Settings2 size={20} /> Departamentos do SAC (Atendimento Bot)
+        </h3>
+        <div className="flex gap-4 items-end mb-6 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+          <div className="flex-1">
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Nome do Departamento</label>
+            <input 
+              type="text" 
+              value={novoDeptoNome}
+              onChange={(e) => setNovoDeptoNome(e.target.value)}
+              placeholder="Ex: Financeiro, Logística..."
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Sub-departamento de (Opcional)</label>
+            <select 
+              value={novoDeptoPai}
+              onChange={(e) => setNovoDeptoPai(e.target.value)}
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">Nenhum (Depto. Principal)</option>
+              {departamentos.filter(d => !d.departamentoPaiId).map(d => (
+                <option key={d.id} value={d.id}>{d.nome}</option>
+              ))}
+            </select>
+          </div>
+          <button 
+            onClick={handleSaveDepto}
+            disabled={savingDepto || !novoDeptoNome}
+            className="whitespace-nowrap px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            <Plus size={16} /> Adicionar
+          </button>
+        </div>
+
+        <div className="flex justify-between items-center mb-4">
+          <h4 className="font-semibold text-slate-700 dark:text-slate-300">Lista de Departamentos</h4>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-slate-600 dark:text-slate-400">Filtrar por Pai:</label>
+            <select
+              value={filtroDeptoTable}
+              onChange={(e) => setFiltroDeptoTable(e.target.value)}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">Apenas Principais</option>
+              <option value="todos">Todos</option>
+              {departamentos.filter(d => !d.departamentoPaiId).map(d => (
+                <option key={d.id} value={d.id}>Sub-departamentos de {d.nome}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700">
+                <th className="py-2 px-4 font-semibold text-slate-500 text-xs">ID</th>
+                <th className="py-2 px-4 font-semibold text-slate-500 text-xs">Departamento</th>
+                <th className="py-2 px-4 font-semibold text-slate-500 text-xs">Hierarquia</th>
+                <th className="py-2 px-4 font-semibold text-slate-500 text-xs">Status</th>
+                <th className="py-2 px-4 font-semibold text-slate-500 text-xs">Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {departamentos.filter(d => {
+                if (filtroDeptoTable === 'todos') return true;
+                if (filtroDeptoTable === '') return !d.departamentoPaiId;
+                return d.departamentoPaiId === Number(filtroDeptoTable);
+              }).map(d => (
+                <tr key={d.id} className="border-b border-slate-100 dark:border-slate-800/50">
+                  <td className="py-2 px-4 text-sm text-slate-600 dark:text-slate-400">{d.id}</td>
+                  <td className="py-2 px-4 text-sm font-medium text-slate-800 dark:text-slate-200">{d.nome}</td>
+                  <td className="py-2 px-4 text-sm text-slate-500">
+                    {d.departamentoPaiId ? `Sub de: ${departamentos.find(p => p.id === d.departamentoPaiId)?.nome || d.departamentoPaiId}` : 'Principal'}
+                  </td>
+                  <td className="py-2 px-4">
+                    <span className={clsx("px-2 py-1 text-xs font-semibold rounded-full", d.ativo === 'S' ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700")}>
+                      {d.ativo === 'S' ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </td>
+                  <td className="py-2 px-4">
+                    <button 
+                      onClick={() => toggleDeptoAtivo(d.id, d.ativo)}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      {d.ativo === 'S' ? 'Desativar' : 'Ativar'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

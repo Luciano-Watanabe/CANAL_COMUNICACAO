@@ -78,8 +78,103 @@ export default function Catalogo() {
     return agrupado;
   }, [produtos]);
 
-  const handlePrint = () => {
-    window.print();
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handlePrint = async () => {
+    setIsExporting(true);
+    try {
+      const element = document.querySelector('.catalog-print-container') as HTMLElement;
+      if (!element) throw new Error('Não foi possível encontrar o container do catálogo.');
+
+      const originalDisplay = element.style.display;
+      element.style.display = 'block';
+
+      // Aguarda o navegador renderizar
+      await new Promise(r => setTimeout(r, 150));
+
+      const htmlToImage = await import('html-to-image');
+      const toJpeg = htmlToImage.toJpeg || htmlToImage.default?.toJpeg;
+      
+      const jspdfModule = await import('jspdf');
+      const jsPDF = jspdfModule.jsPDF || jspdfModule.default;
+
+      const dataUrl = await toJpeg(element, { quality: 0.98, backgroundColor: '#ffffff' });
+      
+      element.style.display = originalDisplay;
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const effectiveWidth = pdfWidth - (margin * 2);
+      const effectivePageHeight = pageHeight - (margin * 2);
+
+      const elementWidth = element.offsetWidth;
+      const elementHeight = element.offsetHeight;
+      const pageHeightPx = (elementWidth * effectivePageHeight) / effectiveWidth;
+
+      // Encontrar todos os itens que não podem ser cortados
+      const items = Array.from(element.querySelectorAll('.catalog-product-card, .catalog-dept-group h3, .catalog-print-header'));
+      const itemBounds = items.map(item => {
+        const rect = item.getBoundingClientRect();
+        const containerRect = element.getBoundingClientRect();
+        return {
+          top: rect.top - containerRect.top,
+          bottom: rect.bottom - containerRect.top
+        };
+      });
+
+      const totalHeightPx = elementHeight;
+      let currentYPx = 0;
+
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const imgTotalHeightMm = (imgProps.height * effectiveWidth) / imgProps.width;
+
+      let isFirstPage = true;
+
+      while (currentYPx < totalHeightPx) {
+        if (!isFirstPage) {
+          pdf.addPage();
+        }
+        isFirstPage = false;
+
+        let proposedBreakPx = currentYPx + pageHeightPx;
+        let actualBreakPx = proposedBreakPx;
+
+        if (proposedBreakPx < totalHeightPx) {
+          const cutItem = itemBounds.find(b => b.top < proposedBreakPx && b.bottom > proposedBreakPx);
+          if (cutItem) {
+            actualBreakPx = cutItem.top; 
+            if (actualBreakPx <= currentYPx) {
+              actualBreakPx = proposedBreakPx; 
+            }
+          }
+        } else {
+          actualBreakPx = totalHeightPx;
+        }
+
+        const currentYMm = (currentYPx * effectiveWidth) / elementWidth;
+        const actualPageHeightMm = ((actualBreakPx - currentYPx) * effectiveWidth) / elementWidth;
+
+        pdf.addImage(dataUrl, 'JPEG', margin, margin - currentYMm, effectiveWidth, imgTotalHeightMm);
+
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, 0, pdfWidth, margin, 'F');
+
+        if (actualBreakPx < totalHeightPx) {
+          pdf.rect(0, margin + actualPageHeightMm, pdfWidth, pageHeight - (margin + actualPageHeightMm), 'F');
+        }
+
+        currentYPx = actualBreakPx;
+      }
+
+      pdf.save('catalogo.pdf');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao exportar PDF');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -142,10 +237,15 @@ export default function Catalogo() {
 
           <button
             onClick={handlePrint}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl shadow-lg shadow-primary-500/30 transition-colors"
+            disabled={isExporting}
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl shadow-lg shadow-primary-500/30 transition-colors disabled:opacity-50"
           >
-            <Download size={18} />
-            <span className="text-sm font-medium">Exportar PDF</span>
+            {isExporting ? (
+              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+            ) : (
+              <Download size={18} />
+            )}
+            <span className="text-sm font-medium">{isExporting ? 'Gerando...' : 'Exportar PDF'}</span>
           </button>
         </div>
       </div>
