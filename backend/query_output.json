@@ -1,0 +1,355 @@
+{
+  "client": [
+    [
+      6709,
+      "24.799.756 LUCIANO YOSHIO WATANABE",
+      1,
+      null,
+      null
+    ]
+  ],
+  "tickets": [
+    [
+      65,
+      6709,
+      "FINALIZADO",
+      {
+        "_events": {},
+        "_readableState": {
+          "highWaterMark": 16384,
+          "buffer": [],
+          "bufferIndex": 0,
+          "length": 0,
+          "pipes": [],
+          "awaitDrainWriters": null
+        },
+        "_writableState": {
+          "highWaterMark": 16384,
+          "length": 0,
+          "corked": 0,
+          "writelen": 0,
+          "bufferedIndex": 0,
+          "pendingcb": 0
+        },
+        "allowHalfOpen": true,
+        "offset": 1,
+        "_isActive": false,
+        "_eventsCount": 1,
+        "_impl": {
+          "_parentObj": {
+            "_parentObj": {
+              "_inProgress": false,
+              "_dbObjectTypes": {},
+              "_requestQueue": [],
+              "_osonMaxFieldNameSize": 255,
+              "_connectString": "172.16.5.12:1521/WINT",
+              "_user": "AGDIST"
+            },
+            "metaData": [
+              {
+                "name": "ID",
+                "dbColumnName": "ID",
+                "dbType": {
+                  "num": 2010,
+                  "name": "DB_TYPE_NUMBER",
+                  "columnTypeName": "NUMBER",
+                  "_bufferSizeFactor": 22,
+                  "_oraTypeNum": 2,
+                  "_csfrm": 0,
+                  "_is_fast": true
+                },
+                "nullable": false,
+                "isJson": false,
+                "isOson": false,
+                "precision": 0,
+                "scale": -127,
+                "dbTypeName": "NUMBER",
+                "fetchType": {
+                  "num": 2010,
+                  "name": "DB_TYPE_NUMBER",
+                  "columnTypeName": "NUMBER",
+                  "_bufferSizeFactor": 22,
+                  "_oraTypeNum": 2,
+                  "_csfrm": 0,
+                  "_is_fast": true
+                }
+              },
+              {
+                "name": "CODCLI",
+                "dbColumnName": "CODCLI",
+                "dbType": {
+                  "num": 2010,
+                  "name": "DB_TYPE_NUMBER",
+                  "columnTypeName": "NUMBER",
+                  "_bufferSizeFactor": 22,
+                  "_oraTypeNum": 2,
+                  "_csfrm": 0,
+                  "_is_fast": true
+                },
+                "nullable": true,
+                "isJson": false,
+                "isOson": false,
+                "precision": 0,
+                "scale": -127,
+                "dbTypeName": "NUMBER",
+                "fetchType": {
+                  "num": 2010,
+                  "name": "DB_TYPE_NUMBER",
+                  "columnTypeName": "NUMBER",
+                  "_bufferSizeFactor": 22,
+                  "_oraTypeNum": 2,
+                  "_csfrm": 0,
+                  "_is_fast": true
+                }
+              },
+              {
+                "name": "STATUS",
+                "dbColumnName": "STATUS",
+                "dbType": {
+                  "num": 2001,
+                  "name": "DB_TYPE_VARCHAR",
+                  "columnTypeName": "VARCHAR2",
+                  "_bufferSizeFactor": 4,
+                  "_oraTypeNum": 1,
+                  "_csfrm": 1,
+                  "_is_fast": true
+                },
+                "nullable": true,
+                "isJson": false,
+                "isOson": false,
+                "byteSize": 50,
+                "dbTypeName": "VARCHAR2",
+                "fetchType": {
+                  "num": 2001,
+                  "name": "DB_TYPE_VARCHAR",
+                  "columnTypeName": "VARCHAR2",
+                  "_bufferSizeFactor": 4,
+                  "_oraTypeNum": 1,
+                  "_csfrm": 1,
+                  "_is_fast": true
+                }
+              },
+              {
+                "name": "DESCRICAO",
+                "dbColumnName": "DESCRICAO",
+                "dbType": {
+                  "num": 2017,
+                  "name": "DB_TYPE_CLOB",
+                  "columnTypeName": "CLOB",
+                  "_bufferSizeFactor": 112,
+                  "_oraTypeNum": 112,
+                  "_csfrm": 1,
+                  "_is_fast": true
+                },
+                "nullable": true,
+                "isJson": false,
+                "isOson": false,
+                "dbTypeName": "CLOB",
+                "fetchType": {
+                  "num": 2017,
+                  "name": "DB_TYPE_CLOB",
+                  "columnTypeName": "CLOB",
+                  "_bufferSizeFactor": 112,
+                  "_oraTypeNum": 112,
+                  "_csfrm": 1,
+                  "_is_fast": true
+                }
+              }
+            ],
+            "lobIndices": [
+              3
+            ],
+            "dbObjectIndices": [],
+            "nestedCursorIndices": [],
+            "converterIndices": [],
+            "outFormat": 4001,
+            "fetchArraySize": 100,
+            "dbObjectAsPojo": false,
+            "maxRows": 0
+          }
+        },
+        "_type": {
+          "num": 2017,
+          "name": "DB_TYPE_CLOB",
+          "columnTypeName": "CLOB",
+          "_bufferSizeFactor": 112,
+          "_oraTypeNum": 112,
+          "_csfrm": 1,
+          "_is_fast": true
+        },
+        "_autoCloseLob": true
+      }
+    ],
+    [
+      67,
+      6709,
+      "ABERTO",
+      {
+        "_events": {},
+        "_readableState": {
+          "highWaterMark": 16384,
+          "buffer": [],
+          "bufferIndex": 0,
+          "length": 0,
+          "pipes": [],
+          "awaitDrainWriters": null
+        },
+        "_writableState": {
+          "highWaterMark": 16384,
+          "length": 0,
+          "corked": 0,
+          "writelen": 0,
+          "bufferedIndex": 0,
+          "pendingcb": 0
+        },
+        "allowHalfOpen": true,
+        "offset": 1,
+        "_isActive": false,
+        "_eventsCount": 1,
+        "_impl": {
+          "_parentObj": {
+            "_parentObj": {
+              "_inProgress": false,
+              "_dbObjectTypes": {},
+              "_requestQueue": [],
+              "_osonMaxFieldNameSize": 255,
+              "_connectString": "172.16.5.12:1521/WINT",
+              "_user": "AGDIST"
+            },
+            "metaData": [
+              {
+                "name": "ID",
+                "dbColumnName": "ID",
+                "dbType": {
+                  "num": 2010,
+                  "name": "DB_TYPE_NUMBER",
+                  "columnTypeName": "NUMBER",
+                  "_bufferSizeFactor": 22,
+                  "_oraTypeNum": 2,
+                  "_csfrm": 0,
+                  "_is_fast": true
+                },
+                "nullable": false,
+                "isJson": false,
+                "isOson": false,
+                "precision": 0,
+                "scale": -127,
+                "dbTypeName": "NUMBER",
+                "fetchType": {
+                  "num": 2010,
+                  "name": "DB_TYPE_NUMBER",
+                  "columnTypeName": "NUMBER",
+                  "_bufferSizeFactor": 22,
+                  "_oraTypeNum": 2,
+                  "_csfrm": 0,
+                  "_is_fast": true
+                }
+              },
+              {
+                "name": "CODCLI",
+                "dbColumnName": "CODCLI",
+                "dbType": {
+                  "num": 2010,
+                  "name": "DB_TYPE_NUMBER",
+                  "columnTypeName": "NUMBER",
+                  "_bufferSizeFactor": 22,
+                  "_oraTypeNum": 2,
+                  "_csfrm": 0,
+                  "_is_fast": true
+                },
+                "nullable": true,
+                "isJson": false,
+                "isOson": false,
+                "precision": 0,
+                "scale": -127,
+                "dbTypeName": "NUMBER",
+                "fetchType": {
+                  "num": 2010,
+                  "name": "DB_TYPE_NUMBER",
+                  "columnTypeName": "NUMBER",
+                  "_bufferSizeFactor": 22,
+                  "_oraTypeNum": 2,
+                  "_csfrm": 0,
+                  "_is_fast": true
+                }
+              },
+              {
+                "name": "STATUS",
+                "dbColumnName": "STATUS",
+                "dbType": {
+                  "num": 2001,
+                  "name": "DB_TYPE_VARCHAR",
+                  "columnTypeName": "VARCHAR2",
+                  "_bufferSizeFactor": 4,
+                  "_oraTypeNum": 1,
+                  "_csfrm": 1,
+                  "_is_fast": true
+                },
+                "nullable": true,
+                "isJson": false,
+                "isOson": false,
+                "byteSize": 50,
+                "dbTypeName": "VARCHAR2",
+                "fetchType": {
+                  "num": 2001,
+                  "name": "DB_TYPE_VARCHAR",
+                  "columnTypeName": "VARCHAR2",
+                  "_bufferSizeFactor": 4,
+                  "_oraTypeNum": 1,
+                  "_csfrm": 1,
+                  "_is_fast": true
+                }
+              },
+              {
+                "name": "DESCRICAO",
+                "dbColumnName": "DESCRICAO",
+                "dbType": {
+                  "num": 2017,
+                  "name": "DB_TYPE_CLOB",
+                  "columnTypeName": "CLOB",
+                  "_bufferSizeFactor": 112,
+                  "_oraTypeNum": 112,
+                  "_csfrm": 1,
+                  "_is_fast": true
+                },
+                "nullable": true,
+                "isJson": false,
+                "isOson": false,
+                "dbTypeName": "CLOB",
+                "fetchType": {
+                  "num": 2017,
+                  "name": "DB_TYPE_CLOB",
+                  "columnTypeName": "CLOB",
+                  "_bufferSizeFactor": 112,
+                  "_oraTypeNum": 112,
+                  "_csfrm": 1,
+                  "_is_fast": true
+                }
+              }
+            ],
+            "lobIndices": [
+              3
+            ],
+            "dbObjectIndices": [],
+            "nestedCursorIndices": [],
+            "converterIndices": [],
+            "outFormat": 4001,
+            "fetchArraySize": 100,
+            "dbObjectAsPojo": false,
+            "maxRows": 0
+          }
+        },
+        "_type": {
+          "num": 2017,
+          "name": "DB_TYPE_CLOB",
+          "columnTypeName": "CLOB",
+          "_bufferSizeFactor": 112,
+          "_oraTypeNum": 112,
+          "_csfrm": 1,
+          "_is_fast": true
+        },
+        "_autoCloseLob": true
+      }
+    ]
+  ]
+}

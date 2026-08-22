@@ -157,6 +157,36 @@ const TABLES = [
         STATUS VARCHAR2(50) DEFAULT 'ABERTO',
         CRIADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         ATUALIZADO_EM TIMESTAMP
+    )`,
+    `CREATE TABLE CANAL_PROSPECTS (
+        ID VARCHAR2(50) DEFAULT RAWTOHEX(SYS_GUID()) PRIMARY KEY,
+        NOME_FANTASIA VARCHAR2(255) NOT NULL,
+        RAZAO_SOCIAL VARCHAR2(255),
+        CNPJ VARCHAR2(20),
+        TELEFONE VARCHAR2(100),
+        ENDERECO VARCHAR2(500),
+        CIDADE VARCHAR2(100),
+        ESTADO VARCHAR2(2),
+        LATITUDE VARCHAR2(50),
+        LONGITUDE VARCHAR2(50),
+        ORIGEM VARCHAR2(50),
+        RAMO_ATIVIDADE VARCHAR2(100),
+        HAS_WHATSAPP VARCHAR2(1) DEFAULT 'P',
+        DATA_CADASTRO DATE DEFAULT SYSDATE
+    )`,
+    `CREATE TABLE CANAL_LOG_IDENTIFICACAO_CLIENTE (
+        ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        TELEFONE VARCHAR2(20),
+        DOCUMENTO_INFORMADO VARCHAR2(50),
+        CODCLI_LOCALIZADO NUMBER,
+        OPCAO_USADA VARCHAR2(100),
+        DATA_HORA DATE DEFAULT SYSDATE
+    )`,
+    `CREATE TABLE CANAL_MENSAGENS_TEMPLATES (
+        ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+        PAGINA VARCHAR2(50) NOT NULL,
+        TIPO VARCHAR2(100) NOT NULL,
+        TEMPLATE VARCHAR2(4000) NOT NULL
     )`
 ];
 
@@ -227,6 +257,7 @@ async function initializeOracleDatabase() {
             `ALTER TABLE CANAL_MENSAGENS ADD (ARQUIVO_LOCAL VARCHAR2(1000))`,
             `ALTER TABLE CANAL_MENSAGENS ADD (STATUS VARCHAR2(50))`,
             `ALTER TABLE CANAL_MENSAGENS ADD (LIDA CHAR(1) DEFAULT 'N')`,
+            `ALTER TABLE CANAL_SAC_TICKETS ADD (NOTA_AVALIACAO NUMBER(1))`
         ];
         for (const alterSql of ALTER_COLUMNS) {
             try {
@@ -240,6 +271,75 @@ async function initializeOracleDatabase() {
                     console.error(`⚠️ [STARTUP] Erro ao adicionar coluna: ${alterSql}`, err.message);
                 }
             }
+        }
+
+        // 4. Criação de Índices e Atualizações de Constraints
+        const UPDATES = [
+            `CREATE INDEX IDX_PROSPECTS_CNPJ ON CANAL_PROSPECTS (CNPJ)`,
+            `CREATE INDEX IDX_PROSPECTS_CIDADE ON CANAL_PROSPECTS (CIDADE)`
+        ];
+        for (const updateSql of UPDATES) {
+            try {
+                await conn.execute(updateSql);
+                console.log(`✅ [STARTUP] Atualização executada: ${updateSql}`);
+            } catch (err) {
+                if (err.errorNum === 955 || err.errorNum === 1408) { // Já existe
+                    // Ignora
+                } else {
+                    console.error(`⚠️ [STARTUP] Erro na atualização: ${updateSql}`, err.message);
+                }
+            }
+        }
+
+        // Atualização de Constraint (CANAL_SAC_TICKETS STATUS)
+        try {
+            const resCons = await conn.execute(`
+                SELECT constraint_name, search_condition 
+                FROM user_constraints 
+                WHERE table_name = 'CANAL_SAC_TICKETS' AND constraint_type = 'C'
+            `);
+            for (const row of resCons.rows) {
+                const name = row[0];
+                const cond = row[1];
+                if (cond && cond.includes('STATUS')) {
+                    await conn.execute(`ALTER TABLE CANAL_SAC_TICKETS DROP CONSTRAINT ${name}`);
+                }
+            }
+            await conn.execute(`
+                ALTER TABLE CANAL_SAC_TICKETS 
+                ADD CONSTRAINT CK_CANAL_SAC_TICKETS_STATUS 
+                CHECK (STATUS IN ('ABERTO', 'EM ATENDIMENTO', 'FECHADO', 'FINALIZADO'))
+            `);
+            console.log(`✅ [STARTUP] Constraint STATUS de CANAL_SAC_TICKETS atualizada.`);
+        } catch (err) {
+            console.error(`⚠️ [STARTUP] Erro ao atualizar constraint CK_CANAL_SAC_TICKETS_STATUS:`, err.message);
+        }
+
+        // 5. Dados Iniciais
+        try {
+            const defaults = [
+                ['REATIVACAO', 'Saudade', 'Olá, sentimos sua falta! Veja algumas ofertas especiais que separamos para você:'],
+                ['REATIVACAO', 'Oferta Especial', 'Temos preços exclusivos para você que não compra há um tempo. Confira nossa lista:'],
+                ['CATALOGO', 'Lançamentos', 'Confira nossos lançamentos deste mês no catálogo anexo!'],
+                ['CATALOGO', 'Promoção', 'Preços especiais! Veja nosso catálogo de ofertas anexo.'],
+                ['ROTAS', 'Confirmação de Visita', 'Olá, confirmo nossa visita agendada para hoje. Até logo!'],
+                ['ROTAS', 'Aviso de Chegada', 'Olá, estou a caminho para nossa reunião!']
+            ];
+            for (const row of defaults) {
+                await conn.execute(
+                    `INSERT INTO CANAL_MENSAGENS_TEMPLATES (PAGINA, TIPO, TEMPLATE) 
+                     SELECT :1, :2, :3 FROM DUAL 
+                     WHERE NOT EXISTS (
+                         SELECT 1 FROM CANAL_MENSAGENS_TEMPLATES 
+                         WHERE PAGINA = :1 AND TIPO = :2
+                     )`,
+                    row,
+                    { autoCommit: true }
+                );
+            }
+            console.log("✅ [STARTUP] Templates padrão inicializados com sucesso.");
+        } catch (err) {
+            console.error(`⚠️ [STARTUP] Erro ao inicializar templates padrão:`, err.message);
         }
 
         console.log('🎉 [STARTUP] Banco de dados Oracle inicializado perfeitamente! Pronto para operar.');

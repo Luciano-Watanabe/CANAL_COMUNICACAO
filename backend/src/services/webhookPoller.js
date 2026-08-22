@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const cacheService = require('./cacheService');
 const SacBotService = require('./SacBotService');
+const VendedorBotService = require('./VendedorBotService');
+const oraclePool = require('./oraclePool');
 
 
 const botReplyCache = new Map();
@@ -13,6 +15,7 @@ class WebhookPoller {
         this.isRunning = false;
         this.pollIntervalMs = 5000; // Poll every 5 seconds
         this.sacBotService = new SacBotService(this);
+        this.vendedorBotService = new VendedorBotService(this);
     }
 
     start() {
@@ -34,36 +37,55 @@ class WebhookPoller {
         this.isRunning = true;
 
         let conn;
+        let newWebhooks;
+        let lastId = 0;
+
+        // Fase 1: Buscar Webhooks pendentes
         try {
-            conn = await oracledb.getConnection({
-                user: process.env.ORACLE_USER,
-                password: process.env.ORACLE_PASS,
-                connectString: process.env.ORACLE_CONN_STR
-            });
+            conn = await oraclePool.getConnection();
 
             // Get last processed ID
             const stateResult = await conn.execute(`SELECT LAST_PROCESSED_ID FROM CANAL_WEBHOOK_STATE WHERE ID = 1`);
-            let lastId = 0;
             if (stateResult.rows.length > 0) {
                 lastId = stateResult.rows[0][0];
             }
 
             // Fetch new webhooks
-            const newWebhooks = await conn.execute(`
+            newWebhooks = await conn.execute(`
                 SELECT ID, DT_REQUISICAO, CONTEUDO 
                 FROM JCWEBHOOK 
                 WHERE ORIGEM = 'whats' AND ID > :lastId 
                 ORDER BY ID ASC
             `, [lastId]);
 
+        } catch (err) {
+            console.error('[WebhookPoller] Database error on fetch:', err);
+            this.isRunning = false;
+            if (conn) {
+                try { await conn.close(); } catch (e) {}
+            }
+            return; // Sai se deu erro ao buscar
+        } finally {
+            if (conn) {
+                try { await conn.close(); } catch (e) {}
+            }
+        }
+
+        // Fase 2: Processar em paralelo usando o Pool
+        if (newWebhooks && newWebhooks.rows && newWebhooks.rows.length > 0) {
             let maxIdProcessed = lastId;
 
-            for (const row of newWebhooks.rows) {
+            // Transforma as linhas em Promises de processamento independente
+            const processPromises = newWebhooks.rows.map(async (row) => {
                 const id = row[0];
                 const dt = row[1];
                 const clob = row[2];
 
+                let workerConn;
                 try {
+                    // Pega conexão própria para rodar as queries do chatbot sem bloquear as outras
+                    workerConn = await oraclePool.getConnection();
+
                     let jsonString = '';
                     if (clob) {
                         jsonString = await clob.getData();
@@ -76,32 +98,43 @@ class WebhookPoller {
 
                         if (payload.event !== 'messages.upsert' && payload.event !== 'MESSAGES_UPSERT' && payload.event !== 'Message') {
                             console.log(`[WebhookPoller] Ignorando evento não-upsert: ${payload.event}`);
-                            maxIdProcessed = id;
-                            continue;
+                        } else {
+                            await this.processPayload(payload, workerConn);
                         }
-                        
-                        await this.processPayload(payload, conn);
                     }
                 } catch (parseErr) {
-                    console.error(`[WebhookPoller] Erro ao parsear JSON do ID ${id}:`, parseErr);
+                    console.error(`[WebhookPoller] Erro ao processar webhook ID ${id}:`, parseErr);
+                } finally {
+                    if (workerConn) {
+                        try { await workerConn.close(); } catch (e) {}
+                    }
                 }
+            });
 
-                maxIdProcessed = id;
-            }
+            // Aguarda TODOS do lote terminarem de ser processados (sucesso ou erro)
+            await Promise.allSettled(processPromises);
 
-            // Update state
+            // Obtém o maior ID do lote processado
+            const lastRowIndex = newWebhooks.rows.length - 1;
+            maxIdProcessed = newWebhooks.rows[lastRowIndex][0];
+
+            // Fase 3: Atualizar o LAST_PROCESSED_ID
             if (maxIdProcessed > lastId) {
-                await conn.execute(`UPDATE CANAL_WEBHOOK_STATE SET LAST_PROCESSED_ID = :maxId WHERE ID = 1`, [maxIdProcessed], { autoCommit: true });
+                let updateConn;
+                try {
+                    updateConn = await oraclePool.getConnection();
+                    await updateConn.execute(`UPDATE CANAL_WEBHOOK_STATE SET LAST_PROCESSED_ID = :maxId WHERE ID = 1`, [maxIdProcessed], { autoCommit: true });
+                } catch (err) {
+                    console.error('[WebhookPoller] Erro ao atualizar LAST_PROCESSED_ID:', err);
+                } finally {
+                    if (updateConn) {
+                        try { await updateConn.close(); } catch (e) {}
+                    }
+                }
             }
-
-        } catch (err) {
-            console.error('[WebhookPoller] Database error:', err);
-        } finally {
-            if (conn) {
-                try { await conn.close(); } catch (e) {}
-            }
-            this.isRunning = false;
         }
+
+        this.isRunning = false;
     }
 
     async processPayload(payload, conn) {
@@ -195,13 +228,13 @@ class WebhookPoller {
             // Verifica se a instância é a do SAC BOT
             let isSacBot = false;
             try {
+                // Checa SAC BOT
                 const sacBotRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
                 if (sacBotRes.rows.length > 0 && sacBotRes.rows[0][0]) {
                     const sacCodusur = sacBotRes.rows[0][0];
                     const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
                     if (instRes.rows.length > 0) {
                         const dbInstanceName = instRes.rows[0][0];
-                        console.log(`[WebhookPoller] Debug SAC BOT: SAC_BOT_CODUSUR=${sacCodusur}, dbInstanceName="${dbInstanceName}", currentInstanceName="${instanceName}"`);
                         if (dbInstanceName === instanceName) {
                             isSacBot = true;
                         }
@@ -212,6 +245,14 @@ class WebhookPoller {
             }
 
             if (isSacBot) {
+                // Verifica se o telefone pertence a um vendedor
+                const codvendedor = await this.findVendedorPorTelefone(telefone, conn);
+                if (codvendedor) {
+                    // Roteia para o BOT do Vendedor
+                    await this.vendedorBotService.handleMessage(telefone, textMessage, instanceName, conn, isAudio, audioBase64, originalMessage, codvendedor);
+                    return;
+                }
+
                 // Roteia para o BOT do SAC e não envia autoReply padrão
                 await this.sacBotService.handleMessage(telefone, textMessage, instanceName, conn, isAudio, audioBase64, originalMessage);
                 return;
@@ -305,13 +346,13 @@ class WebhookPoller {
         // Verifica se a instância é a do SAC BOT
         let fallbackIsSacBot = false;
         try {
+            // Checa SAC BOT
             const sacBotRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
             if (sacBotRes.rows.length > 0 && sacBotRes.rows[0][0]) {
                 const sacCodusur = sacBotRes.rows[0][0];
                 const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
                 if (instRes.rows.length > 0) {
                     const dbInstanceName = instRes.rows[0][0];
-                    console.log(`[WebhookPoller] Debug SAC BOT Fallback: SAC_BOT_CODUSUR=${sacCodusur}, dbInstanceName="${dbInstanceName}", currentInstanceName="${fallbackInstanceName}"`);
                     if (dbInstanceName === fallbackInstanceName) {
                         fallbackIsSacBot = true;
                     }
@@ -322,6 +363,11 @@ class WebhookPoller {
         }
 
         if (fallbackIsSacBot) {
+            const codvendedor = await this.findVendedorPorTelefone(fallbackTelefone, conn);
+            if (codvendedor) {
+                await this.vendedorBotService.handleMessage(fallbackTelefone, fallbackTextMessage, fallbackInstanceName, conn, fallbackIsAudio, fallbackAudioBase64, data, codvendedor);
+                return;
+            }
             await this.sacBotService.handleMessage(fallbackTelefone, fallbackTextMessage, fallbackInstanceName, conn, fallbackIsAudio, fallbackAudioBase64, data);
             return;
         }
@@ -377,8 +423,11 @@ class WebhookPoller {
     async findVendedorPorTelefone(telefone, conn) {
         const result = await conn.execute(`
             SELECT CODUSUR FROM PCUSUARI
-            WHERE REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE1, ' ', ''), '-', ''), '(', ''), ')', '') = :tel
-               OR REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE2, ' ', ''), '-', ''), '(', ''), ')', '') = :tel
+            WHERE TELEFONE1 IS NOT NULL
+              AND (REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE1, ' ', ''), '-', ''), '(', ''), ')', '') = :tel
+               OR  REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE2, ' ', ''), '-', ''), '(', ''), ')', '') = :tel)
+            ORDER BY CODUSUR ASC
+            FETCH FIRST 1 ROWS ONLY
         `, { tel: telefone });
         if (result.rows.length > 0) return result.rows[0][0];
         return null;
@@ -696,9 +745,15 @@ class WebhookPoller {
             }
 
             let ticketId = null;
+            let isVendedor = false;
             try {
-                const stateRes = await conn.execute(`SELECT DADOS_TEMPORARIOS FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, { tel: msgObj.chat_id });
-                if (stateRes.rows.length > 0 && stateRes.rows[0][0]) {
+                const stateRes = await conn.execute(`SELECT DADOS_TEMPORARIOS, ESTADO_ATUAL FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, { tel: msgObj.chat_id });
+                if (stateRes.rows.length > 0) {
+                    const estadoAtual = stateRes.rows[0][1] || '';
+                    if (estadoAtual.startsWith('VENDEDOR_')) {
+                        isVendedor = true;
+                    }
+
                     let rawData = stateRes.rows[0][0];
                     if (rawData && typeof rawData.getData === 'function') {
                         rawData = await rawData.getData();
@@ -710,6 +765,11 @@ class WebhookPoller {
                 }
             } catch(e) {
                 console.error('[WebhookPoller] Erro ao obter ticketId no saveMessage:', e);
+            }
+            
+            if (isVendedor) {
+                console.log(`[WebhookPoller] Mensagem ignorada pelo saveMessage pois o remetente está no fluxo do vendedor.`);
+                return;
             }
             
             // Não busca mais automaticamente tickets abertos.
