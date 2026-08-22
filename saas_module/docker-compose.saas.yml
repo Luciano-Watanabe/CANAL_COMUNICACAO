@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # [...] Outros serviços (backend, frontend, db)
+
+  # Serviço oficial do Tailscale injetado na stack
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale_saas
+    hostname: wms-saas-client-node # Opcional: Define um hostname padrão amigável
+    environment:
+      # TS_AUTHKEY: Permite usar a chave gerada automaticamente ou via OAuth
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      # TS_STATE_DIR: Local onde o estado (certs, chaves) é mantido
+      - TS_STATE_DIR=/var/lib/tailscale
+      # Habilitar userspace networking para rodar no Docker sem privilégios extras se possível
+      - TS_USERSPACE=true
+      # Argumentos extras: aceitar rotas ou funnel
+      - TS_EXTRA_ARGS=--accept-dns=true
+    volumes:
+      - tailscale-data:/var/lib/tailscale
+      # - /dev/net/tun:/dev/net/tun # Descomente se não for usar TS_USERSPACE e precisar de TUN
+    # network_mode: "service:backend" # DICA: Com isso, o Tailscale compartilha as portas e rede do backend
+    restart: unless-stopped
+    # cap_add:
+    #   - net_admin
+    #   - sys_module
+
+volumes:
+  tailscale-data:
