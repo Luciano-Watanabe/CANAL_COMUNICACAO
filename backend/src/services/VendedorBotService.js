@@ -1,4 +1,5 @@
 const oracledb = require('oracledb');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
@@ -68,8 +69,8 @@ class VendedorBotService {
                 case 'VENDEDOR_MENU_PRINCIPAL':
                     return await this.processarMenuPrincipal(telefone, text, instanceName, conn, codvendedor);
                 
-                case 'VENDEDOR_ASSISTENTE_COMUNICACAO':
-                    return await this.processarAssistenteComunicacao(telefone, text, instanceName, conn, dados, codvendedor);
+                case 'VENDEDOR_ASSISTENTE_COMUNICACAO_BUSCA_CLIENTE':
+                    return await this.processarAssistenteComunicacaoBuscaCliente(telefone, text, instanceName, conn, dados, codvendedor);
                 
                 case 'VENDEDOR_MINHAS_METAS':
                     return await this.processarMinhasMetas(telefone, text, instanceName, conn, dados, codvendedor);
@@ -117,8 +118,8 @@ class VendedorBotService {
         const opcao = (text || '').trim();
         switch (opcao) {
             case '1':
-                await this.setState(telefone, 'VENDEDOR_ASSISTENTE_COMUNICACAO', {}, conn);
-                await this.webhookPoller.enviarMensagemBot(telefone, "💬 *Assistente de Comunicação*\n\nEm breve: Dicas de abordagem e mensagens prontas para seus clientes.\nDigite VOLTAR para retornar ao menu.", conn, instanceName);
+                await this.setState(telefone, 'VENDEDOR_ASSISTENTE_COMUNICACAO_BUSCA_CLIENTE', {}, conn);
+                await this.webhookPoller.enviarMensagemBot(telefone, "💬 *Assistente de Comunicação*\n\nQual CODCLI ou CNPJ/CPF do cliente que deseja analisar?\n\nDigite VOLTAR caso queira cancelar.", conn, instanceName);
                 break;
             case '2':
                 await this.setState(telefone, 'VENDEDOR_MINHAS_METAS', {}, conn);
@@ -146,9 +147,130 @@ class VendedorBotService {
         }
     }
 
-    async processarAssistenteComunicacao(telefone, text, instanceName, conn, dados, codvendedor) {
-        // Implementação futura
-        await this.webhookPoller.enviarMensagemBot(telefone, "Módulo em desenvolvimento. Digite VOLTAR.", conn, instanceName);
+    async processarAssistenteComunicacaoBuscaCliente(telefone, text, instanceName, conn, dados, codvendedor) {
+        const busca = (text || '').replace(/[^0-9]/g, '');
+        if (!busca) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Código ou CNPJ inválido. Por favor, digite apenas números.\n\nQual CODCLI ou CNPJ/CPF do cliente?", conn, instanceName);
+            return;
+        }
+
+        const sqlCli = `
+            SELECT C.CODCLI, NVL(C.FANTASIA, C.CLIENTE), R.RAMO, C.CODUSUR1, 
+                   TRUNC(SYSDATE - C.DTULTCOMP) AS DIAS_SEM_COMPRAR, C.CODATV1
+            FROM PCCLIENT C
+            LEFT JOIN PCATIVI R ON C.CODATV1 = R.CODATIV
+            WHERE C.CODCLI = :busca OR REPLACE(REPLACE(REPLACE(C.CGCENT, '.', ''), '/', ''), '-', '') = :busca
+            FETCH FIRST 1 ROWS ONLY
+        `;
+        const resCli = await conn.execute(sqlCli, { busca });
+
+        if (resCli.rows.length === 0) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Cliente não encontrado. Verifique o código ou CNPJ e tente novamente.\n\nQual CODCLI ou CNPJ/CPF do cliente?", conn, instanceName);
+            return;
+        }
+
+        const codusur1 = resCli.rows[0][3];
+        if (String(codusur1) !== String(codvendedor)) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "⚠️ *Atenção:* Este cliente não pertence à sua carteira.\n\nPor favor, informe outro CODCLI ou CNPJ, ou digite VOLTAR para cancelar.", conn, instanceName);
+            return;
+        }
+
+        const codcli = resCli.rows[0][0];
+        const nomeCliente = String(resCli.rows[0][1] || '').trim();
+        const ramoAtividade = resCli.rows[0][2] || 'Não informado';
+        const diasSemComprar = resCli.rows[0][4] || 'Nunca comprou';
+        const codramo = resCli.rows[0][5];
+
+        await this.webhookPoller.enviarMensagemBot(telefone, `⏳ Analisando dados do cliente *${codcli} - ${nomeCliente}*... Por favor, aguarde.`, conn, instanceName);
+
+        try {
+            const sqlProdCli = `
+                SELECT P.DESCRICAO, SUM(I.QT) as QT_TOTAL
+                FROM PCPEDI I
+                JOIN PCPEDC C ON I.NUMPED = C.NUMPED
+                JOIN PCPRODUT P ON I.CODPROD = P.CODPROD
+                WHERE C.CODCLI = :codcli
+                AND C.DATA > ADD_MONTHS(SYSDATE, -6)
+                GROUP BY P.DESCRICAO
+                ORDER BY QT_TOTAL DESC
+                FETCH FIRST 5 ROWS ONLY
+            `;
+            const resProdCli = await conn.execute(sqlProdCli, { codcli });
+            const produtosCliente = resProdCli.rows.map(r => `- ${r[0]} (Qtd: ${r[1]})`).join('\n') || 'Nenhuma compra recente';
+
+            let produtosSugeridos = 'Nenhum';
+            if (codramo) {
+                const sqlProdSugeridos = `
+                    SELECT P.DESCRICAO, SUM(I.QT) AS QT_TOTAL
+                    FROM PCPEDI I
+                    JOIN PCPEDC C ON I.NUMPED = C.NUMPED
+                    JOIN PCPRODUT P ON I.CODPROD = P.CODPROD
+                    JOIN PCCLIENT CL ON C.CODCLI = CL.CODCLI
+                    WHERE CL.CODATV1 = :codramo
+                    AND C.DATA > ADD_MONTHS(SYSDATE, -6)
+                    AND P.CODPROD NOT IN (
+                        SELECT DISTINCT I2.CODPROD
+                        FROM PCPEDI I2
+                        JOIN PCPEDC C2 ON I2.NUMPED = C2.NUMPED
+                        WHERE C2.CODCLI = :codcli
+                    )
+                    GROUP BY P.DESCRICAO
+                    ORDER BY QT_TOTAL DESC
+                    FETCH FIRST 5 ROWS ONLY
+                `;
+                const resProdSugeridos = await conn.execute(sqlProdSugeridos, { codramo, codcli });
+                produtosSugeridos = resProdSugeridos.rows.map(r => `- ${r[0]}`).join('\n') || 'Nenhum sugerido';
+            }
+
+            const globalConfigRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'GROQ_API_KEY'`);
+            let grokApiKey = globalConfigRes.rows.length > 0 ? globalConfigRes.rows[0][0] : process.env.GROQ_API_KEY;
+
+            if (!grokApiKey) {
+                await this.webhookPoller.enviarMensagemBot(telefone, "Aviso: Chave da IA (GROQ) não configurada. Fale com o administrador.", conn, instanceName);
+                await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
+                return await this.enviarMenuPrincipal(telefone, instanceName, conn);
+            }
+
+            const prompt = `Você é um Treinador de Vendas experiente e altamente persuasivo.
+Seu objetivo é orientar o Vendedor a aumentar o valor do pedido (ticket médio), aumentar a recorrência de compra e aumentar a quantidade de SKUs comprados por este cliente.
+
+Dados do Cliente:
+- Nome: ${nomeCliente}
+- Ramo de Atividade (Seguimento): ${ramoAtividade}
+- Dias sem comprar: ${diasSemComprar}
+- Produtos que mais comprou nos últimos 6 meses:
+${produtosCliente}
+- Produtos que outros clientes do mesmo seguimento compram, mas este cliente não compra:
+${produtosSugeridos}
+
+Por favor, forneça conselhos de abordagem curtos, diretos e práticos.
+1. Uma breve análise do cenário do cliente.
+2. Dicas de como argumentar para incluir os produtos sugeridos no próximo pedido.
+3. Ideia de abordagem no WhatsApp para reativar/manter a recorrência.
+Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja objetivo.`;
+
+            const grokRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+                model: 'openai/gpt-oss-120b',
+                messages: [{ role: 'user', content: prompt }],
+                temperature: 0.7,
+                max_tokens: 800
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${grokApiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            });
+
+            const resposta = grokRes.data.choices[0].message.content.trim();
+            await this.webhookPoller.enviarMensagemBot(telefone, resposta, conn, instanceName);
+        } catch (err) {
+            console.error(`${TAG} Erro ao processar assistente de comunicação:`, err);
+            await this.webhookPoller.enviarMensagemBot(telefone, "Desculpe, ocorreu um erro ao se comunicar com o Assistente (IA).", conn, instanceName);
+        }
+
+        await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
+        await this.enviarMenuPrincipal(telefone, instanceName, conn);
     }
 
     async processarMinhasMetas(telefone, text, instanceName, conn, dados, codvendedor) {
