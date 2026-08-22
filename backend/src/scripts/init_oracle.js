@@ -1,6 +1,6 @@
 const oracledb = require('oracledb');
 try {
-    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_21_12' });
+    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
 } catch (err) { }
 const fs = require('fs');
 const path = require('path');
@@ -289,7 +289,7 @@ async function initializeOracleDatabase() {
             `ALTER TABLE CANAL_MENSAGENS ADD (STATUS VARCHAR2(50))`,
             `ALTER TABLE CANAL_MENSAGENS ADD (LIDA CHAR(1) DEFAULT 'N')`,
             `ALTER TABLE CANAL_MENSAGENS ADD (TICKET_ID NUMBER)`,
-            `ALTER TABLE CANAL_SAC_TICKETS ADD (NOTA_AVALIACAO NUMBER(1))`,
+            `ALTER TABLE CANAL_SAC_TICKETS ADD (NOTA_AVALIACAO NUMBER(2))`,
             `ALTER TABLE CANAL_SAC_TICKETS ADD (DATA_RESOLUCAO TIMESTAMP)`,
             `ALTER TABLE CANAL_TOKENS_EVOLUTION ADD (NOME_ATENDENTE VARCHAR2(100))`
         ];

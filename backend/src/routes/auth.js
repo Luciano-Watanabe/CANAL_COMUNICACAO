@@ -13,7 +13,7 @@ router.post('/login', async (req, res) => {
         
         // Ativando Thick Mode para lidar com senhas legadas (NJS-116)
         try {
-            oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_21_12' });
+            oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
         } catch (err) {
             console.error('Oracle Client já inicializado ou não encontrado:', err.message);
         }

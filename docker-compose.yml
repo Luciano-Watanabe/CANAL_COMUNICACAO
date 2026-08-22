@@ -29,6 +29,7 @@ services:
       - "3001:3001"
     environment:
       - NODE_ENV=development
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
       - PORT=3001
       - TZ=America/Sao_Paulo
       - DB_HOST=db
@@ -75,6 +76,7 @@ services:
     command: node src/worker.js
     environment:
       - NODE_ENV=development
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
       - TZ=America/Sao_Paulo
       - DB_HOST=db
       - DB_USER=postgres

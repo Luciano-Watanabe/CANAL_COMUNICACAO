@@ -1,7 +1,7 @@
 require('dotenv').config();
 const oracledb = require('oracledb');
 try {
-    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_21_12' });
+    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
 } catch (err) {
     console.warn('[WORKER] Aviso: Falha ao inicializar o Thick mode do Oracle. Pode ser que o Instant Client não esteja presente no container.', err.message);
 }
@@ -12,7 +12,9 @@ const cacheService = require('./services/cacheService');
 
 console.log('[WORKER] Inicializando processos em background...');
 
-initializeOracleDatabase().then(async () => {
+const oraclePool = require('./services/oraclePool');
+
+oraclePool.initPool().then(() => initializeOracleDatabase()).then(async () => {
 
     console.log('[WORKER] Banco inicializado. Carregando Crons e Poller...');
     

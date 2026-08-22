@@ -83,6 +83,21 @@ class VendedorBotService {
                 case 'VENDEDOR_TICKETS_RESPONDER':
                     return await this.processarTicketsResponder(telefone, text, instanceName, conn, dados, codvendedor);
 
+                case 'VENDEDOR_ABRIR_TICKET_BUSCA_CLIENTE':
+                    return await this.processarBuscaClienteTicket(telefone, text, instanceName, conn, dados, codvendedor);
+
+                case 'VENDEDOR_ABRIR_TICKET_DEPTO':
+                    return await this.processarTicketDepto(telefone, text, instanceName, conn, dados, codvendedor);
+
+                case 'VENDEDOR_ABRIR_TICKET_SUBDEPTO':
+                    return await this.processarTicketSubDepto(telefone, text, instanceName, conn, dados, codvendedor);
+
+                case 'VENDEDOR_ABRIR_TICKET_RELATO':
+                    return await this.processarTicketRelato(telefone, text, isAudio, audioBase64, instanceName, conn, dados, originalMessage, codvendedor);
+
+                case 'VENDEDOR_CONSULTAR_CNPJ':
+                    return await this.processarConsultarCnpj(telefone, text, instanceName, conn, dados, codvendedor);
+
                 default:
                     await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
                     return await this.enviarMenuPrincipal(telefone, instanceName, conn);
@@ -94,7 +109,7 @@ class VendedorBotService {
     }
 
     async enviarMenuPrincipal(telefone, instanceName, conn) {
-        const menuText = `💼 *Copiloto do Vendedor*\n\nOlá! Como posso te ajudar hoje?\n\n1️⃣ - 💬 Assistente de Comunicação\n2️⃣ - 📊 Minhas Metas\n3️⃣ - 🎫 Consultar Tickets da Carteira\n0️⃣ - Finalizar`;
+        const menuText = `💼 *Copiloto do Vendedor*\n\nOlá! Como posso te ajudar hoje?\n\n1️⃣ - 💬 Assistente de Comunicação\n2️⃣ - 📊 Minhas Metas\n3️⃣ - 🎫 Consultar Tickets da Carteira\n4️⃣ - 🎫 Abrir ticket para cliente\n5️⃣ - 🔍 Consultar CNPJ/CPF\n0️⃣ - Finalizar`;
         await this.webhookPoller.enviarMensagemBot(telefone, menuText, conn, instanceName);
     }
 
@@ -112,6 +127,14 @@ class VendedorBotService {
             case '3':
                 await this.setState(telefone, 'VENDEDOR_TICKETS_STATUS', {}, conn);
                 await this.webhookPoller.enviarMensagemBot(telefone, "🎫 *Consultar Tickets*\n\nQual status você deseja consultar?\n1 - Abertos\n2 - Em Atendimento\n\nDigite o número da opção desejada ou VOLTAR.", conn, instanceName);
+                break;
+            case '4':
+                await this.setState(telefone, 'VENDEDOR_ABRIR_TICKET_BUSCA_CLIENTE', {}, conn);
+                await this.webhookPoller.enviarMensagemBot(telefone, "Qual CODCLI ou CNPJ do cliente?\n\nDigite VOLTAR caso queira cancelar.", conn, instanceName);
+                break;
+            case '5':
+                await this.setState(telefone, 'VENDEDOR_CONSULTAR_CNPJ', {}, conn);
+                await this.webhookPoller.enviarMensagemBot(telefone, "🔍 *Consulta de Cadastro*\n\nDigite o *CNPJ* ou *CPF* que deseja consultar (apenas números).\n\nDigite VOLTAR para retornar ao menu.", conn, instanceName);
                 break;
             case '0':
                 await conn.execute(`DELETE FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, [telefone]);
@@ -186,8 +209,147 @@ class VendedorBotService {
             await this.webhookPoller.enviarMensagemBot(telefone, msg, conn, instanceName);
         } catch (e) {
             console.error(`${TAG} Erro ao buscar tickets da carteira:`, e);
-            await this.webhookPoller.enviarMensagemBot(telefone, "Erro ao buscar tickets. Digite VOLTAR.", conn, instanceName);
+            await this.webhookPoller.enviarMensagemBot(telefone, "Erro ao enviar sua resposta. Tente novamente.", conn, instanceName);
         }
+    }
+
+    async processarBuscaClienteTicket(telefone, text, instanceName, conn, dados, codvendedor) {
+        const busca = (text || '').replace(/[^0-9]/g, '');
+        if (!busca) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Código ou CNPJ inválido. Por favor, digite apenas números.\n\nQual CODCLI ou CNPJ do cliente?", conn, instanceName);
+            return;
+        }
+
+        const sql = `
+            SELECT CODCLI, CLIENTE, FANTASIA, CODUSUR1
+            FROM PCCLIENT 
+            WHERE CODCLI = :busca OR REPLACE(REPLACE(REPLACE(CGCENT, '.', ''), '/', ''), '-', '') = :busca
+            FETCH FIRST 1 ROWS ONLY
+        `;
+        const result = await conn.execute(sql, { busca });
+
+        if (result.rows.length === 0) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Cliente não encontrado. Verifique o código ou CNPJ e tente novamente.\n\nQual CODCLI ou CNPJ do cliente?", conn, instanceName);
+            return;
+        }
+
+        const codusur1 = result.rows[0][3];
+        if (String(codusur1) !== String(codvendedor)) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "⚠️ *Atenção:* Este cliente não pertence à sua carteira, portanto, você não pode abrir um ticket para ele.\n\nPor favor, informe outro CODCLI ou CNPJ, ou digite VOLTAR para cancelar.", conn, instanceName);
+            return;
+        }
+
+        const codcli = result.rows[0][0];
+        const nomeCliente = result.rows[0][2] || result.rows[0][1]; // NVL(FANTASIA,CLIENTE)
+        
+        let msg = `*${codcli} - ${nomeCliente}*\n\n`;
+
+        // Busca departamentos do SAC
+        const deptosRes = await conn.execute(`SELECT ID, NOME FROM CANAL_SAC_DEPARTAMENTOS WHERE DEPARTAMENTO_PAI_ID IS NULL AND ATIVO = 'S' ORDER BY NOME`);
+        if (deptosRes.rows.length === 0) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Nenhum departamento de SAC configurado. Digite VOLTAR.", conn, instanceName);
+            return;
+        }
+
+        msg += `Qual departamento deseja abrir o chamado?\n\n`;
+        let deptos = [];
+        let i = 1;
+        for (const row of deptosRes.rows) {
+            msg += `${i} - ${row[1]}\n`;
+            deptos.push(row[0]);
+            i++;
+        }
+        msg += "\nDigite o número correspondente ou VOLTAR.";
+
+        await this.setState(telefone, 'VENDEDOR_ABRIR_TICKET_DEPTO', { codcli, deptosDisponiveis: deptos }, conn);
+        await this.webhookPoller.enviarMensagemBot(telefone, msg, conn, instanceName);
+    }
+
+    async processarTicketDepto(telefone, text, instanceName, conn, dados, codvendedor) {
+        const numIndex = parseInt(text.trim(), 10);
+        const ids = dados.deptosDisponiveis || [];
+        
+        let selectedId = null;
+        if (!isNaN(numIndex) && numIndex >= 1 && numIndex <= ids.length) {
+            selectedId = ids[numIndex - 1];
+        }
+
+        if (selectedId === null) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Opção inválida. Digite o número correspondente ao departamento.\nOu digite VOLTAR.", conn, instanceName);
+            return;
+        }
+
+        const resSub = await conn.execute(`SELECT ID, NOME FROM CANAL_SAC_DEPARTAMENTOS WHERE DEPARTAMENTO_PAI_ID = :id AND ATIVO = 'S' ORDER BY NOME`, { id: selectedId });
+
+        if (resSub.rows.length > 0) {
+            let texto = "Selecione o Sub-departamento:\n\n";
+            let subDeptos = [];
+            let i = 1;
+            for (const row of resSub.rows) {
+                texto += `${i} - ${row[1]}\n`;
+                subDeptos.push(row[0]);
+                i++;
+            }
+            texto += "\nDigite o número correspondente ou VOLTAR.";
+
+            await this.setState(telefone, 'VENDEDOR_ABRIR_TICKET_SUBDEPTO', { codcli: dados.codcli, idDeptoPai: selectedId, deptosDisponiveis: subDeptos }, conn);
+            await this.webhookPoller.enviarMensagemBot(telefone, texto, conn, instanceName);
+        } else {
+            // Cria ticket direto
+            const sql = `
+                INSERT INTO CANAL_SAC_TICKETS (TELEFONE, CODCLI, DEPARTAMENTO_ID, DESCRICAO, STATUS)
+                VALUES (:tel, :cli, :dep, 'Aguardando relato do vendedor...', 'ABERTO')
+                RETURNING ID INTO :ticketId
+            `;
+            const resInsert = await conn.execute(sql, { tel: telefone, cli: dados.codcli, dep: selectedId, ticketId: { type: oracledb.NUMBER, dir: oracledb.BIND_OUT } }, { autoCommit: true });
+            const ticketId = resInsert.outBinds.ticketId[0];
+
+            await this.setState(telefone, 'VENDEDOR_ABRIR_TICKET_RELATO', { idDepto: selectedId, codcli: dados.codcli, ticketId: ticketId }, conn);
+            await this.webhookPoller.enviarMensagemBot(telefone, `Chamado *#${ticketId}* iniciado.\n\nAgora digite o texto, ou envie imagem, vídeo, ou áudio para abertura do chamado:`, conn, instanceName);
+        }
+    }
+
+    async processarTicketSubDepto(telefone, text, instanceName, conn, dados, codvendedor) {
+        const numIndex = parseInt(text.trim(), 10);
+        const ids = dados.deptosDisponiveis || [];
+        
+        let selectedId = null;
+        if (!isNaN(numIndex) && numIndex >= 1 && numIndex <= ids.length) {
+            selectedId = ids[numIndex - 1];
+        }
+
+        if (selectedId === null) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Opção inválida. Digite o número correspondente ao sub-departamento.\nOu digite VOLTAR.", conn, instanceName);
+            return;
+        }
+
+        const sql = `
+            INSERT INTO CANAL_SAC_TICKETS (TELEFONE, CODCLI, DEPARTAMENTO_ID, DESCRICAO, STATUS)
+            VALUES (:tel, :cli, :dep, 'Aguardando relato do vendedor...', 'ABERTO')
+            RETURNING ID INTO :ticketId
+        `;
+        const resInsert = await conn.execute(sql, { tel: telefone, cli: dados.codcli, dep: selectedId, ticketId: { type: oracledb.NUMBER, dir: oracledb.BIND_OUT } }, { autoCommit: true });
+        const ticketId = resInsert.outBinds.ticketId[0];
+
+        await this.setState(telefone, 'VENDEDOR_ABRIR_TICKET_RELATO', { idDepto: selectedId, codcli: dados.codcli, ticketId: ticketId }, conn);
+        await this.webhookPoller.enviarMensagemBot(telefone, `Chamado *#${ticketId}* iniciado.\n\nAgora digite o texto, ou envie imagem, vídeo, ou áudio para abertura do chamado:`, conn, instanceName);
+    }
+
+    async processarTicketRelato(telefone, text, isAudio, audioBase64, instanceName, conn, dados, originalMessage, codvendedor) {
+        const ticketId = dados.ticketId;
+        
+        if (ticketId) {
+            const descTexto = text || (isAudio ? '[Áudio recebido]' : (originalMessage && originalMessage.messageType !== 'conversation' ? `[Mídia recebida: ${originalMessage.messageType}]` : ''));
+            
+            await conn.execute(`
+                UPDATE CANAL_SAC_TICKETS SET DESCRICAO = :descricao, ATUALIZADO_EM = SYSDATE WHERE ID = :id
+            `, { descricao: descTexto, id: ticketId }, { autoCommit: true });
+        }
+
+        const msg = `✅ Chamado *#${ticketId}* aberto com sucesso!\n\nA equipe responsável já recebeu seu chamado.`;
+        await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
+        await this.webhookPoller.enviarMensagemBot(telefone, msg, conn, instanceName);
+        await this.enviarMenuPrincipal(telefone, instanceName, conn);
     }
 
     async processarTicketsSelecionar(telefone, text, instanceName, conn, dados, codvendedor) {
@@ -272,6 +434,51 @@ class VendedorBotService {
             console.error(`${TAG} Erro ao responder ticket:`, e);
             await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao enviar a resposta. Tente novamente ou digite VOLTAR.", conn, instanceName);
         }
+    }
+
+    async processarConsultarCnpj(telefone, text, instanceName, conn, dados, codvendedor) {
+        const busca = (text || '').replace(/[^0-9]/g, '');
+        if (!busca) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "CNPJ/CPF inválido. Por favor, digite apenas números.\n\nDigite o CNPJ ou CPF para consultar, ou VOLTAR para cancelar.", conn, instanceName);
+            return;
+        }
+
+        const sql = `
+            SELECT 
+                C.CODCLI, 
+                NVL(C.FANTASIA, C.CLIENTE) AS NOME_CLIENTE, 
+                TO_CHAR(C.DTCADASTRO, 'DD/MM/YYYY') AS DTCADASTRO, 
+                C.CODUSUR1, 
+                U.NOME AS NOME_VENDEDOR, 
+                TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY') AS DTULTCOMP 
+            FROM PCCLIENT C
+            LEFT JOIN PCUSUARI U ON C.CODUSUR1 = U.CODUSUR
+            WHERE REPLACE(REPLACE(REPLACE(C.CGCENT, '.', ''), '/', ''), '-', '') = :busca
+        `;
+        
+        try {
+            const result = await conn.execute(sql, { busca });
+
+            if (result.rows.length === 0) {
+                await this.webhookPoller.enviarMensagemBot(telefone, `Nenhum cadastro encontrado para o documento: *${busca}*.\n\nEste CNPJ/CPF está livre para prospecção.`, conn, instanceName);
+            } else {
+                let msg = `🔍 *Resultado da Consulta*\n\nForam encontrados ${result.rows.length} registro(s) para este documento:\n\n`;
+                for (const row of result.rows) {
+                    msg += `🏢 *Cliente:* ${row[0]} - ${row[1]}\n`;
+                    msg += `📅 *Cadastro:* ${row[2] || 'N/A'}\n`;
+                    msg += `👤 *Vendedor(a):* ${row[3]} - ${row[4] || 'Sem vínculo'}\n`;
+                    msg += `🛒 *Última Compra:* ${row[5] || 'Nunca comprou'}\n`;
+                    msg += `----------------------------\n`;
+                }
+                await this.webhookPoller.enviarMensagemBot(telefone, msg, conn, instanceName);
+            }
+        } catch (e) {
+            console.error(`${TAG} Erro ao consultar CNPJ/CPF ${busca}:`, e);
+            await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao realizar a consulta. Tente novamente.", conn, instanceName);
+        }
+
+        await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
+        await this.enviarMenuPrincipal(telefone, instanceName, conn);
     }
 }
 

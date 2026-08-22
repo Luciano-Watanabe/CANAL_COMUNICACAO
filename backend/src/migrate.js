@@ -1,6 +1,6 @@
 const oracledb = require('oracledb');
 try {
-    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_21_12' });
+    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
 } catch (err) {
     console.error('Erro ao inicializar Oracle Client (Thick mode):', err.message);
 }
@@ -15,7 +15,7 @@ async function migrate() {
         
         // 1. Add column NOTA_AVALIACAO
         try {
-            await conn.execute(`ALTER TABLE CANAL_SAC_TICKETS ADD NOTA_AVALIACAO NUMBER(1)`);
+            await conn.execute(`ALTER TABLE CANAL_SAC_TICKETS ADD NOTA_AVALIACAO NUMBER(2)`);
             console.log('Added NOTA_AVALIACAO column');
         } catch (e) {
             console.log('Column NOTA_AVALIACAO might already exist:', e.message);

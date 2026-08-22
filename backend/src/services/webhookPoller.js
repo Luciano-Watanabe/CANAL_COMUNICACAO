@@ -88,7 +88,11 @@ class WebhookPoller {
 
                     let jsonString = '';
                     if (clob) {
-                        jsonString = await clob.getData();
+                        if (typeof clob.getData === 'function') {
+                            jsonString = await clob.getData();
+                        } else {
+                            jsonString = clob;
+                        }
                     }
 
                     if (jsonString) {
@@ -746,10 +750,11 @@ class WebhookPoller {
 
             let ticketId = null;
             let isVendedor = false;
+            let estadoAtual = '';
             try {
                 const stateRes = await conn.execute(`SELECT DADOS_TEMPORARIOS, ESTADO_ATUAL FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, { tel: msgObj.chat_id });
                 if (stateRes.rows.length > 0) {
-                    const estadoAtual = stateRes.rows[0][1] || '';
+                    estadoAtual = stateRes.rows[0][1] || '';
                     if (estadoAtual.startsWith('VENDEDOR_')) {
                         isVendedor = true;
                     }
@@ -767,7 +772,7 @@ class WebhookPoller {
                 console.error('[WebhookPoller] Erro ao obter ticketId no saveMessage:', e);
             }
             
-            if (isVendedor) {
+            if (isVendedor && estadoAtual !== 'VENDEDOR_ABRIR_TICKET_RELATO') {
                 console.log(`[WebhookPoller] Mensagem ignorada pelo saveMessage pois o remetente está no fluxo do vendedor.`);
                 return;
             }

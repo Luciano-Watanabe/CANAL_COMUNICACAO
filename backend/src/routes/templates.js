@@ -3,7 +3,7 @@ const oracledb = require('oracledb');
 const router = express.Router();
 
 try {
-    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_21_12' });
+    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
 } catch (err) {
     // Pode já estar inicializado
 }
