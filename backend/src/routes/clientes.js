@@ -18,7 +18,7 @@ const getImagePath = (codprod) => {
 };
 
 try {
-    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
+    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_21_12' });
 } catch (err) {
     // Pode já estar inicializado
 }

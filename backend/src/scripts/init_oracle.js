@@ -1,6 +1,6 @@
 const oracledb = require('oracledb');
 try {
-    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
+    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_21_12' });
 } catch (err) { }
 const fs = require('fs');
 const path = require('path');
@@ -35,13 +35,15 @@ const TABLES = [
         MEDIA_MIMETYPE VARCHAR2(100),
         ARQUIVO_LOCAL VARCHAR2(1000),
         STATUS VARCHAR2(50),
-        LIDA CHAR(1) DEFAULT 'N'
+        LIDA CHAR(1) DEFAULT 'N',
+        TICKET_ID NUMBER
     )`,
     `CREATE TABLE CANAL_TOKENS_EVOLUTION (
         CODUSUR VARCHAR2(50) PRIMARY KEY,
         INSTANCE_NAME VARCHAR2(100),
         API_TOKEN VARCHAR2(255),
         API_URL VARCHAR2(255),
+        NOME_ATENDENTE VARCHAR2(100),
         STATUS VARCHAR2(50),
         DATA_ATUALIZACAO TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`,
@@ -156,7 +158,8 @@ const TABLES = [
         DESCRICAO CLOB,
         STATUS VARCHAR2(50) DEFAULT 'ABERTO',
         CRIADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        ATUALIZADO_EM TIMESTAMP
+        ATUALIZADO_EM TIMESTAMP,
+        DATA_RESOLUCAO TIMESTAMP
     )`,
     `CREATE TABLE CANAL_PROSPECTS (
         ID VARCHAR2(50) DEFAULT RAWTOHEX(SYS_GUID()) PRIMARY KEY,
@@ -243,6 +246,34 @@ async function initializeOracleDatabase() {
             console.warn('⚠️ [STARTUP] Aviso: Arquivo winthor_views.sql não encontrado.');
         }
 
+        // 2.1 Criar Views Nativas
+        try {
+            const sqlView = `
+            CREATE OR REPLACE VIEW VW_TICKETS_COM_HISTORICO AS
+            SELECT 
+                t.ID AS TICKET_ID,
+                t.TELEFONE,
+                t.STATUS,
+                t.CRIADO_EM,
+                (
+                    SELECT LISTAGG(
+                        CASE 
+                            WHEN m.SENTIDO = 'IN' THEN 'Cliente: ' || m.TEXTO
+                            ELSE 'Atendente: ' || m.TEXTO
+                        END, CHR(10)
+                    ) WITHIN GROUP (ORDER BY m.DATA_HORA)
+                    FROM CANAL_MENSAGENS m
+                    WHERE m.TICKET_ID = t.ID
+                ) AS HISTORICO_ATENDIMENTO
+            FROM 
+                CANAL_SAC_TICKETS t
+            `;
+            await conn.execute(sqlView);
+            console.log('✅ [STARTUP] View VW_TICKETS_COM_HISTORICO criada/atualizada com sucesso.');
+        } catch(err) {
+            console.error('⚠️ [STARTUP] Erro ao criar view VW_TICKETS_COM_HISTORICO:', err.message);
+        }
+
         // Initialize state table if empty
         try {
             await conn.execute(`INSERT INTO CANAL_WEBHOOK_STATE (ID, LAST_PROCESSED_ID) SELECT 1, 0 FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM CANAL_WEBHOOK_STATE WHERE ID = 1)`);
@@ -257,7 +288,10 @@ async function initializeOracleDatabase() {
             `ALTER TABLE CANAL_MENSAGENS ADD (ARQUIVO_LOCAL VARCHAR2(1000))`,
             `ALTER TABLE CANAL_MENSAGENS ADD (STATUS VARCHAR2(50))`,
             `ALTER TABLE CANAL_MENSAGENS ADD (LIDA CHAR(1) DEFAULT 'N')`,
-            `ALTER TABLE CANAL_SAC_TICKETS ADD (NOTA_AVALIACAO NUMBER(1))`
+            `ALTER TABLE CANAL_MENSAGENS ADD (TICKET_ID NUMBER)`,
+            `ALTER TABLE CANAL_SAC_TICKETS ADD (NOTA_AVALIACAO NUMBER(1))`,
+            `ALTER TABLE CANAL_SAC_TICKETS ADD (DATA_RESOLUCAO TIMESTAMP)`,
+            `ALTER TABLE CANAL_TOKENS_EVOLUTION ADD (NOME_ATENDENTE VARCHAR2(100))`
         ];
         for (const alterSql of ALTER_COLUMNS) {
             try {
