@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Headset, CheckCircle2, Clock, User, MessageSquare, Send, X, Star, Paperclip, File as FileIcon, Plus, Search } from 'lucide-react';
+import { Headset, CheckCircle2, Clock, User, MessageSquare, Send, X, Star, Paperclip, File as FileIcon, Plus, Search, ShieldAlert } from 'lucide-react';
 import clsx from 'clsx';
+import { useNavigate } from 'react-router-dom';
 
 export default function SAC() {
+  const navigate = useNavigate();
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('TODOS');
@@ -271,10 +273,16 @@ export default function SAC() {
             Gestão e atendimento dos chamados via WhatsApp.
           </p>
         </div>
-        <button onClick={handleOpenModal} className="flex items-center gap-2 bg-primary-500 hover:bg-primary-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm shadow-primary-500/20">
-          <Plus size={18} />
-          Novo Chamado Interno
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/logs-identificacao')} className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg font-medium transition-colors border border-slate-200 dark:border-slate-700">
+            <ShieldAlert size={18} className="text-amber-500" />
+            LOG - Clientes não Identificado
+          </button>
+          <button onClick={handleOpenModal} className="flex items-center gap-2 bg-primary-500 hover:bg-primary-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm shadow-primary-500/20">
+            <Plus size={18} />
+            Novo Chamado Interno
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-4 flex-1 min-h-0">
