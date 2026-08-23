@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, MessageSquare, TrendingUp, Clock, Send, Megaphone, Trophy } from 'lucide-react';
+import { Users, MessageSquare, TrendingUp, Clock, Send, Megaphone, Trophy, X } from 'lucide-react';
 import { ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 import { useSocket } from '../contexts/SocketContext';
@@ -40,6 +40,7 @@ export default function Dashboard() {
   const [novoAvisoTexto, setNovoAvisoTexto] = useState('');
   const [userRole, setUserRole] = useState('');
   const { socket } = useSocket();
+  const [activeKpiModal, setActiveKpiModal] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDados = async () => {
@@ -285,7 +286,16 @@ export default function Dashboard() {
       {sacStats && (
         <>
           <h2 className="text-xl font-bold text-slate-800 dark:text-white mt-8 mb-4">Métricas SAC</h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+            <div className="glass-card p-6 flex items-center justify-between animate-slide-up cursor-pointer hover:shadow-md border border-transparent hover:border-primary-500/30 transition-all" onClick={() => setActiveKpiModal('TOTAL')} style={{ animationDelay: '0ms' }}>
+              <div>
+                <p className="text-slate-500 font-medium text-sm">Total Tickets (Geral)</p>
+                <p className="text-3xl font-bold text-slate-800 dark:text-white mt-1">{(sacStats.totalAbertos || 0) + (sacStats.resolvidosHoje || 0)}</p>
+              </div>
+              <div className="p-3 rounded-xl bg-primary-500/10 text-primary-500">
+                <MessageSquare size={28} />
+              </div>
+            </div>
             <div className="glass-card p-6 flex items-center justify-between animate-slide-up" style={{ animationDelay: '100ms' }}>
               <div>
                 <p className="text-slate-500 font-medium text-sm">Tickets Abertos</p>
@@ -304,7 +314,7 @@ export default function Dashboard() {
                 <Trophy size={28} />
               </div>
             </div>
-            <div className="glass-card p-6 flex items-center justify-between animate-slide-up" style={{ animationDelay: '300ms' }}>
+            <div className="glass-card p-6 flex items-center justify-between animate-slide-up cursor-pointer hover:shadow-md border border-transparent hover:border-amber-500/30 transition-all" onClick={() => setActiveKpiModal('AVALIACAO')} style={{ animationDelay: '300ms' }}>
               <div>
                 <p className="text-slate-500 font-medium text-sm">Avaliação Média</p>
                 <p className="text-3xl font-bold text-slate-800 dark:text-white mt-1">{sacStats.mediaAvaliacao} ⭐</p>
@@ -313,7 +323,7 @@ export default function Dashboard() {
                 <TrendingUp size={28} />
               </div>
             </div>
-            <div className="glass-card p-6 flex items-center justify-between animate-slide-up" style={{ animationDelay: '400ms' }}>
+            <div className="glass-card p-6 flex items-center justify-between animate-slide-up cursor-pointer hover:shadow-md border border-transparent hover:border-blue-500/30 transition-all" onClick={() => setActiveKpiModal('SLA')} style={{ animationDelay: '400ms' }}>
               <div>
                 <p className="text-slate-500 font-medium text-sm">SLA Médio</p>
                 <p className="text-3xl font-bold text-slate-800 dark:text-white mt-1">{sacStats.slaHoras} h</p>
@@ -325,8 +335,8 @@ export default function Dashboard() {
           </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            <div className="glass-card p-6 animate-slide-up" style={{ animationDelay: '500ms' }}>
-              <h3 className="font-semibold text-lg text-slate-800 dark:text-white mb-4">Volume por Departamento</h3>
+            <div className="glass-card p-6 animate-slide-up cursor-pointer hover:shadow-md border border-transparent hover:border-slate-300 dark:hover:border-slate-600 transition-all" onClick={() => setActiveKpiModal('VOLUME')} style={{ animationDelay: '500ms' }}>
+              <h3 className="font-semibold text-lg text-slate-800 dark:text-white mb-4 flex items-center gap-2">Volume por Departamento <span className="text-xs font-normal text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">Ver + KPIs</span></h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={sacStats.volumeDepartamento}>
@@ -613,6 +623,97 @@ export default function Dashboard() {
           <RadarPositivacao user={{ matricula: userMatricula, role: userRole }} />
         </div>
       </div>
+
+      {activeKpiModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                {activeKpiModal === 'TOTAL' && <><MessageSquare className="text-primary-500" /> Indicadores de Resolução (Geral)</>}
+                {activeKpiModal === 'SLA' && <><Clock className="text-blue-500" /> Indicadores de Tempo (SLA)</>}
+                {activeKpiModal === 'AVALIACAO' && <><TrendingUp className="text-amber-500" /> Indicadores de Qualidade e Satisfação</>}
+                {activeKpiModal === 'VOLUME' && <><TrendingUp className="text-primary-500" /> Indicadores Operacionais e Volume</>}
+              </h2>
+              <button onClick={() => setActiveKpiModal(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1">
+              {activeKpiModal === 'TOTAL' && (
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">Taxa de Resolução Mensal</h3>
+                       <p className="text-2xl font-bold text-emerald-500 mt-2">{sacStats.taxaResolucao || 0}%</p>
+                       <p className="text-xs text-slate-500 mt-1">Total de chamados finalizados vs abertos no mês</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">FCR / Taxa de Reabertura</h3>
+                       <p className="text-sm font-medium text-slate-500 mt-2">Dados insuficientes</p>
+                       <p className="text-xs text-slate-500 mt-1">Requer análise aprofundada de mensagens</p>
+                    </div>
+                 </div>
+              )}
+              {activeKpiModal === 'SLA' && (
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">Tempo Médio de Resolução (TMR)</h3>
+                       <p className="text-2xl font-bold text-blue-500 mt-2">{sacStats.slaHoras || 0} h</p>
+                       <p className="text-xs text-slate-500 mt-1">Vida útil do ticket até ser fechado</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">TME / TMA</h3>
+                       <p className="text-sm font-medium text-slate-500 mt-2">Dados insuficientes</p>
+                       <p className="text-xs text-slate-500 mt-1">Requer análise de timestamp por mensagem</p>
+                    </div>
+                 </div>
+              )}
+              {activeKpiModal === 'AVALIACAO' && (
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">CSAT (Customer Satisfaction Score)</h3>
+                       <p className="text-2xl font-bold text-amber-500 mt-2">{sacStats.mediaAvaliacao || 'N/A'}/10</p>
+                       <p className="text-xs text-slate-500 mt-1">Satisfação geral do cliente no mês</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">NPS (Net Promoter Score)</h3>
+                       <p className="text-2xl font-bold text-emerald-500 mt-2">{sacStats.npsScore || 0}</p>
+                       <p className="text-xs text-slate-500 mt-1">Promotores (9-10) - Detratores (0-6)</p>
+                    </div>
+                 </div>
+              )}
+              {activeKpiModal === 'VOLUME' && (
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 col-span-1 md:col-span-2">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Volume de Tickets por Departamento</h3>
+                       <div className="h-40">
+                         <ResponsiveContainer width="100%" height="100%">
+                           <BarChart data={sacStats.volumeDepartamento || []}>
+                             <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
+                             <XAxis dataKey="nome" tick={{fill: '#64748b', fontSize: 10}} />
+                             <Tooltip cursor={{fill: 'transparent'}} contentStyle={{backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#fff'}} />
+                             <Bar dataKey="total" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                           </BarChart>
+                         </ResponsiveContainer>
+                       </div>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">Tickets Criados Hoje</h3>
+                       <p className="text-2xl font-bold text-indigo-500 mt-2">{sacStats.criadosHoje || 0}</p>
+                       <p className="text-xs text-slate-500 mt-1">Volume de novos atendimentos no dia</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">Backlog do Dia</h3>
+                       <p className="text-2xl font-bold text-amber-500 mt-2">
+                          {sacStats.backlogDia > 0 ? '+' : ''}{sacStats.backlogDia || 0}
+                       </p>
+                       <p className="text-xs text-slate-500 mt-1">Tickets criados - resolvidos hoje</p>
+                    </div>
+                 </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -90,7 +90,7 @@ class SacBotService {
             return;
         }
 
-        if (cmd === 'cancelar' || cmd === 'menu' || cmd === 'voltar' || cmd === 'sair' || cmd === 'encerrar' || cmd === '0') {
+        if ((cmd === 'cancelar' || cmd === 'menu' || cmd === 'voltar' || cmd === 'sair' || cmd === 'encerrar' || cmd === '0') && !(estado === 'AGUARDANDO_AVALIACAO' && cmd === '0')) {
             if (cmd === '0' || cmd === 'encerrar') {
                 if (estado === 'MENU_PRINCIPAL') {
                     console.log(`${TAG} → Opção 0/Encerrar no Menu Principal. Finalizando atendimento.`);
@@ -1003,11 +1003,19 @@ class SacBotService {
 
     async processarAvaliacao(telefone, text, instanceName, conn, dados) {
         if (!text) return;
+
+        const cmd = text.trim().toLowerCase();
+        if (cmd === 'pular') {
+            await this.webhookPoller.enviarMensagemBot(telefone, `Você pulou a avaliação. Agradecemos o contato!`, conn, instanceName);
+            await this.setState(telefone, null, null, conn);
+            return;
+        }
+
         const ticketId = dados.ticketId;
         const num = parseInt(text.trim());
         
         if (isNaN(num) || num < 1 || num > 10) {
-            const msg = `⚠️ Opção inválida. Por favor, responda apenas com um número de *1 a 10* (sendo 1 muito ruim e 10 excelente).\n\nSe desejar pular a avaliação, digite *VOLTAR* para o menu ou *0* para encerrar.`;
+            const msg = `⚠️ Nota selecionada é inválida. Por favor, responda apenas com um número de *1 a 10* (sendo 1 muito ruim e 10 excelente).\n\nDigite *PULAR* para cancelar a avaliação.`;
             await this.webhookPoller.enviarMensagemBot(telefone, msg, conn, instanceName);
             return;
         }

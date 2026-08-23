@@ -144,7 +144,39 @@ router.get('/stats', async (req, res) => {
         const resTopVen = await conn.execute(sqlTopVen);
         const topVendedores = resTopVen.rows.map(r => ({ nome: r[0], total: r[1] }));
 
-        res.json({ totalAbertos, resolvidosHoje, mediaAvaliacao, slaHoras, volumeDepartamento, topClientes, topVendedores });
+        // Novas Métricas Reais
+        // Taxa de Resolução Mensal
+        const resMes = await conn.execute(`
+            SELECT 
+                COUNT(CASE WHEN STATUS IN ('FECHADO', 'FINALIZADO', 'RESOLVIDO') THEN 1 END) as resolvidos,
+                COUNT(*) as total
+            FROM CANAL_SAC_TICKETS 
+            WHERE TRUNC(CRIADO_EM, 'MM') = TRUNC(SYSDATE, 'MM')
+        `);
+        const totalMes = resMes.rows[0][1];
+        const resolvidosMes = resMes.rows[0][0];
+        const taxaResolucao = totalMes > 0 ? ((resolvidosMes / totalMes) * 100).toFixed(1) : 0;
+
+        // NPS Mensal
+        const resNps = await conn.execute(`
+            SELECT 
+                COUNT(CASE WHEN NOTA_AVALIACAO >= 9 THEN 1 END) as promotores,
+                COUNT(CASE WHEN NOTA_AVALIACAO <= 6 THEN 1 END) as detratores,
+                COUNT(NOTA_AVALIACAO) as total_notas
+            FROM CANAL_SAC_TICKETS 
+            WHERE NOTA_AVALIACAO IS NOT NULL AND TRUNC(CRIADO_EM, 'MM') = TRUNC(SYSDATE, 'MM')
+        `);
+        const npsPromotores = resNps.rows[0][0];
+        const npsDetratores = resNps.rows[0][1];
+        const npsTotalNotas = resNps.rows[0][2];
+        const npsScore = npsTotalNotas > 0 ? Math.round(((npsPromotores - npsDetratores) / npsTotalNotas) * 100) : 0;
+
+        // Tickets Criados Hoje
+        const resCriadosHoje = await conn.execute(`SELECT COUNT(*) FROM CANAL_SAC_TICKETS WHERE TRUNC(CRIADO_EM) = TRUNC(SYSDATE)`);
+        const criadosHoje = resCriadosHoje.rows[0][0];
+        const backlogDia = criadosHoje - resolvidosHoje;
+
+        res.json({ totalAbertos, resolvidosHoje, mediaAvaliacao, slaHoras, volumeDepartamento, topClientes, topVendedores, taxaResolucao, npsScore, criadosHoje, backlogDia });
     } catch (error) {
         console.error('[SAC] Erro ao buscar stats:', error);
         res.status(500).json({ error: 'Erro interno do servidor' });
@@ -353,7 +385,7 @@ router.put('/tickets/:id/status', async (req, res) => {
                         }
                         
                         const tituloAvaliacao = nomeCompletoDeptoMsg ? `[Ticket #${id} - ${nomeCompletoDeptoMsg}]` : `[Ticket #${id}]`;
-                        const msgAvaliacao = `*Seu atendimento ${tituloAvaliacao} foi concluído!* ✅\n\nPor favor, avalie nosso atendimento respondendo com uma nota de *1 a 10* (sendo 1 muito ruim e 10 excelente):`;
+                        const msgAvaliacao = `*Seu atendimento ${tituloAvaliacao} foi concluído!* ✅\n\nPor favor, avalie nosso atendimento respondendo com uma nota de *1 a 10* (sendo 1 muito ruim e 10 excelente):\n\nDigite *PULAR* para cancelar a avaliação.`;
 
                         const evoUrlFinal = `${apiUrl}/message/sendText/${instanceName}`;
                         const payload = {
@@ -447,12 +479,119 @@ router.get('/tickets/:id/chat', async (req, res) => {
     }
 });
 
+// Buscar estatísticas de uso da IA
+router.get('/grok-usage', async (req, res) => {
+    let conn;
+    try {
+        conn = await oraclePool.getConnection();
+        
+        // Busca limites configurados
+        const limitRes = await conn.execute(`SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE IN ('IA_LIMITE_DIARIO', 'IA_LIMITE_SEMANAL', 'IA_LIMITE_MENSAL')`);
+        let limits = { diario: 0, semanal: 0, mensal: 0 };
+        limitRes.rows.forEach(r => {
+            if (r[0] === 'IA_LIMITE_DIARIO') limits.diario = parseInt(r[1], 10) || 0;
+            if (r[0] === 'IA_LIMITE_SEMANAL') limits.semanal = parseInt(r[1], 10) || 0;
+            if (r[0] === 'IA_LIMITE_MENSAL') limits.mensal = parseInt(r[1], 10) || 0;
+        });
+
+        // Busca uso real (oracle syntax for truncating dates)
+        const countsRes = await conn.execute(`
+            SELECT
+                SUM(CASE WHEN TRUNC(DATA_HORA) = TRUNC(SYSDATE) THEN 1 ELSE 0 END) as HOJE,
+                SUM(CASE WHEN TRUNC(DATA_HORA, 'IW') = TRUNC(SYSDATE, 'IW') THEN 1 ELSE 0 END) as SEMANA,
+                SUM(CASE WHEN TRUNC(DATA_HORA, 'MM') = TRUNC(SYSDATE, 'MM') THEN 1 ELSE 0 END) as MES
+            FROM CANAL_USO_IA
+            WHERE SUCESSO = 'S'
+        `);
+
+        res.json({
+            uso: {
+                diario: countsRes.rows[0][0] || 0,
+                semanal: countsRes.rows[0][1] || 0,
+                mensal: countsRes.rows[0][2] || 0
+            },
+            limites: limits
+        });
+
+    } catch (err) {
+        console.error('[SAC] Erro ao buscar estatísticas de IA:', err);
+        res.status(500).json({ error: 'Erro interno' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+});
+
+// Sugerir resposta via GROK
+router.get('/tickets/:id/suggest-reply', async (req, res) => {
+    let conn;
+    try {
+        const { id } = req.params;
+        conn = await oraclePool.getConnection();
+        
+        // Obter chave GROQ (fallback)
+        const keyRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'GROQ_API_KEY'`);
+        const groqKey = keyRes.rows.length > 0 ? keyRes.rows[0][0] : process.env.GROQ_API_KEY;
+        if (!groqKey) return res.status(500).json({ error: 'Chave GROQ não configurada' });
+        
+        // Obter últimas mensagens do chat
+        const chatRes = await conn.execute(`
+            SELECT SENTIDO, TEXTO
+            FROM CANAL_MENSAGENS
+            WHERE TICKET_ID = :id AND TEXTO IS NOT NULL
+            ORDER BY DATA_HORA DESC
+            FETCH FIRST 10 ROWS ONLY
+        `, { id });
+        
+        if (chatRes.rows.length === 0) return res.status(400).json({ error: 'Sem mensagens para sugerir' });
+        
+        const historico = chatRes.rows.reverse().map(r => `${r[0] === 'IN' ? 'Cliente' : 'Atendente'}: ${r[1]}`).join('\n');
+        
+        const axios = require('axios');
+        const prompt = `Você é um assistente prestativo de SAC (Serviço de Atendimento ao Cliente). Com base no histórico de conversas abaixo, sugira uma resposta educada e direta que o atendente possa enviar ao cliente. Não inclua placeholders, dê uma resposta final (apenas o texto da resposta, sem aspas). Se for uma saudação, diga "Olá, como posso ajudar hoje?". Histórico:\n\n${historico}`;
+        
+        const iaRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+            messages: [{role: "user", content: prompt}],
+            model: "qwen/qwen3.6-27b",
+            temperature: 0.7
+        }, {
+            headers: { 'Authorization': `Bearer ${groqKey}` }
+        });
+        
+        const sugestao = iaRes.data.choices[0].message.content.trim();
+        let finalSugestao = sugestao.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        
+        // Registrar o uso com sucesso
+        const attendantName = req.query.attendantName || 'Desconhecido';
+        try {
+            await conn.execute(`
+                INSERT INTO CANAL_USO_IA (DATA_HORA, ATENDENTE, ORIGEM, SUCESSO)
+                VALUES (SYSDATE, :atendente, 'SAC_SUGESTAO', 'S')
+            `, { atendente: attendantName }, { autoCommit: true });
+        } catch(e) {
+            console.error('[SAC] Erro ao registrar log de uso da IA:', e.message);
+        }
+
+        res.json({ sugestao: finalSugestao });
+        
+    } catch (error) {
+        console.error('[SAC] Erro API IA:', error.response?.data || error.message);
+        const errMsg = error.response?.data?.error?.message || error.response?.data?.error || error.message;
+        res.status(500).json({ error: `API IA: ${errMsg}` });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (err) {}
+        }
+    }
+});
+
 // Enviar resposta no ticket
 router.post('/tickets/:id/reply', async (req, res) => {
     let conn;
     try {
         const { id } = req.params;
-        const { message, attendantName } = req.body;
+        const { message, attendantName, grokUsed } = req.body;
         
         if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
 
@@ -552,14 +691,15 @@ router.post('/tickets/:id/reply', async (req, res) => {
         // 4. Salva a mensagem no CANAL_MENSAGENS para aparecer no chat
         const msgId = 'SAC_' + Date.now();
         await conn.execute(`
-            INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, STATUS, DATA_HORA, TICKET_ID)
-            VALUES (:id_msg, :cod, :tel, 'OUT', :txt, 'ENVIADA', SYSDATE, :tId)
+            INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, STATUS, DATA_HORA, TICKET_ID, GROK_USADO)
+            VALUES (:id_msg, :cod, :tel, 'OUT', :txt, 'ENVIADA', SYSDATE, :tId, :grok)
         `, {
             id_msg: msgId,
             cod: sacCodusur,
             tel: telefone,
             txt: finalMessage,
-            tId: id
+            tId: id,
+            grok: grokUsed ? 'S' : 'N'
         }, { autoCommit: true });
 
         // 5. Atualiza o status se for ABERTO e sempre atualiza a data
@@ -943,6 +1083,105 @@ router.post('/tickets/internal', upload.single('file'), async (req, res) => {
     } finally {
         if (conn) {
             try { await conn.close(); } catch (err) {}
+        }
+    }
+});
+// Solicitar avaliação manual
+router.post('/tickets/:id/request-evaluation', async (req, res) => {
+    let conn;
+    try {
+        const { id } = req.params;
+        conn = await oraclePool.getConnection();
+        
+        const ticketRes = await conn.execute(`SELECT TELEFONE, STATUS, NOTA_AVALIACAO FROM CANAL_SAC_TICKETS WHERE ID = :id`, { id });
+        if (ticketRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Ticket não encontrado' });
+        }
+        
+        const telefone = ticketRes.rows[0][0];
+        const status = ticketRes.rows[0][1];
+        const nota = ticketRes.rows[0][2];
+        
+        if (status !== 'FINALIZADO' && status !== 'FECHADO') {
+            return res.status(400).json({ error: 'Ticket deve estar finalizado para solicitar avaliação.' });
+        }
+        
+        if (nota) {
+            return res.status(400).json({ error: 'Ticket já possui avaliação.' });
+        }
+
+        // Obtém token e url do SAC BOT
+        const sacConfigRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
+        if (sacConfigRes.rows.length > 0 && sacConfigRes.rows[0][0]) {
+            const sacCodusur = sacConfigRes.rows[0][0];
+            const instRes = await conn.execute(`SELECT INSTANCE_NAME, API_TOKEN, COALESCE(API_URL, (SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'EVOLUTION_API_URL')) FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
+            
+            if (instRes.rows.length > 0) {
+                const instanceName = instRes.rows[0][0];
+                const apiToken = instRes.rows[0][1];
+                let apiUrl = instRes.rows[0][2];
+                if (apiUrl) apiUrl = apiUrl.trim();
+                if (apiUrl && apiUrl.endsWith('/')) apiUrl = apiUrl.slice(0, -1);
+                
+                const axios = require('axios');
+                
+                const ticketDeptoRes = await conn.execute(`
+                    SELECT d.NOME, p.NOME
+                    FROM CANAL_SAC_TICKETS t
+                    LEFT JOIN CANAL_SAC_DEPARTAMENTOS d ON t.DEPARTAMENTO_ID = d.ID
+                    LEFT JOIN CANAL_SAC_DEPARTAMENTOS p ON d.DEPARTAMENTO_PAI_ID = p.ID
+                    WHERE t.ID = :id
+                `, { id });
+                
+                let nomeCompletoDeptoMsg = '';
+                if (ticketDeptoRes.rows.length > 0) {
+                    const deptoNome = ticketDeptoRes.rows[0][0];
+                    const paiNome = ticketDeptoRes.rows[0][1];
+                    if (paiNome && deptoNome) {
+                        nomeCompletoDeptoMsg = `${paiNome} / ${deptoNome}`;
+                    } else if (deptoNome) {
+                        nomeCompletoDeptoMsg = deptoNome;
+                    }
+                }
+                
+                const tituloAvaliacao = nomeCompletoDeptoMsg ? `[Ticket #${id} - ${nomeCompletoDeptoMsg}]` : `[Ticket #${id}]`;
+                const msgAvaliacao = `*Seu atendimento ${tituloAvaliacao} foi concluído!* ✅\n\nPor favor, avalie nosso atendimento respondendo com uma nota de *1 a 10* (sendo 1 muito ruim e 10 excelente):\n\nDigite *PULAR* para cancelar a avaliação.`;
+
+                const evoUrlFinal = `${apiUrl}/message/sendText/${instanceName}`;
+                const payload = {
+                    number: telFormat(telefone),
+                    text: msgAvaliacao
+                };
+                const headersReq = { 'apikey': apiToken, 'instance': instanceName, 'Content-Type': 'application/json' };
+                
+                try {
+                    await axios.post(`${apiUrl}/send/text`, payload, { headers: headersReq, timeout: 5000 });
+                } catch (e) {
+                    if (e.response && e.response.status === 404) {
+                        await axios.post(evoUrlFinal, payload, { headers: headersReq, timeout: 5000 });
+                    } else {
+                        throw e;
+                    }
+                }
+                
+                const dadosTemp = JSON.stringify({ ticketId: id });
+                const checkState = await conn.execute(`SELECT 1 FROM CANAL_BOT_STATE WHERE TELEFONE = :t`, { t: telefone });
+                if (checkState.rows.length > 0) {
+                    await conn.execute(`UPDATE CANAL_BOT_STATE SET ESTADO_ATUAL = 'AGUARDANDO_AVALIACAO', DADOS_TEMPORARIOS = :d WHERE TELEFONE = :t`, { d: dadosTemp, t: telefone }, { autoCommit: true });
+                } else {
+                    await conn.execute(`INSERT INTO CANAL_BOT_STATE (TELEFONE, ESTADO_ATUAL, DADOS_TEMPORARIOS) VALUES (:t, 'AGUARDANDO_AVALIACAO', :d)`, { t: telefone, d: dadosTemp }, { autoCommit: true });
+                }
+                
+                return res.json({ message: 'Avaliação solicitada com sucesso.' });
+            }
+        }
+        res.status(500).json({ error: 'Configuração do bot do SAC não encontrada.' });
+    } catch (error) {
+        console.error('[SAC] Erro ao solicitar avaliação:', error);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (err) { console.error(err); }
         }
     }
 });

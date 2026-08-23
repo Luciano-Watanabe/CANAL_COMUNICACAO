@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Headset, CheckCircle2, Clock, User, MessageSquare, Send, X, Star, Paperclip, File as FileIcon, Plus, Search, ShieldAlert } from 'lucide-react';
+import { Headset, CheckCircle2, Clock, User, MessageSquare, Send, X, Star, Paperclip, File as FileIcon, Plus, Search, ShieldAlert, Wand2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,6 +15,38 @@ export default function SAC() {
   const [replyText, setReplyText] = useState('');
   const [loadingChat, setLoadingChat] = useState(false);
   const [sending, setSending] = useState(false);
+  const [isGrokUsed, setIsGrokUsed] = useState(false);
+  const [loadingGrok, setLoadingGrok] = useState(false);
+
+
+  const handleSugerirComIA = async () => {
+    if (!selectedTicket) return;
+    setLoadingGrok(true);
+    
+    let attendantName = 'SAC';
+    const stored = localStorage.getItem('usuario_logado');
+    if (stored) {
+      try {
+        const user = JSON.parse(stored);
+        if (user.nome) attendantName = user.nome;
+      } catch (e) {}
+    }
+
+    try {
+      const res = await fetch(`/api/sac/tickets/${selectedTicket.id}/suggest-reply?attendantName=${encodeURIComponent(attendantName)}`);
+      const data = await res.json();
+      if (res.ok) {
+        setReplyText(data.sugestao);
+        setIsGrokUsed(true);
+      } else {
+        alert(data.error || 'Erro ao gerar sugestão');
+      }
+    } catch (e) {
+      alert('Erro de comunicação com o servidor');
+    } finally {
+      setLoadingGrok(false);
+    }
+  };
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -115,10 +147,13 @@ export default function SAC() {
         if (user.nome) attendantName = user.nome;
       }
 
+      const currentGrok = isGrokUsed;
+      setIsGrokUsed(false);
+
       const res = await fetch(`/api/sac/tickets/${selectedTicket.id}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: textToSend, attendantName })
+        body: JSON.stringify({ message: textToSend, attendantName, grokUsed: currentGrok })
       });
       
       if (res.ok) {
@@ -186,6 +221,22 @@ export default function SAC() {
       if (res.ok) setDepartamentos(await res.json());
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleSolicitarAvaliacao = async (ticketId: number) => {
+    if (!confirm('Deseja realmente solicitar a avaliação novamente ao cliente?')) return;
+    try {
+      const res = await fetch(`/api/sac/tickets/${ticketId}/request-evaluation`, { method: 'POST' });
+      if (!res.ok) {
+        const errorData = await res.json();
+        alert(errorData.error || 'Erro ao solicitar avaliação.');
+        return;
+      }
+      alert('Avaliação solicitada com sucesso!');
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao solicitar avaliação.');
     }
   };
 
@@ -466,14 +517,25 @@ export default function SAC() {
                   ))
                 )}
                 
-                {selectedTicket.status === 'FINALIZADO' && selectedTicket.notaAvaliacao && (
+                {(selectedTicket.status === 'FINALIZADO' || selectedTicket.status === 'FECHADO') && selectedTicket.notaAvaliacao && (
                   <div className="flex justify-center my-4">
                     <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-xl px-4 py-2 flex items-center gap-2">
                        <Star size={16} className="fill-amber-500 text-amber-500" />
                        <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
-                         Avaliação do Cliente: {selectedTicket.notaAvaliacao} de 5
+                         Avaliação do Cliente: {selectedTicket.notaAvaliacao} de 10
                        </span>
                     </div>
+                  </div>
+                )}
+                {(selectedTicket.status === 'FINALIZADO' || selectedTicket.status === 'FECHADO') && !selectedTicket.notaAvaliacao && (
+                  <div className="flex justify-center my-4">
+                    <button 
+                      onClick={() => handleSolicitarAvaliacao(selectedTicket.id)}
+                      className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-xl px-4 py-2 flex items-center gap-2 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                    >
+                      <Star size={16} />
+                      Solicitar Avaliação Novamente
+                    </button>
                   </div>
                 )}
                 <div ref={chatEndRef} />
@@ -498,9 +560,21 @@ export default function SAC() {
                       <Paperclip size={20} />
                     </button>
                     
+                    <button 
+                      onClick={handleSugerirComIA}
+                      disabled={sending || loadingGrok}
+                      className="w-12 h-12 shrink-0 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-800/30 disabled:opacity-50 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center transition-colors border border-indigo-200 dark:border-indigo-800/50"
+                      title="Sugerir Resposta com IA"
+                    >
+                      <Wand2 size={20} className={clsx(loadingGrok && "animate-spin")} />
+                    </button>
+                    
                     <textarea 
                       value={replyText}
-                      onChange={(e) => setReplyText(e.target.value)}
+                      onChange={(e) => {
+                        setReplyText(e.target.value);
+                        if (e.target.value === '') setIsGrokUsed(false);
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();

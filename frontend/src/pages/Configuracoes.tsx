@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save, User, ShieldAlert, Clock, Plus, Settings2 } from 'lucide-react';
+import { Save, User, ShieldAlert, Clock, Plus, Settings2, Wand2 } from 'lucide-react';
 import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 import { usePrivacy } from '../contexts/PrivacyContext';
 import clsx from 'clsx';
@@ -41,6 +41,9 @@ export default function Configuracoes() {
   const [novoDeptoPai, setNovoDeptoPai] = useState('');
   const [savingDepto, setSavingDepto] = useState(false);
   const [filtroDeptoTable, setFiltroDeptoTable] = useState<string>('');
+
+  // IA Usage state
+  const [iaUsage, setIaUsage] = useState<any>(null);
 
   useEffect(() => {
     if (!hasAccess) return;
@@ -108,6 +111,12 @@ export default function Configuracoes() {
         if (resDeptos.ok) {
           const dataDeptos = await resDeptos.json();
           setDepartamentos(dataDeptos);
+        }
+        // Fetch IA Usage
+        const resIa = await fetch('/api/sac/grok-usage');
+        if (resIa.ok) {
+          const dataIa = await resIa.json();
+          setIaUsage(dataIa);
         }
       } catch (err) {
         console.error('Erro ao buscar configurações:', err);
@@ -548,6 +557,73 @@ export default function Configuracoes() {
           {savingGlobal ? 'Salvando...' : 'Salvar Global'}
         </button>
       </div>
+
+      {iaUsage && (
+        <div className="glass-card p-6 flex flex-col bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+          <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 mb-4">
+            <Wand2 size={20} className="text-primary-500" />
+            Estatísticas de Uso da Inteligência Artificial (SAC)
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-center relative overflow-hidden">
+              <span className="text-sm font-semibold text-slate-500 mb-1 relative z-10">Hoje</span>
+              <div className="text-3xl font-bold text-slate-800 dark:text-slate-100 relative z-10">{iaUsage.uso?.diario || 0}</div>
+              <div className="text-xs text-slate-400 mt-1 relative z-10">Limite: {iaUsage.limites?.diario || 'Sem Limite'}</div>
+              {iaUsage.limites?.diario > 0 && (
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full mt-3 relative z-10">
+                  <div 
+                    className={clsx("h-2 rounded-full", ((iaUsage.uso?.diario / iaUsage.limites?.diario) * 100) > 90 ? 'bg-red-500' : 'bg-primary-500')} 
+                    style={{ width: `${Math.min(((iaUsage.uso?.diario || 0) / iaUsage.limites?.diario) * 100, 100)}%` }}
+                  ></div>
+                </div>
+              )}
+              {iaUsage.limites?.diario > 0 && (
+                <div className="text-xs font-semibold text-slate-500 mt-1 relative z-10">
+                  {Math.round(((iaUsage.uso?.diario || 0) / iaUsage.limites?.diario) * 100)}% Utilizado
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-center relative overflow-hidden">
+              <span className="text-sm font-semibold text-slate-500 mb-1 relative z-10">Esta Semana</span>
+              <div className="text-3xl font-bold text-slate-800 dark:text-slate-100 relative z-10">{iaUsage.uso?.semanal || 0}</div>
+              <div className="text-xs text-slate-400 mt-1 relative z-10">Limite: {iaUsage.limites?.semanal || 'Sem Limite'}</div>
+              {iaUsage.limites?.semanal > 0 && (
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full mt-3 relative z-10">
+                  <div 
+                    className={clsx("h-2 rounded-full", ((iaUsage.uso?.semanal / iaUsage.limites?.semanal) * 100) > 90 ? 'bg-red-500' : 'bg-primary-500')} 
+                    style={{ width: `${Math.min(((iaUsage.uso?.semanal || 0) / iaUsage.limites?.semanal) * 100, 100)}%` }}
+                  ></div>
+                </div>
+              )}
+              {iaUsage.limites?.semanal > 0 && (
+                <div className="text-xs font-semibold text-slate-500 mt-1 relative z-10">
+                  {Math.round(((iaUsage.uso?.semanal || 0) / iaUsage.limites?.semanal) * 100)}% Utilizado
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-center relative overflow-hidden">
+              <span className="text-sm font-semibold text-slate-500 mb-1 relative z-10">Este Mês</span>
+              <div className="text-3xl font-bold text-slate-800 dark:text-slate-100 relative z-10">{iaUsage.uso?.mensal || 0}</div>
+              <div className="text-xs text-slate-400 mt-1 relative z-10">Limite: {iaUsage.limites?.mensal || 'Sem Limite'}</div>
+              {iaUsage.limites?.mensal > 0 && (
+                <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full mt-3 relative z-10">
+                  <div 
+                    className={clsx("h-2 rounded-full", ((iaUsage.uso?.mensal / iaUsage.limites?.mensal) * 100) > 90 ? 'bg-red-500' : 'bg-primary-500')} 
+                    style={{ width: `${Math.min(((iaUsage.uso?.mensal || 0) / iaUsage.limites?.mensal) * 100, 100)}%` }}
+                  ></div>
+                </div>
+              )}
+              {iaUsage.limites?.mensal > 0 && (
+                <div className="text-xs font-semibold text-slate-500 mt-1 relative z-10">
+                  {Math.round(((iaUsage.uso?.mensal || 0) / iaUsage.limites?.mensal) * 100)}% Utilizado
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
