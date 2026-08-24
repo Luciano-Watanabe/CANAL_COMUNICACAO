@@ -263,8 +263,8 @@ class SacBotService {
                     if (resCli.rows.length > 0) codcli = resCli.rows[0][0];
                 }
 
-                const resDepto = await conn.execute(`SELECT ID FROM CANAL_SAC_DEPARTAMENTOS WHERE UPPER(NOME) LIKE '%DEVOLUÇÃO%' OR UPPER(NOME) LIKE '%TROCA%' FETCH FIRST 1 ROWS ONLY`);
-                const idDepto = resDepto.rows.length > 0 ? resDepto.rows[0][0] : null;
+                // Departamento fixo 41 - Troca e Devolução
+                const idDepto = 41;
 
                 const sql = `
                     INSERT INTO CANAL_SAC_TICKETS (TELEFONE, CODCLI, DEPARTAMENTO_ID, DESCRICAO, STATUS)
@@ -842,7 +842,7 @@ class SacBotService {
 
     async enviarMenuDepartamentosTicket(telefone, instanceName, conn) {
         console.log(`${TAG} [Ticket] Carregando departamentos para ${telefone}`);
-        const sql = `SELECT ID, NOME FROM CANAL_SAC_DEPARTAMENTOS WHERE ATIVO = 'S' AND NOME IS NOT NULL AND TRIM(NOME) IS NOT NULL AND DEPARTAMENTO_PAI_ID IS NULL ORDER BY ID`;
+        const sql = `SELECT ID, NOME FROM CANAL_SAC_DEPARTAMENTOS WHERE ATIVO = 'S' AND NOME IS NOT NULL AND TRIM(NOME) IS NOT NULL AND DEPARTAMENTO_PAI_ID IS NULL AND ID != 41 ORDER BY ID`;
         const res = await conn.execute(sql);
         console.log(`${TAG} [Ticket] ${res.rows.length} departamento(s) ativo(s) encontrado(s)`);
         

@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react';
 import { Save, User, ShieldAlert, Clock, Plus, Settings2, Wand2 } from 'lucide-react';
 import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 import { usePrivacy } from '../contexts/PrivacyContext';
+import { ControleAcessoSAC } from '../components/ControleAcessoSAC';
 import clsx from 'clsx';
 
 export default function Configuracoes() {
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [globalUrl, setGlobalUrl] = useState('');
   const [groqApiKey, setGroqApiKey] = useState('');
   const [grokApiKey, setGrokApiKey] = useState('');
   const [locationIqToken, setLocationIqToken] = useState('');
@@ -17,6 +17,7 @@ export default function Configuracoes() {
   const [cnpjPaginas, setCnpjPaginas] = useState(3);
   const [contatoFinanceiro, setContatoFinanceiro] = useState('');
   const [contatoCompras, setContatoCompras] = useState('');
+  const [nomeEmpresa, setNomeEmpresa] = useState('');
   const [savingGlobal, setSavingGlobal] = useState(false);
   const [sacBotCodusur, setSacBotCodusur] = useState('');
   const { isPrivacyMode, setPrivacyMode, maskData } = usePrivacy();
@@ -59,9 +60,6 @@ export default function Configuracoes() {
         const resGlob = await fetch('/api/config/global');
         const dataGlob = await resGlob.json();
         if (dataGlob.success) {
-          if (dataGlob.configs['EVOLUTION_API_URL']) {
-            setGlobalUrl(dataGlob.configs['EVOLUTION_API_URL']);
-          }
           if (dataGlob.configs['GROQ_API_KEY']) {
             setGroqApiKey(dataGlob.configs['GROQ_API_KEY']);
           }
@@ -91,6 +89,9 @@ export default function Configuracoes() {
           }
           if (dataGlob.configs['NUMERO_TESTE_GESTOR']) {
             setNumeroTeste(dataGlob.configs['NUMERO_TESTE_GESTOR']);
+          }
+          if (dataGlob.configs['NOME_EMPRESA']) {
+            setNomeEmpresa(dataGlob.configs['NOME_EMPRESA']);
           }
           if (dataGlob.configs['CRON_DIAS_SEMANA']) {
             try { setCronDiasSemana(JSON.parse(dataGlob.configs['CRON_DIAS_SEMANA'])); } catch (e) {}
@@ -136,7 +137,7 @@ export default function Configuracoes() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           configs: { 
-            EVOLUTION_API_URL: globalUrl, 
+            EVOLUTION_API_URL: 'https://evo-go.wms-saas.com.br/',
             GROQ_API_KEY: groqApiKey,
             GROK_API_KEY: grokApiKey,
             LOCATIONIQ_API_KEY: locationIqToken,
@@ -147,6 +148,7 @@ export default function Configuracoes() {
             CONTATO_COMPRAS: contatoCompras,
             MODO_TESTE_GESTOR: modoTeste ? 'S' : 'N',
             NUMERO_TESTE_GESTOR: numeroTeste,
+            NOME_EMPRESA: nomeEmpresa,
             CRON_DIAS_SEMANA: JSON.stringify(cronDiasSemana),
             CRON_HORA_INICIO: cronHoraInicio.toString(),
             CRON_HORA_FIM: cronHoraFim.toString(),
@@ -203,6 +205,14 @@ export default function Configuracoes() {
   };
 
   const handleSave = async (vendedor: any) => {
+    if (vendedor.api_token && vendedor.api_token.trim() !== '') {
+      const isDuplicate = vendedores.some(v => v.codusur !== vendedor.codusur && v.api_token === vendedor.api_token);
+      if (isDuplicate) {
+        alert('O TOKEN do vendedor deve ser único. Já existe outro vendedor usando este mesmo token.');
+        return;
+      }
+    }
+
     setSavingId(vendedor.codusur);
     try {
       const response = await fetch('/api/config/token', {
@@ -417,18 +427,34 @@ export default function Configuracoes() {
         </div>
       </div>
 
+
       <div className="glass-card p-6 flex flex-col md:flex-row gap-4 items-end bg-primary-50 dark:bg-slate-800/50 border border-primary-100 dark:border-slate-700">
         <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
               URL Base Global da Evolution API
             </label>
-            <p className="text-xs text-slate-500 mb-3">Esta URL será usada como padrão pelos vendedores.</p>
+            <p className="text-xs text-slate-500 mb-3">
+              Esta URL será usada como padrão pelos vendedores. <br />
+              Para fins de contratação, <a href="https://www.wms-saas.com.br/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">acesse https://www.wms-saas.com.br/</a> para poder criar o acesso e contratar o serviço.
+            </p>
             <input 
               type="text" 
-              value={globalUrl}
-              onChange={(e) => setGlobalUrl(e.target.value)}
-              placeholder="https://api.evolution.com..."
+              value="https://evo-go.wms-saas.com.br/"
+              disabled
+              className="w-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 cursor-not-allowed"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Nome da Empresa (Identificação SAC/Envios)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Nome usado para identificar o remetente em mensagens automáticas.</p>
+            <input 
+              type="text" 
+              value={nomeEmpresa}
+              onChange={(e) => setNomeEmpresa(e.target.value)}
+              placeholder="Ex: Minha Empresa"
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
           </div>
@@ -822,6 +848,10 @@ export default function Configuracoes() {
           </table>
         </div>
       </div>
+
+      {/* Acessos SAC (Controle por Atendente) */}
+      <ControleAcessoSAC />
+      
     </div>
   );
 }

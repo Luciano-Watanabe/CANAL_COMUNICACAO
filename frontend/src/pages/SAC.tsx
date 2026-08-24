@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Headset, CheckCircle2, Clock, User, MessageSquare, Send, X, Star, Paperclip, File as FileIcon, Plus, Search, ShieldAlert, Wand2 } from 'lucide-react';
+import { Headset, CheckCircle2, Clock, User, MessageSquare, Send, X, Star, Paperclip, File as FileIcon, Plus, Search, ShieldAlert, Wand2, Calendar } from 'lucide-react';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
+import CalendarioSACModal from '../components/CalendarioSACModal';
+import AgendamentoForm from '../components/AgendamentoForm';
 
 export default function SAC() {
   const navigate = useNavigate();
@@ -53,6 +55,7 @@ export default function SAC() {
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [departamentos, setDepartamentos] = useState<any[]>([]);
   const [newTicket, setNewTicket] = useState({ codcli: '', nome: '', telefone: '', departamentoId: '', subdepartamentoId: '', descricao: '' });
   const [ticketFile, setTicketFile] = useState<File | null>(null);
@@ -81,7 +84,15 @@ export default function SAC() {
   const fetchTickets = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/sac/tickets?status=${filter}`);
+      let matriculaStr = '';
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        if (user.matricula) {
+          matriculaStr = `&matricula=${user.matricula}`;
+        }
+      }
+      const res = await fetch(`/api/sac/tickets?status=${filter}${matriculaStr}`);
       if (res.ok) {
         setTickets(await res.json());
       }
@@ -329,6 +340,10 @@ export default function SAC() {
             <ShieldAlert size={18} className="text-amber-500" />
             LOG - Clientes não Identificado
           </button>
+          <button onClick={() => setIsCalendarOpen(true)} className="flex items-center gap-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-4 py-2 rounded-lg font-medium transition-colors border border-blue-200 dark:border-blue-800">
+            <Calendar size={18} />
+            Calendário de Retiradas
+          </button>
           <button onClick={handleOpenModal} className="flex items-center gap-2 bg-primary-500 hover:bg-primary-600 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm shadow-primary-500/20">
             <Plus size={18} />
             Novo Chamado Interno
@@ -454,6 +469,17 @@ export default function SAC() {
                    </button>
                  </div>
               </div>
+
+              {/* Formulário de Agendamento (se Troca ou Devolução) */}
+              {selectedTicket.departamento && (selectedTicket.departamento.toLowerCase().includes('troca') || selectedTicket.departamento.toLowerCase().includes('devolu')) && (
+                <AgendamentoForm 
+                  ticket={selectedTicket} 
+                  onSave={(data) => {
+                    setSelectedTicket({ ...selectedTicket, ...data });
+                    setTickets(tickets.map(t => t.id === selectedTicket.id ? { ...t, ...data } : t));
+                  }} 
+                />
+              )}
 
               {/* Mensagem Inicial (Relato) */}
               <div className="flex-1 overflow-y-auto p-6 bg-[url('https://web.whatsapp.com/img/bg-chat-tile-dark_a4be512e7195b6b733d9110b408f075d.png')] bg-repeat bg-[length:400px_auto] dark:opacity-10 opacity-5 absolute inset-0 z-0 pointer-events-none"></div>
@@ -716,6 +742,12 @@ export default function SAC() {
           </div>
         </div>
       )}
+      {/* Calendario Modal */}
+      <CalendarioSACModal 
+        isOpen={isCalendarOpen} 
+        onClose={() => setIsCalendarOpen(false)} 
+        tickets={tickets} 
+      />
     </div>
   );
 }

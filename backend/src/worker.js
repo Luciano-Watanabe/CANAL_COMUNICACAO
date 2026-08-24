@@ -33,6 +33,7 @@ oraclePool.initPool().then(() => initializeOracleDatabase()).then(async () => {
     require('./services/ieCron');
     require('./services/geradorRotasCron');
     require('./services/geolocalizacaoWorker'); // Worker de geolocalização (1 cliente a cada 1.5s)
+    require('./services/agendamentoCron'); // Cron de agendamento do SAC
     
     // Inicia o Webhook Poller
     const poller = new WebhookPoller();

@@ -191,7 +191,7 @@ router.get('/stats', async (req, res) => {
 router.get('/tickets', async (req, res) => {
     let conn;
     try {
-        const { status } = req.query; // ex: ?status=ABERTO
+        const { status, matricula } = req.query; // ex: ?status=ABERTO&matricula=123
         conn = await oraclePool.getConnection();
         
         let sql = `
@@ -212,17 +212,31 @@ router.get('/tickets', async (req, res) => {
                    NVL(c.FANTASIA, c.CLIENTE) as NOME_CLIENTE,
                    c.CGCENT,
                    l.DOCUMENTO_INFORMADO as LOG_CNPJ,
-                   l.CODCLI_LOCALIZADO as LOG_CODCLI
+                   l.CODCLI_LOCALIZADO as LOG_CODCLI,
+                   t.DATA_AGENDAMENTO, t.AGENDAMENTO_CODPROD, t.AGENDAMENTO_QTDE, t.AGENDAMENTO_MOTORISTA_NOME, t.AGENDAMENTO_MOTORISTA_TEL, t.AGENDAMENTO_ENVIADO,
+                   prod.DESCRICAO as PRODUTO_NOME
             FROM CANAL_SAC_TICKETS t
             LEFT JOIN CANAL_SAC_DEPARTAMENTOS d ON t.DEPARTAMENTO_ID = d.ID
             LEFT JOIN CANAL_SAC_DEPARTAMENTOS p ON d.DEPARTAMENTO_PAI_ID = p.ID
             LEFT JOIN LATEST_LOG l ON t.TELEFONE = l.TELEFONE
             LEFT JOIN PCCLIENT c ON c.CODCLI = NVL(t.CODCLI, l.CODCLI_LOCALIZADO)
+            LEFT JOIN PCPRODUT prod ON t.AGENDAMENTO_CODPROD = prod.CODPROD
+            WHERE 1=1
         `;
         const binds = {};
         
+        if (matricula) {
+            binds.matricula = matricula;
+            sql += ` AND (
+                NOT EXISTS (SELECT 1 FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :matricula)
+                OR t.DEPARTAMENTO_ID IS NULL
+                OR t.DEPARTAMENTO_ID IN (SELECT DEPARTAMENTO_ID FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :matricula)
+                OR d.DEPARTAMENTO_PAI_ID IN (SELECT DEPARTAMENTO_ID FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :matricula)
+            )`;
+        }
+
         if (status && status !== 'TODOS') {
-            sql += ` WHERE t.STATUS = :st`;
+            sql += ` AND t.STATUS = :st`;
             binds.st = status;
         }
         
@@ -263,7 +277,14 @@ router.get('/tickets', async (req, res) => {
                 criadoEm: row[7],
                 atualizadoEm: row[8],
                 notaAvaliacao: row[9],
-                nomeCliente: nomeFormatado || null
+                nomeCliente: nomeFormatado || null,
+                dataAgendamento: row[14],
+                agendamentoCodprod: row[15],
+                agendamentoQtde: row[16],
+                agendamentoMotoristaNome: row[17],
+                agendamentoMotoristaTel: row[18],
+                agendamentoEnviado: row[19],
+                agendamentoProdutoNome: row[20]
             };
         });
         
@@ -1186,4 +1207,163 @@ router.post('/tickets/:id/request-evaluation', async (req, res) => {
     }
 });
 
+// Agendar Ticket
+router.put('/tickets/:id/agendamento', async (req, res) => {
+    const { id } = req.params;
+    const { dataAgendamento, codprod, qtde, motoristaNome, motoristaTel } = req.body;
+    
+    let conn;
+    try {
+        conn = await oraclePool.getConnection();
+        const sql = `
+            UPDATE CANAL_SAC_TICKETS 
+            SET DATA_AGENDAMENTO = TO_DATE(:dataAgendamento, 'YYYY-MM-DD HH24:MI:SS'),
+                AGENDAMENTO_CODPROD = :codprod,
+                AGENDAMENTO_QTDE = :qtde,
+                AGENDAMENTO_MOTORISTA_NOME = :motoristaNome,
+                AGENDAMENTO_MOTORISTA_TEL = :motoristaTel,
+                AGENDAMENTO_ENVIADO = 'N',
+                ATUALIZADO_EM = SYSDATE
+            WHERE ID = :id
+        `;
+        
+        await conn.execute(sql, {
+            dataAgendamento: dataAgendamento, // Espera formato 'YYYY-MM-DD 00:00:00'
+            codprod: codprod || null,
+            qtde: qtde || null,
+            motoristaNome: motoristaNome || null,
+            motoristaTel: motoristaTel || null,
+            id: id
+        }, { autoCommit: true });
+
+        // Enviar mensagem automática para o ticket
+        try {
+            const dateParts = dataAgendamento.split(' ')[0].split('-');
+            const dataFormatada = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+            const message = `✅ *Agendamento Confirmado!*\nSua retirada de Troca/Devolução foi agendada para o dia *${dataFormatada}*.`;
+            
+            const ticketRes = await conn.execute(`SELECT TELEFONE FROM CANAL_SAC_TICKETS WHERE ID = :id`, { id });
+            if (ticketRes.rows.length > 0) {
+                const telefone = ticketRes.rows[0][0];
+                
+                const sacConfigRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
+                const sacCodusur = sacConfigRes.rows.length > 0 ? sacConfigRes.rows[0][0] : '9999';
+                
+                const instRes = await conn.execute(`SELECT INSTANCE_NAME, API_TOKEN, COALESCE(API_URL, (SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'EVOLUTION_API_URL')) FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
+                if (instRes.rows.length > 0) {
+                    const instanceName = instRes.rows[0][0];
+                    const apiToken = instRes.rows[0][1];
+                    const apiUrl = instRes.rows[0][2];
+                    const axios = require('axios');
+                    
+                    let p = String(telefone).replace(/[^0-9]/g, '');
+                    if (!p.startsWith('55')) p = '55' + p;
+
+                    // Envia via Evolution API
+                    try {
+                        await axios.post(
+                            `${apiUrl}/message/sendText/${instanceName}`,
+                            { number: p, text: message },
+                            { headers: { 'apikey': apiToken, 'Content-Type': 'application/json' } }
+                        );
+                    } catch (err) {
+                        // Se falhar o Evo normal, tenta Evo GO
+                        if (err.response && err.response.status === 404) {
+                            await axios.post(
+                                `${apiUrl}/send/text`,
+                                { number: p, text: message },
+                                { headers: { 'apikey': apiToken, 'instance': instanceName, 'Content-Type': 'application/json' } }
+                            ).catch(e => console.error('[SAC] Erro Evo GO no Agendamento:', e.message));
+                        } else {
+                            console.error('[SAC] Erro Evolution API no Agendamento:', err.message);
+                        }
+                    }
+
+                    // Salva no banco (chat)
+                    const msgId = 'SAC_AGD_' + Date.now();
+                    await conn.execute(`
+                        INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, STATUS, DATA_HORA, TICKET_ID, GROK_USADO)
+                        VALUES (:id_msg, :cod, :tel, 'OUT', :txt, 'ENVIADA', SYSDATE, :tId, 'N')
+                    `, {
+                        id_msg: msgId,
+                        cod: sacCodusur,
+                        tel: telefone,
+                        txt: message,
+                        tId: id
+                    }, { autoCommit: true });
+                }
+            }
+        } catch (msgErr) {
+            console.error('[SAC] Erro ao enviar msg de agendamento:', msgErr);
+        }
+        
+        res.json({ success: true, message: 'Agendamento salvo com sucesso' });
+    } catch (error) {
+        console.error('[SAC] Erro ao agendar ticket:', error);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (err) {}
+        }
+    }
+});
+
+// Autocomplete Motoristas
+router.get('/motoristas', async (req, res) => {
+    let conn;
+    try {
+        conn = await oraclePool.getConnection();
+        const sql = `
+            SELECT DISTINCT AGENDAMENTO_MOTORISTA_NOME, AGENDAMENTO_MOTORISTA_TEL
+            FROM CANAL_SAC_TICKETS 
+            WHERE AGENDAMENTO_MOTORISTA_NOME IS NOT NULL
+            ORDER BY AGENDAMENTO_MOTORISTA_NOME
+        `;
+        const result = await conn.execute(sql);
+        const motoristas = result.rows.map(row => ({
+            nome: row[0],
+            telefone: row[1]
+        }));
+        res.json(motoristas);
+    } catch (error) {
+        console.error('[SAC] Erro ao buscar motoristas:', error);
+        res.status(500).json({ error: 'Erro interno' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (err) {}
+        }
+    }
+});
+
 module.exports = router;
+
+// Autocomplete Produtos
+router.get('/produtos', async (req, res) => {
+    let conn;
+    try {
+        const { q } = req.query;
+        if (!q || q.length < 2) return res.json([]);
+        
+        conn = await oraclePool.getConnection();
+        const sql = `
+            SELECT CODPROD, DESCRICAO
+            FROM PCPRODUT
+            WHERE (CODPROD LIKE :q OR UPPER(DESCRICAO) LIKE UPPER('%' || :q || '%'))
+              AND ROWNUM <= 20
+            ORDER BY DESCRICAO
+        `;
+        const result = await conn.execute(sql, { q: `%${q}%` });
+        const produtos = result.rows.map(row => ({
+            codprod: row[0],
+            descricao: row[1]
+        }));
+        res.json(produtos);
+    } catch (error) {
+        console.error('[SAC] Erro ao buscar produtos:', error);
+        res.status(500).json({ error: 'Erro interno' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch(e) {}
+        }
+    }
+});

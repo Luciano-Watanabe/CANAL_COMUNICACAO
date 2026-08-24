@@ -1,21 +1,14 @@
-const express = require('express');
 const oracledb = require('oracledb');
+const express = require('express');
 const router = express.Router();
 const cacheService = require('../services/cacheService');
-
-try {
-    oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });
-} catch (err) {}
+const oraclePool = require('../services/oraclePool');
 
 // Listar todos os vendedores e seus tokens (Para uso do Gerente)
 router.get('/vendedores', async (req, res) => {
     let connection;
     try {
-        connection = await oracledb.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASS,
-            connectString: process.env.ORACLE_CONN_STR
-        });
+        connection = await oraclePool.getConnection();
 
         // Trazendo usuários que são vendedores e o token, se houver
         const sql = `
@@ -58,11 +51,7 @@ router.get('/vendedores', async (req, res) => {
 router.get('/global', async (req, res) => {
     let connection;
     try {
-        connection = await oracledb.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASS,
-            connectString: process.env.ORACLE_CONN_STR
-        });
+        connection = await oraclePool.getConnection();
 
         const sql = `SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES`;
         const result = await connection.execute(sql);
@@ -97,11 +86,7 @@ router.post('/global', async (req, res) => {
 
     let connection;
     try {
-        connection = await oracledb.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASS,
-            connectString: process.env.ORACLE_CONN_STR
-        });
+        connection = await oraclePool.getConnection();
 
         for (const [chave, valor] of Object.entries(configs)) {
             const sql = `
@@ -142,11 +127,7 @@ router.post('/token', async (req, res) => {
 
     let connection;
     try {
-        connection = await oracledb.getConnection({
-            user: process.env.ORACLE_USER,
-            password: process.env.ORACLE_PASS,
-            connectString: process.env.ORACLE_CONN_STR
-        });
+        connection = await oraclePool.getConnection();
 
         // MERGE statement is Oracle's standard way to UPSERT
         const sql = `
@@ -172,6 +153,94 @@ router.post('/token', async (req, res) => {
     } catch (err) {
         console.error('Erro ao salvar token do vendedor:', err);
         res.status(500).json({ success: false, message: 'Erro interno ao salvar configurações.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// GET /api/config/funcionarios
+router.get('/funcionarios', async (req, res) => {
+    let connection;
+    try {
+        connection = await oraclePool.getConnection();
+
+        const sql = `
+            SELECT MATRICULA, NOME, NOME_GUERRA 
+            FROM PCEMPR 
+            WHERE SITUACAO = 'A'
+            ORDER BY NOME
+        `;
+        const result = await connection.execute(sql, [], { outFormat: 4002 /* 4002 */ });
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Erro ao buscar funcionarios:', err);
+        res.status(500).json({ error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// GET /api/config/acessos-sac
+router.get('/acessos-sac', async (req, res) => {
+    let connection;
+    try {
+        connection = await oraclePool.getConnection();
+
+        const sql = `SELECT MATRICULA, DEPARTAMENTO_ID FROM CANAL_SAC_ACESSOS`;
+        const result = await connection.execute(sql, [], { outFormat: 4002 });
+        
+        // Group by matricula
+        const acessos = {};
+        result.rows.forEach(row => {
+            if (!acessos[row.MATRICULA]) {
+                acessos[row.MATRICULA] = [];
+            }
+            acessos[row.MATRICULA].push(row.DEPARTAMENTO_ID);
+        });
+
+        res.json(acessos);
+    } catch (err) {
+        console.error('Erro ao buscar acessos SAC:', err);
+        res.status(500).json({ error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// POST /api/config/acessos-sac
+router.post('/acessos-sac', async (req, res) => {
+    const { matricula, departamentos } = req.body;
+    if (!matricula) return res.status(400).json({ error: 'Matrícula obrigatória.' });
+
+    let connection;
+    try {
+        connection = await oraclePool.getConnection();
+
+        // 1. Deletar acessos existentes para a matricula
+        await connection.execute(`DELETE FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :m`, [matricula], { autoCommit: false });
+
+        // 2. Inserir novos acessos
+        if (Array.isArray(departamentos) && departamentos.length > 0) {
+            const sql = `INSERT INTO CANAL_SAC_ACESSOS (MATRICULA, DEPARTAMENTO_ID) VALUES (:m, :d)`;
+            for (const deptId of departamentos) {
+                await connection.execute(sql, { m: matricula, d: deptId }, { autoCommit: false });
+            }
+        }
+
+        await connection.commit();
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Erro ao salvar acessos SAC:', err);
+        if (connection) {
+            try { await connection.rollback(); } catch(e){}
+        }
+        res.status(500).json({ error: 'Erro interno.' });
     } finally {
         if (connection) {
             try { await connection.close(); } catch (e) {}
