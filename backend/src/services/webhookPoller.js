@@ -531,70 +531,82 @@ class WebhookPoller {
 
     async enviarDocumentoBot(telefone, base64Data, fileName, mimeType, conn, instanceName) {
         try {
+            const axios = require('axios');
             const resultTokens = await conn.execute(`
                 SELECT API_TOKEN, COALESCE(API_URL, (SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'EVOLUTION_API_URL')) AS URL_BASE 
                 FROM CANAL_TOKENS_EVOLUTION WHERE INSTANCE_NAME = :inst
             `, [instanceName]);
 
-            if (resultTokens.rows.length > 0) {
-                const apiToken = resultTokens.rows[0][0];
-                const urlBase = resultTokens.rows[0][1];
-
-                const cacheService = require('./cacheService');
-                let p = telefone.startsWith('55') ? telefone : '55' + telefone;
-                p = cacheService.getDestinoFinal(p);
-
-                // Evolution Padrão
-                const urlEvo = `${urlBase}/message/sendMedia/${instanceName}`;
-                
-                // Limpar prefixo base64 se houver
-                let cleanBase64 = base64Data;
-                if (cleanBase64.includes('base64,')) {
-                    cleanBase64 = cleanBase64.split('base64,')[1];
-                }
-
-                const typeGo = mimeType.includes('image') ? 'image' : 'document';
-                
-                const payloadEvo = {
-                    number: p,
-                    mediatype: typeGo,
-                    mimetype: mimeType,
-                    media: base64Data,
-                    fileName: fileName
-                };
-                
-                const headersEvo = { 'Content-Type': 'application/json', 'apikey': apiToken };
-                
-                const urlEvoGo = `${urlBase}/send/media`;
-                const payloadEvoGo = {
-                    number: p,
-                    type: typeGo,
-                    url: cleanBase64,
-                    filename: fileName
-                };
-                const headersEvoGo = { 'Content-Type': 'application/json', 'apikey': apiToken, 'instance': instanceName };
-
-                console.log(`[WebhookPoller] Enviando doc BOT... Tentando Evo Padrão (${urlEvo})`);
-                
-                try {
-                    const response = await axios.post(urlEvo, payloadEvo, { headers: headersEvo });
-                    if (response.status >= 200 && response.status < 300) {
-                        console.log(`[WebhookPoller] Doc do BOT enviado com sucesso para ${p} (Evo Padrão)`);
-                    }
-                } catch (e) {
-                    if (e.response && e.response.status === 404) {
-                        console.log(`[WebhookPoller] Rota padrão retornou 404. Tentando Evo GO (${urlEvoGo})...`);
-                        const responseGo = await axios.post(urlEvoGo, payloadEvoGo, { headers: headersEvoGo });
-                        if (responseGo.status >= 200 && responseGo.status < 300) {
-                            console.log(`[WebhookPoller] Doc do BOT enviado com sucesso para ${p} (Evo Go)`);
-                        }
-                    } else {
-                        throw e;
-                    }
-                }
+            if (resultTokens.rows.length === 0) {
+                console.error(`[WebhookPoller] Token/URL não encontrado para instância: ${instanceName}`);
+                return;
             }
+
+            const apiToken = resultTokens.rows[0][0];
+            const urlBase  = resultTokens.rows[0][1];
+
+            const cacheService = require('./cacheService');
+            let p = telefone.startsWith('55') ? telefone : '55' + telefone;
+            p = cacheService.getDestinoFinal(p);
+
+            let cleanBase64 = base64Data;
+            if (cleanBase64.includes('base64,')) {
+                cleanBase64 = cleanBase64.split('base64,')[1];
+            }
+
+            const typeGo = mimeType.includes('image') ? 'image'
+                         : mimeType.includes('video')  ? 'video'
+                         : mimeType.includes('audio')  ? 'audio'
+                         : 'document';
+
+            // ── Tenta Evolution API Padrão (/message/sendMedia) ──────────────
+            const urlEvo = `${urlBase}/message/sendMedia/${instanceName}`;
+            const payloadEvo = {
+                number:    p,
+                mediatype: typeGo,
+                mimetype:  mimeType,
+                media:     cleanBase64,
+                fileName:  fileName
+            };
+
+            console.log(`[WebhookPoller] Enviando doc BOT... Tentando Evo Padrão (${urlEvo})`);
+
+            try {
+                const response = await axios.post(urlEvo, payloadEvo, {
+                    headers: { 'Content-Type': 'application/json', 'apikey': apiToken }
+                });
+                if (response.status >= 200 && response.status < 300) {
+                    console.log(`[WebhookPoller] Doc do BOT enviado com sucesso para ${p} (Evo Padrão)`);
+                    return;
+                }
+            } catch (e) {
+                if (!e.response || e.response.status !== 404) throw e;
+                // 404 → tenta Evo Go
+            }
+
+            // ── Evo Go: url = base64 puro (mesmo padrão do SAC que já funciona) ──
+            const urlEvoGo     = `${urlBase}/send/media`;
+            const payloadEvoGo = {
+                number:   p,
+                type:     typeGo,
+                url:      cleanBase64,
+                filename: fileName
+            };
+
+            console.log(`[WebhookPoller] Tentando Evo GO (${urlEvoGo})...`);
+
+            const responseGo = await axios.post(urlEvoGo, payloadEvoGo, {
+                headers: { 'Content-Type': 'application/json', 'apikey': apiToken, 'instance': instanceName }
+            });
+            if (responseGo.status >= 200 && responseGo.status < 300) {
+                console.log(`[WebhookPoller] Doc do BOT enviado com sucesso para ${p} (Evo Go)`);
+            }
+
         } catch(e) {
             console.error('[WebhookPoller] Erro ao enviar documento bot:', e.message);
+            if (e.response) {
+                console.error('[WebhookPoller] Status:', e.response.status, '| Body:', JSON.stringify(e.response.data));
+            }
         }
     }
 

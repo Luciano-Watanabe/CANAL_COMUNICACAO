@@ -55,14 +55,14 @@ export default function AgendamentoForm({ ticket, onSave }: { ticket: any, onSav
     }, [codprod]);
 
     const handleSelectMotorista = (nome: string, telefone: string) => {
-        setMotoristaNome(nome);
+        setMotoristaNome(nome ? nome.toUpperCase() : '');
         setMotoristaTel(telefone);
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!dataAgendamento) {
-            alert('A Data do Agendamento é obrigatória');
+        if (!dataAgendamento || !codprod || !qtde || !motoristaNome || !motoristaTel) {
+            alert('Todos os campos do agendamento s\u00e3o obrigat\u00f3rios (Data, Produto, Qtde, Nome e Tel do Motorista).');
             return;
         }
 
@@ -111,6 +111,7 @@ export default function AgendamentoForm({ ticket, onSave }: { ticket: any, onSav
                         type="date" 
                         value={dataAgendamento} 
                         onChange={e => setDataAgendamento(e.target.value)}
+                        required
                         className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded px-2 py-1.5 focus:ring-1 focus:ring-blue-500"
                     />
                 </div>
@@ -122,6 +123,7 @@ export default function AgendamentoForm({ ticket, onSave }: { ticket: any, onSav
                         onChange={e => setCodprod(e.target.value)}
                         list="produtos_list"
                         placeholder="Ex: 12345 ou Pneu"
+                        required
                         className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded px-2 py-1.5 focus:ring-1 focus:ring-blue-500"
                     />
                     <datalist id="produtos_list">
@@ -139,6 +141,7 @@ export default function AgendamentoForm({ ticket, onSave }: { ticket: any, onSav
                         value={qtde} 
                         onChange={e => setQtde(e.target.value)}
                         placeholder="Ex: 1"
+                        required
                         className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded px-2 py-1.5 focus:ring-1 focus:ring-blue-500"
                     />
                 </div>
@@ -147,9 +150,10 @@ export default function AgendamentoForm({ ticket, onSave }: { ticket: any, onSav
                     <input 
                         type="text" 
                         value={motoristaNome} 
-                        onChange={e => setMotoristaNome(e.target.value)}
+                        onChange={e => setMotoristaNome(e.target.value.toUpperCase())}
                         list="motoristas_list"
                         placeholder="Nome"
+                        required
                         className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded px-2 py-1.5 focus:ring-1 focus:ring-blue-500"
                     />
                     <datalist id="motoristas_list">
@@ -165,6 +169,7 @@ export default function AgendamentoForm({ ticket, onSave }: { ticket: any, onSav
                         value={motoristaTel} 
                         onChange={e => setMotoristaTel(e.target.value)}
                         placeholder="Ex: 5511999999999"
+                        required
                         className="w-full text-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 rounded px-2 py-1.5 focus:ring-1 focus:ring-blue-500"
                     />
                 </div>

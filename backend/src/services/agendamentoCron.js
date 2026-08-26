@@ -52,6 +52,11 @@ cron.schedule('*/5 7-18 * * *', async () => {
         `;
         const result = await conn.execute(sql);
         
+        const gruposCliente = new Map();
+        const gruposMotorista = new Map();
+        const gruposVendedor = new Map();
+        const ticketsProcessados = [];
+
         for (const row of result.rows) {
             const ticketId = row[0];
             const cliTelefone = row[1];
@@ -71,7 +76,7 @@ cron.schedule('*/5 7-18 * * *', async () => {
             // Dados do Cliente
             if (codcli) {
                 const cliRes = await conn.execute(`
-                    SELECT CLIENTE, FANTASIA, ENDENT, MUNICENT, ESTENT, CODUSUR 
+                    SELECT CLIENTE, FANTASIA, ENDERENT, MUNICENT, ESTENT, CODUSUR1 
                     FROM PCCLIENT 
                     WHERE CODCLI = :codcli
                 `, { codcli });
@@ -83,8 +88,6 @@ cron.schedule('*/5 7-18 * * *', async () => {
                 }
             }
             
-            const dadosDoCliente = `${codcli || 'S/C'} - ${fantasia || clienteNome || 'Cliente não identificado'}\nTelefone: ${cliTelefone}`;
-            
             // Dados do Produto
             if (codprod) {
                 const prodRes = await conn.execute(`SELECT DESCRICAO FROM PCPRODUT WHERE CODPROD = :codprod`, { codprod });
@@ -92,7 +95,6 @@ cron.schedule('*/5 7-18 * * *', async () => {
                     produtoNome = prodRes.rows[0][0];
                 }
             }
-            const infoProduto = `${codprod || ''} - ${produtoNome || 'Produto não identificado'}\nQuantidade: ${qtde || ''}`;
             
             // Dados do Vendedor (Telefone)
             if (codusur) {
@@ -102,32 +104,115 @@ cron.schedule('*/5 7-18 * * *', async () => {
                 }
             }
             
-            // Mensagens
-            const msgCliente = `Olá! Aqui é da ${nomeEmpresa} e temos uma retirada agendada para hoje. Em breve nosso motorista irá comparecer e fazer a retirada, favor já deixar separado para agilizar o processo. Obrigado, tenha um bom dia`;
-            const msgMotorista = `Olá! Preciso que passe no cliente:\n${dadosDoCliente}\n\nEndereço: ${enderecoCompleto}\n\nPara retirar:\n${infoProduto}`;
-            const msgVendedor = `Olá! Para hoje temos a Retirada de Troca/Devolução com cliente:\n${dadosDoCliente}\n\nProduto:\n${infoProduto}\n\nO motorista ${motoristaNome} irá fazer a retirada.`;
-            
-            // Função de envio
-            const sendMsg = async (telTo, textMsg) => {
-                const number = telFormat(telTo);
-                if (!number) return;
-                const payload = { number: number, text: textMsg };
-                const headersReq = { 'apikey': apiToken, 'instance': instanceName, 'Content-Type': 'application/json' };
-                try {
-                    await axios.post(`${apiUrl}/message/sendText/${instanceName}`, payload, { headers: headersReq, timeout: 5000 });
-                } catch(e) {
-                    console.error(`Erro ao enviar MSG Agendamento para ${number}:`, e.message);
+            const prodStr = `- ${codprod || ''} - ${produtoNome || 'Produto n\u00e3o identificado'} (Qtd: ${qtde || ''})`;
+            const nomeCliFormatado = `${codcli || 'S/C'} - ${fantasia || clienteNome || 'Cliente n\u00e3o identificado'}`;
+
+            // Agrupa para Cliente
+            if (cliTelefone) {
+                const num = telFormat(cliTelefone);
+                if (num) {
+                    if (!gruposCliente.has(num)) gruposCliente.set(num, []);
+                    gruposCliente.get(num).push(prodStr);
                 }
-            };
+            }
             
-            // Envia mensagens
-            await sendMsg(cliTelefone, msgCliente);
-            if (motoristaTel) await sendMsg(motoristaTel, msgMotorista);
-            if (vendedorTel) await sendMsg(vendedorTel, msgVendedor);
+            // Agrupa para Motorista
+            if (motoristaTel) {
+                const num = telFormat(motoristaTel);
+                if (num) {
+                    if (!gruposMotorista.has(num)) gruposMotorista.set(num, new Map());
+                    const cliMap = gruposMotorista.get(num);
+                    if (!cliMap.has(nomeCliFormatado)) {
+                        cliMap.set(nomeCliFormatado, {
+                            endereco: enderecoCompleto,
+                            telefone: cliTelefone,
+                            produtos: []
+                        });
+                    }
+                    cliMap.get(nomeCliFormatado).produtos.push(prodStr);
+                }
+            }
+
+            // Agrupa para Vendedor
+            if (vendedorTel) {
+                const num = telFormat(vendedorTel);
+                if (num) {
+                    if (!gruposVendedor.has(num)) gruposVendedor.set(num, new Map());
+                    const cliMap = gruposVendedor.get(num);
+                    if (!cliMap.has(nomeCliFormatado)) {
+                        cliMap.set(nomeCliFormatado, {
+                            motorista: motoristaNome || 'N/A',
+                            produtos: []
+                        });
+                    }
+                    cliMap.get(nomeCliFormatado).produtos.push(prodStr);
+                }
+            }
             
-            // Atualiza status do ticket para não enviar novamente
-            await conn.execute(`UPDATE CANAL_SAC_TICKETS SET AGENDAMENTO_ENVIADO = 'S' WHERE ID = :id`, { id: ticketId }, { autoCommit: true });
-            console.log(`[AGENDAMENTO CRON] Mensagens enviadas para Ticket #${ticketId}`);
+            ticketsProcessados.push(ticketId);
+        }
+
+        // Função de envio (tenta Evolution API padrão, com fallback para Evo Go)
+        const sendMsg = async (number, textMsg) => {
+            if (!number) return;
+            const payload = { number: number, text: textMsg };
+            const urlEvo   = `${apiUrl}/message/sendText/${instanceName}`;
+            const urlEvoGo = `${apiUrl}/send/text`;
+            const headersEvo   = { 'apikey': apiToken, 'Content-Type': 'application/json' };
+            const headersEvoGo = { 'apikey': apiToken, 'instance': instanceName, 'Content-Type': 'application/json' };
+            try {
+                await axios.post(urlEvo, payload, { headers: headersEvo, timeout: 5000 });
+            } catch(e) {
+                if (e.response && e.response.status === 404) {
+                    try {
+                        await axios.post(urlEvoGo, payload, { headers: headersEvoGo, timeout: 5000 });
+                    } catch(e2) {
+                        console.error(`[AGENDAMENTO CRON] Erro ao enviar MSG (Evo Go) para ${number}:`, e2.message);
+                    }
+                } else {
+                    console.error(`[AGENDAMENTO CRON] Erro ao enviar MSG para ${number}:`, e.message);
+                }
+            }
+        };
+
+        // Envia mensagens agrupadas - Cliente
+        for (const [num, produtos] of gruposCliente.entries()) {
+            const msgCliente = `Ol\u00e1! Aqui \u00e9 da *${nomeEmpresa}* e temos retiradas agendadas para hoje. Em breve nosso motorista ir\u00e1 comparecer e fazer a retirada, favor j\u00e1 deixar separado para agilizar o processo:\n\n${produtos.join('\n')}\n\nObrigado, tenha um bom dia!`;
+            await sendMsg(num, msgCliente);
+        }
+
+        // Envia mensagens agrupadas - Motorista
+        for (const [num, cliMap] of gruposMotorista.entries()) {
+            let msgMotorista = `Ol\u00e1! Roteiro de retiradas de hoje:\n`;
+            for (const [cliNome, cliData] of cliMap.entries()) {
+                msgMotorista += `\n\uD83D\uDCCD *${cliNome}*\nEndere\u00e7o: ${cliData.endereco}\nTelefone: ${cliData.telefone}\nProdutos:\n${cliData.produtos.join('\n')}\n`;
+            }
+            await sendMsg(num, msgMotorista);
+        }
+
+        // Envia mensagens agrupadas - Vendedor
+        for (const [num, cliMap] of gruposVendedor.entries()) {
+            let msgVendedor = `Ol\u00e1! Retiradas agendadas para seus clientes hoje:\n`;
+            for (const [cliNome, cliData] of cliMap.entries()) {
+                msgVendedor += `\n\uD83D\uDC64 *${cliNome}*\nMotorista: ${cliData.motorista}\nProdutos:\n${cliData.produtos.join('\n')}\n`;
+            }
+            await sendMsg(num, msgVendedor);
+        }
+
+        // Atualiza status dos tickets no banco
+        if (ticketsProcessados.length > 0) {
+            // Separa em lotes de 900 itens para não estourar o limite da lista "IN" no Oracle
+            const batchSize = 900;
+            for (let i = 0; i < ticketsProcessados.length; i += batchSize) {
+                const batch = ticketsProcessados.slice(i, i + batchSize);
+                const binds = batch.map((_, idx) => `:${idx + 1}`).join(',');
+                await conn.execute(
+                    `UPDATE CANAL_SAC_TICKETS SET AGENDAMENTO_ENVIADO = 'S' WHERE ID IN (${binds})`, 
+                    batch, 
+                    { autoCommit: true }
+                );
+            }
+            console.log(`[AGENDAMENTO CRON] Mensagens processadas e enviadas para ${ticketsProcessados.length} tickets.`);
         }
         
     } catch (error) {

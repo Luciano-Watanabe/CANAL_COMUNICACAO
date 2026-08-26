@@ -137,7 +137,7 @@ export default function Configuracoes() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           configs: { 
-            EVOLUTION_API_URL: 'https://evo-go.wms-saas.com.br/',
+            EVOLUTION_API_URL: 'https://evo-go.wms-saas.com.br',
             GROQ_API_KEY: groqApiKey,
             GROK_API_KEY: grokApiKey,
             LOCATIONIQ_API_KEY: locationIqToken,

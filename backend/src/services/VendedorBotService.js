@@ -123,7 +123,7 @@ class VendedorBotService {
                 break;
             case '2':
                 await this.setState(telefone, 'VENDEDOR_MINHAS_METAS', {}, conn);
-                await this.webhookPoller.enviarMensagemBot(telefone, "📊 *Minhas Metas*\n\nEm breve: Resumo de vendas e comissões do mês.\nDigite VOLTAR para retornar ao menu.", conn, instanceName);
+                await this.processarMinhasMetas(telefone, '', instanceName, conn, {}, codvendedor);
                 break;
             case '3':
                 await this.setState(telefone, 'VENDEDOR_TICKETS_STATUS', {}, conn);
@@ -274,8 +274,339 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
     }
 
     async processarMinhasMetas(telefone, text, instanceName, conn, dados, codvendedor) {
-        // Implementação futura
-        await this.webhookPoller.enviarMensagemBot(telefone, "Módulo em desenvolvimento. Digite VOLTAR.", conn, instanceName);
+        // Se o vendedor digitar VOLTAR, retorna ao menu
+        if ((text || '').trim().toUpperCase() === 'VOLTAR') {
+            await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
+            return await this.enviarMenuPrincipal(telefone, instanceName, conn);
+        }
+
+        try {
+            const sql = `
+                WITH CLIENTES_PERDIDOS AS (
+                    SELECT C.CODCLI
+                    FROM PCCLIENT C
+                    WHERE C.CODUSUR1 = :codvendedor
+                      AND C.DTULTCOMP >= TRUNC(SYSDATE) - 90
+                      AND C.DTULTCOMP < TRUNC(SYSDATE, 'MM')
+                ),
+                PESO_POTENCIAL AS (
+                    SELECT
+                        A.CODEPTO,
+                        ROUND(SUM(A.QT * A.PESOLIQ), 2) AS PESO_POTENCIAL
+                    FROM PCMOV A
+                    JOIN CLIENTES_PERDIDOS P ON P.CODCLI = A.CODCLI
+                    WHERE A.CODUSUR = :codvendedor
+                      AND A.CODOPER LIKE 'S%'
+                      AND A.DTMOV < TRUNC(SYSDATE, 'MM')
+                      AND EXISTS (
+                          SELECT 1 FROM PCEST E
+                          WHERE E.CODPROD = A.CODPROD AND E.QTESTGER > 0
+                      )
+                    GROUP BY A.CODEPTO
+                    HAVING SUM(A.QT * A.PESOLIQ) > 0
+                )
+                SELECT
+                    TO_CHAR(A.DTMOV, 'MM/YYYY')  AS MES_REF,
+                    A.CODUSUR,
+                    A.CODEPTO,
+                    C.DESCRICAO,
+                    ROUND((SUM(A.QT * A.PESOLIQ) / B.QTPESOPREV) * 100, 2) AS PERC_FEITO,
+                    ROUND(B.QTPESOPREV, 2)                                   AS META,
+                    ROUND(SUM(A.QT * A.PESOLIQ), 2)                          AS REALIZADO,
+                    ROUND(B.QTPESOPREV - SUM(A.QT * A.PESOLIQ), 2)          AS FALTA,
+                    NVL(P.PESO_POTENCIAL, 0)                                  AS PESO_POTENCIAL,
+                    ROUND(((SUM(A.QT * A.PESOLIQ) + NVL(P.PESO_POTENCIAL, 0)) / B.QTPESOPREV) * 100, 2) AS PERC_POTENCIAL,
+                    CASE
+                        WHEN NVL(P.PESO_POTENCIAL, 0) > 0 THEN
+                            ROUND(
+                                ((SUM(A.QT * A.PESOLIQ) + NVL(P.PESO_POTENCIAL, 0)) / B.QTPESOPREV) * 100
+                                - (SUM(A.QT * A.PESOLIQ) / B.QTPESOPREV) * 100,
+                                2
+                            )
+                        ELSE NULL
+                    END AS GANHO
+                FROM PCMOV A
+                JOIN PCMETA B  ON A.CODEPTO = B.CODIGO AND A.CODUSUR = B.CODUSUR
+                JOIN PCDEPTO C ON A.CODEPTO = C.CODEPTO
+                LEFT JOIN PESO_POTENCIAL P ON A.CODEPTO = P.CODEPTO
+                WHERE A.CODUSUR = :codvendedor
+                  AND A.CODOPER LIKE 'S%'
+                  AND A.DTMOV >= TRUNC(SYSDATE, 'MM')
+                  AND A.DTMOV <  ADD_MONTHS(TRUNC(SYSDATE, 'MM'), 1)
+                  AND B.DATA  >= TRUNC(SYSDATE, 'MM')
+                  AND B.DATA  <  ADD_MONTHS(TRUNC(SYSDATE, 'MM'), 1)
+                GROUP BY
+                    A.CODUSUR, A.CODEPTO, TO_CHAR(A.DTMOV, 'MM/YYYY'),
+                    B.QTPESOPREV, C.DESCRICAO, P.PESO_POTENCIAL
+                ORDER BY A.CODEPTO
+            `;
+            const result = await conn.execute(sql, { codvendedor });
+
+            if (result.rows.length === 0) {
+                await this.webhookPoller.enviarMensagemBot(telefone, '📊 *Minhas Metas*\n\nNenhuma meta encontrada para o mês atual.\n\nDigite VOLTAR para retornar ao menu.', conn, instanceName);
+                return;
+            }
+
+            // Colunas: [0]MES_REF [1]CODUSUR [2]CODEPTO [3]DESCRICAO [4]PERC_FEITO
+            //          [5]META [6]REALIZADO [7]FALTA [8]PESO_POTENCIAL [9]PERC_POTENCIAL [10]GANHO
+            const mesRef = result.rows[0][0];
+            const rowsData = result.rows.map(row => ({
+                codepto:        parseInt(row[2])    || 0,
+                descricao:      String(row[3] || ''),
+                percFeito:      parseFloat(row[4])  || 0,
+                meta:           parseFloat(row[5])  || 0,
+                realizado:      parseFloat(row[6])  || 0,
+                falta:          parseFloat(row[7])  || 0,
+                pesoPotencial:  parseFloat(row[8])  || 0,
+                percPotencial:  parseFloat(row[9])  || 0,
+                ganho:          row[10] != null ? parseFloat(row[10]) : null,
+            }));
+
+            // ── Busca clientes com peso potencial (antes de gerar o PDF) ─────
+            const sqlClientes = `
+                SELECT
+                    C.CODCLI,
+                    NVL(C.FANTASIA, C.CLIENTE)                        AS CLIENTE,
+                    C.CGCENT,
+                    TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY')               AS DTULTCOMP,
+                    A.CODEPTO,
+                    D.DESCRICAO,
+                    ROUND(SUM(A.QT * A.PESOLIQ), 2)                  AS PESO
+                FROM PCCLIENT C
+                JOIN PCMOV A
+                    ON A.CODCLI = C.CODCLI
+                   AND A.CODUSUR = :codvendedor
+                   AND A.CODOPER LIKE 'S%'
+                   AND A.DTMOV < TRUNC(SYSDATE, 'MM')
+                JOIN PCDEPTO D ON D.CODEPTO = A.CODEPTO
+                WHERE C.CODUSUR1 = :codvendedor
+                  AND C.DTULTCOMP >= TRUNC(SYSDATE) - 90
+                  AND C.DTULTCOMP <  TRUNC(SYSDATE, 'MM')
+                  AND EXISTS (
+                      SELECT 1 FROM PCEST E
+                      WHERE E.CODPROD = A.CODPROD AND E.QTESTGER > 0
+                  )
+                GROUP BY
+                    C.CODCLI, NVL(C.FANTASIA, C.CLIENTE), C.CGCENT,
+                    TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY'), A.CODEPTO, D.DESCRICAO
+                HAVING SUM(A.QT * A.PESOLIQ) > 0
+                ORDER BY C.CODCLI, A.CODEPTO
+            `;
+            const resClientes = await conn.execute(sqlClientes, { codvendedor });
+
+            // Mapeia linhas de clientes para o formato esperado pelo metasImageService
+            const rowsClientes = resClientes.rows.map(r => ({
+                codcli:    r[0],
+                cliente:   r[1],
+                cgcent:    r[2],
+                dtultcomp: r[3],
+                codepto:   r[4],
+                descricao: r[5],
+                peso:      r[6],
+            }));
+
+            // ── Busca nome do vendedor para o cabeçalho do PDF ───────────────
+            let nomeVendedor = '';
+            try {
+                const resNome = await conn.execute(
+                    `SELECT NOME FROM PCUSUARI WHERE CODUSUR = :codvendedor`,
+                    { codvendedor }
+                );
+                if (resNome.rows.length > 0) nomeVendedor = String(resNome.rows[0][0] || '');
+            } catch (_) {}
+
+            // ── Dados de contexto: dias do mês + carteira de clientes ─────────
+            let diasRestantes = 0, diasCorridos = 1, diasTotais = 1;
+            let ativosNoMes   = 0, totalCarteira = 0;
+            try {
+                const resDias = await conn.execute(`
+                    SELECT
+                        -- Dias úteis restantes: de amanhã até fim do mês (excl. sáb/dom)
+                        (SELECT COUNT(*) FROM (
+                            SELECT TRUNC(SYSDATE) + LEVEL AS DIA FROM DUAL
+                            CONNECT BY TRUNC(SYSDATE) + LEVEL <= LAST_DAY(TRUNC(SYSDATE))
+                        ) WHERE TRIM(TO_CHAR(DIA,'DAY','NLS_DATE_LANGUAGE=AMERICAN'))
+                                NOT IN ('SATURDAY','SUNDAY'))                    AS DIAS_RESTANTES,
+                        -- Dias úteis corridos: do 1º do mês até hoje (inclusive)
+                        (SELECT COUNT(*) FROM (
+                            SELECT TRUNC(SYSDATE,'MM') - 1 + LEVEL AS DIA FROM DUAL
+                            CONNECT BY TRUNC(SYSDATE,'MM') - 1 + LEVEL <= TRUNC(SYSDATE)
+                        ) WHERE TRIM(TO_CHAR(DIA,'DAY','NLS_DATE_LANGUAGE=AMERICAN'))
+                                NOT IN ('SATURDAY','SUNDAY'))                    AS DIAS_CORRIDOS,
+                        -- Total de dias úteis no mês
+                        (SELECT COUNT(*) FROM (
+                            SELECT TRUNC(SYSDATE,'MM') - 1 + LEVEL AS DIA FROM DUAL
+                            CONNECT BY TRUNC(SYSDATE,'MM') - 1 + LEVEL <= LAST_DAY(TRUNC(SYSDATE))
+                        ) WHERE TRIM(TO_CHAR(DIA,'DAY','NLS_DATE_LANGUAGE=AMERICAN'))
+                                NOT IN ('SATURDAY','SUNDAY'))                    AS DIAS_TOTAIS,
+                        (SELECT COUNT(DISTINCT M.CODCLI)
+                         FROM PCMOV M
+                         WHERE M.CODUSUR = :codvendedor
+                           AND M.CODOPER LIKE 'S%'
+                           AND M.DTMOV >= TRUNC(SYSDATE, 'MM')
+                           AND M.DTMOV <  ADD_MONTHS(TRUNC(SYSDATE, 'MM'), 1)) AS ATIVOS_MES,
+                        (SELECT COUNT(*)
+                         FROM PCCLIENT
+                         WHERE CODUSUR1 = :codvendedor)                          AS TOTAL_CARTEIRA
+                    FROM DUAL
+                `, { codvendedor });
+                if (resDias.rows.length > 0) {
+                    diasRestantes = parseInt(resDias.rows[0][0]) || 0;
+                    diasCorridos  = parseInt(resDias.rows[0][1]) || 1;
+                    diasTotais    = parseInt(resDias.rows[0][2]) || 1;
+                    ativosNoMes   = parseInt(resDias.rows[0][3]) || 0;
+                    totalCarteira = parseInt(resDias.rows[0][4]) || 0;
+                }
+            } catch (e) { console.warn('[VendedorBot] Erro contexto:', e.message); }
+
+            // ── Mês anterior: realizado e meta (para comparativo) ─────────────
+            let realizadoMesAnt = 0, metaMesAnt = 0;
+            try {
+                const resMesAnt = await conn.execute(`
+                    SELECT
+                        NVL((SELECT ROUND(SUM(A.QT * A.PESOLIQ), 2) FROM PCMOV A
+                             WHERE A.CODUSUR = :codvendedor AND A.CODOPER LIKE 'S%'
+                               AND A.DTMOV >= ADD_MONTHS(TRUNC(SYSDATE,'MM'),-1)
+                               AND A.DTMOV <  TRUNC(SYSDATE,'MM')), 0) AS REAL_ANT,
+                        NVL((SELECT ROUND(SUM(B.QTPESOPREV), 2) FROM PCMETA B
+                             WHERE B.CODUSUR = :codvendedor
+                               AND B.DATA >= ADD_MONTHS(TRUNC(SYSDATE,'MM'),-1)
+                               AND B.DATA <  TRUNC(SYSDATE,'MM')), 0)  AS META_ANT
+                    FROM DUAL
+                `, { codvendedor });
+                if (resMesAnt.rows.length > 0) {
+                    realizadoMesAnt = parseFloat(resMesAnt.rows[0][0]) || 0;
+                    metaMesAnt      = parseFloat(resMesAnt.rows[0][1]) || 0;
+                }
+            } catch (e) { console.warn('[VendedorBot] Erro mês anterior:', e.message); }
+
+            // ── Ranking (calculado, exibição OCULTA — remova os comentários para exibir) ──
+            let rankPos = null, rankTotal = null;
+            try {
+                const resRank = await conn.execute(`
+                    SELECT RANK, TOTAL FROM (
+                        SELECT V.CODUSUR,
+                               RANK() OVER (ORDER BY NVL(V.PERC, 0) DESC) AS RANK,
+                               COUNT(*) OVER ()                            AS TOTAL
+                        FROM (
+                            SELECT A.CODUSUR,
+                                   ROUND(SUM(A.QT*A.PESOLIQ)/NULLIF(MAX(B.QTPESOPREV),0)*100,2) AS PERC
+                            FROM PCMOV A
+                            JOIN PCMETA B ON A.CODEPTO=B.CODIGO AND A.CODUSUR=B.CODUSUR
+                            WHERE A.CODOPER LIKE 'S%'
+                              AND A.DTMOV >= TRUNC(SYSDATE,'MM')
+                              AND A.DTMOV <  ADD_MONTHS(TRUNC(SYSDATE,'MM'),1)
+                              AND B.DATA  >= TRUNC(SYSDATE,'MM')
+                              AND B.DATA  <  ADD_MONTHS(TRUNC(SYSDATE,'MM'),1)
+                            GROUP BY A.CODUSUR
+                        ) V
+                    ) WHERE CODUSUR = :codvendedor
+                `, { codvendedor });
+                if (resRank.rows.length > 0) {
+                    rankPos   = parseInt(resRank.rows[0][0]) || null;
+                    rankTotal = parseInt(resRank.rows[0][1]) || null;
+                }
+            } catch (e) { console.warn('[VendedorBot] Erro ranking:', e.message); }
+
+            // ── KPIs derivados ────────────────────────────────────────────────
+            const totalRealizado = rowsData.reduce((s, r) => s + r.realizado, 0);
+            const totalMeta      = rowsData.reduce((s, r) => s + r.meta,      0);
+            const totalFalta     = Math.max(0, totalMeta - totalRealizado);
+            const kgDiaNecessario = diasRestantes > 0 ? totalFalta / diasRestantes : 0;
+            const projecaoKg     = (diasCorridos > 0 ? totalRealizado / diasCorridos : 0) * diasTotais;
+            const projecaoPerc   = totalMeta > 0 ? (projecaoKg / totalMeta) * 100 : 0;
+            const percMesAnt     = metaMesAnt > 0 ? (realizadoMesAnt / metaMesAnt) * 100 : null;
+
+            const resumo = {
+                diasRestantes,
+                diasCorridos,
+                diasTotais,
+                kgDiaNecessario,
+                ativosNoMes,
+                totalCarteira,
+                projecaoPerc,
+                percMesAnt,       // null = mês anterior sem meta (não exibido)
+                // rankPos,       // ← descomente para exibir ranking no PDF
+                // rankTotal,     // ← descomente para exibir ranking no PDF
+            };
+
+            // ── Gera e envia PDF (Seção 1: cards + Seção 2: tabela de clientes) ─
+            try {
+                const { gerarImagemMetas } = require('./metasImageService');
+                await this.webhookPoller.enviarMensagemBot(telefone, '📊 Gerando seu painel de metas...', conn, instanceName);
+                const base64Pdf = await gerarImagemMetas(mesRef, rowsData, rowsClientes, nomeVendedor, resumo);
+                await this.webhookPoller.enviarDocumentoBot(
+                    telefone,
+                    base64Pdf,
+                    `metas_${mesRef.replace('/', '_')}.pdf`,
+                    'application/pdf',
+                    conn,
+                    instanceName
+                );
+            } catch (imgErr) {
+                // Fallback: envia em texto se a geração de PDF falhar
+                console.warn('[VendedorBot] Fallback texto — falha na geração de PDF:', imgErr.message);
+
+                const barraProgresso = (perc) => {
+                    const filled = Math.round(Math.min(perc, 100) / 10);
+                    return '█'.repeat(filled) + '░'.repeat(10 - filled);
+                };
+
+                let linhas = [`📊 *Metas de ${mesRef}*\n`];
+                for (const row of rowsData) {
+                    const bateu    = row.percFeito >= 100;
+                    const emoji    = bateu ? ' 🎉' : '';
+                    const faltaTxt = row.falta < 0
+                        ? `*+${Math.abs(row.falta).toFixed(1)} kg acima da meta*`
+                        : `Faltam ${row.falta.toFixed(1)} kg`;
+                    const potTxt = row.pesoPotencial > 0
+                        ? `\n📦 Potencial: ${row.pesoPotencial.toFixed(1)} kg → ${row.percPotencial.toFixed(1)}% (+${(row.ganho || 0).toFixed(1)} pp)`
+                        : '';
+                    linhas.push(
+                        `*${row.descricao}*${emoji}\n` +
+                        `${barraProgresso(row.percFeito)} ${row.percFeito.toFixed(1)}%\n` +
+                        `Meta: ${row.meta.toFixed(1)} kg | Realizado: ${row.realizado.toFixed(1)} kg\n` +
+                        `${faltaTxt}${potTxt}\n`
+                    );
+                }
+                await this.webhookPoller.enviarMensagemBot(telefone, linhas.join('\n'), conn, instanceName);
+
+                // Fallback texto clientes (só quando o PDF falhou)
+                if (rowsClientes.length > 0) {
+                    let msgPot = `📦 *Clientes com Peso Potencial*\n_Compraram nos últimos 90 dias, mas ainda não compraram este mês_\n\n`;
+                    let codcliAtual = null;
+                    for (const r of rowsClientes) {
+                        if (r.codcli !== codcliAtual) {
+                            if (codcliAtual !== null) msgPot += '\n';
+                            msgPot += `*${r.codcli} - ${String(r.cliente).trim()}*\n`;
+                            msgPot += `CNPJ/CPF: ${r.cgcent || '—'}  |  Últ. compra: ${r.dtultcomp || '—'}\n`;
+                            codcliAtual = r.codcli;
+                        }
+                        msgPot += `  • ${String(r.descricao).trim()} (Depto ${r.codepto}): ${parseFloat(r.peso).toFixed(1)} kg\n`;
+                    }
+                    const MAX = 3800;
+                    if (msgPot.length <= MAX) {
+                        await this.webhookPoller.enviarMensagemBot(telefone, msgPot, conn, instanceName);
+                    } else {
+                        let parte = '';
+                        for (const linha of msgPot.split('\n')) {
+                            if ((parte + linha + '\n').length > MAX) {
+                                await this.webhookPoller.enviarMensagemBot(telefone, parte.trimEnd(), conn, instanceName);
+                                parte = '';
+                            }
+                            parte += linha + '\n';
+                        }
+                        if (parte.trim()) await this.webhookPoller.enviarMensagemBot(telefone, parte.trimEnd(), conn, instanceName);
+                    }
+                }
+            }
+
+            await this.webhookPoller.enviarMensagemBot(telefone, 'Digite VOLTAR para retornar ao menu.', conn, instanceName);
+
+        } catch (err) {
+            console.error('[VendedorBot] Erro ao processar Minhas Metas:', err);
+            await this.webhookPoller.enviarMensagemBot(telefone, '❌ Erro ao consultar metas. Tente novamente.\n\nDigite VOLTAR para retornar ao menu.', conn, instanceName);
+        }
     }
 
     async processarTicketsStatus(telefone, text, instanceName, conn, dados, codvendedor) {

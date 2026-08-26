@@ -115,54 +115,69 @@ export default function CalendarioSACModal({ isOpen, onClose, tickets }: { isOpe
                         }
                     `}</style>
                     <div className="print-container">
-                        <div className="flex justify-between items-center mb-6 border-b pb-4">
-                            <h1 className="text-2xl font-bold text-gray-800">Agenda de Retiradas</h1>
-                            <span className="text-lg font-semibold text-gray-600">
-                                Data: {printData.dateStr.split('-').reverse().join('/')}
-                            </span>
-                        </div>
-                        
-                        <table className="w-full border-collapse border border-gray-300 text-sm text-left">
-                            <thead>
-                                <tr className="bg-gray-100 text-gray-700 uppercase text-xs">
-                                    <th className="border border-gray-300 p-2 w-16">Ticket</th>
-                                    <th className="border border-gray-300 p-2 w-48">Cliente</th>
-                                    <th className="border border-gray-300 p-2 w-32">Motorista</th>
-                                    <th className="border border-gray-300 p-2">Produto</th>
-                                    <th className="border border-gray-300 p-2 text-center w-12">Qtde</th>
-                                    <th className="border border-gray-300 p-2 text-center w-24">Visto</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {printData.tickets.map(t => (
-                                    <tr key={t.id} className="hover:bg-gray-50">
-                                        <td className="border border-gray-300 p-2 font-semibold">#{t.id}</td>
-                                        <td className="border border-gray-300 p-2 min-w-[200px]">
-                                            <div className="font-bold break-words whitespace-normal">{t.nomeCliente || 'S/N'}</div>
-                                            <div className="text-gray-500 text-xs">{t.telefone}</div>
-                                        </td>
-                                        <td className="border border-gray-300 p-2">{t.agendamentoMotoristaNome || '-'}</td>
-                                        <td className="border border-gray-300 p-2 min-w-[250px]">
-                                            <div className="flex items-start gap-2">
-                                                {t.agendamentoCodprod && (
-                                                    <img src={`/api/produtos/imagem/${t.agendamentoCodprod}`} alt="" className="w-12 h-12 object-contain rounded bg-white border shrink-0 mt-1" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                                                )}
-                                                <div className="flex-1">
-                                                    <div className="font-bold">{t.agendamentoCodprod || '-'}</div>
-                                                    <div className="text-xs text-gray-700 break-words whitespace-normal">{t.agendamentoProdutoNome || ''}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="border border-gray-300 p-2 text-center font-bold">{t.agendamentoQtde || '-'}</td>
-                                        <td className="border border-gray-300 p-2"></td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                        
-                        <div className="mt-8 text-xs text-gray-500 text-center">
-                            Documento gerado automaticamente pelo Sistema WMS-SaaS - SAC
-                        </div>
+                        {Object.entries(
+                            printData.tickets.reduce((acc, t) => {
+                                const moto = t.agendamentoMotoristaNome || 'Sem Motorista Definido';
+                                if (!acc[moto]) acc[moto] = [];
+                                acc[moto].push(t);
+                                return acc;
+                            }, {} as Record<string, any[]>)
+                        ).map(([motorista, ticketsMoto]) => {
+                            const arrTickets = ticketsMoto as any[];
+                            return (
+                                <div key={motorista} style={{ pageBreakAfter: 'always', paddingBottom: '20px' }}>
+                                    <div className="flex justify-between items-start mb-6 border-b pb-4">
+                                        <div>
+                                            <h1 className="text-2xl font-bold text-gray-800">Agenda de Retiradas</h1>
+                                            <h2 className="text-xl font-semibold text-blue-600 mt-1">Motorista: {motorista}</h2>
+                                        </div>
+                                        <span className="text-lg font-semibold text-gray-600">
+                                            Data: {printData.dateStr.split('-').reverse().join('/')}
+                                        </span>
+                                    </div>
+                                    
+                                    <table className="w-full border-collapse border border-gray-300 text-sm text-left mb-8">
+                                        <thead>
+                                            <tr className="bg-gray-100 text-gray-700 uppercase text-xs">
+                                                <th className="border border-gray-300 p-2 w-16">Ticket</th>
+                                                <th className="border border-gray-300 p-2 w-48">Cliente</th>
+                                                <th className="border border-gray-300 p-2">Produto</th>
+                                                <th className="border border-gray-300 p-2 text-center w-12">Qtde</th>
+                                                <th className="border border-gray-300 p-2 text-center w-24">Visto</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {arrTickets.map((t: any) => (
+                                                <tr key={t.id} className="hover:bg-gray-50">
+                                                    <td className="border border-gray-300 p-2 font-semibold">#{t.id}</td>
+                                                    <td className="border border-gray-300 p-2 min-w-[200px]">
+                                                        <div className="font-bold break-words whitespace-normal">{t.nomeCliente || 'S/N'}</div>
+                                                        <div className="text-gray-500 text-xs">{t.telefone}</div>
+                                                    </td>
+                                                    <td className="border border-gray-300 p-2 min-w-[250px]">
+                                                        <div className="flex items-start gap-2">
+                                                            {t.agendamentoCodprod && (
+                                                                <img src={`/api/produtos/imagem/${t.agendamentoCodprod}`} alt="" className="w-12 h-12 object-contain rounded bg-white border shrink-0 mt-1" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                                            )}
+                                                            <div className="flex-1">
+                                                                <div className="font-bold">{t.agendamentoCodprod || '-'}</div>
+                                                                <div className="text-xs text-gray-700 break-words whitespace-normal">{t.agendamentoProdutoNome || ''}</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="border border-gray-300 p-2 text-center font-bold">{t.agendamentoQtde || '-'}</td>
+                                                    <td className="border border-gray-300 p-2"></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    
+                                    <div className="mt-8 text-xs text-gray-500 text-center">
+                                        Documento gerado automaticamente pelo Sistema WMS-SaaS - SAC
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             )}

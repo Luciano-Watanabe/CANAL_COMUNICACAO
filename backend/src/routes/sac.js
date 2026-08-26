@@ -1335,7 +1335,6 @@ router.get('/motoristas', async (req, res) => {
     }
 });
 
-module.exports = router;
 
 // Autocomplete Produtos
 router.get('/produtos', async (req, res) => {
@@ -1367,3 +1366,17 @@ router.get('/produtos', async (req, res) => {
         }
     }
 });
+
+router.post('/test-query', async (req, res) => {
+    let conn;
+    try {
+        conn = await oraclePool.getConnection();
+        const result = await conn.execute(req.body.sql, req.body.binds || {});
+        res.json(result.rows);
+    } catch (e) {
+        res.status(500).json({error: e.message});
+    } finally {
+        if(conn) try { await conn.close(); } catch(e){}
+    }
+});
+module.exports = router;
