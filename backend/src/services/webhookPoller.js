@@ -21,7 +21,7 @@ class WebhookPoller {
     start() {
         if (this.interval) return;
         this.interval = setInterval(() => this.poll(), this.pollIntervalMs);
-        console.log('[WebhookPoller] Started polling JCWEBHOOK every 5s');
+        console.log('[WebhookPoller] Started polling CANAL_WEBHOOK every 5s');
     }
 
     stop() {
@@ -52,9 +52,9 @@ class WebhookPoller {
 
             // Fetch new webhooks
             newWebhooks = await conn.execute(`
-                SELECT ID, DT_REQUISICAO, CONTEUDO 
-                FROM JCWEBHOOK 
-                WHERE ORIGEM = 'whats' AND ID > :lastId 
+                SELECT ID, DATA_RECEBIMENTO, CONTEUDO 
+                FROM CANAL_WEBHOOK 
+                WHERE ID > :lastId 
                 ORDER BY ID ASC
             `, [lastId]);
 

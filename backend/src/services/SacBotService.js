@@ -587,6 +587,16 @@ class SacBotService {
             const resProd = await conn.execute(sqlProdutos, { codatv });
             console.log(`${TAG} [Catálogo] ${resProd.rows.length} produto(s) encontrado(s) para ${nomeRamo}`);
 
+            let catalogoComPreco = false;
+            try {
+                const resConf = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'BOT_CATALOGO_COM_PRECO'`);
+                if (resConf.rows.length > 0 && resConf.rows[0][0] === 'ON') {
+                    catalogoComPreco = true;
+                }
+            } catch (e) {
+                console.error(`${TAG} [Catálogo] Erro ao ler conf BOT_CATALOGO_COM_PRECO`, e);
+            }
+
             const PDFDocument = require('pdfkit');
             const fs = require('fs');
             const path = require('path');
@@ -658,7 +668,7 @@ class SacBotService {
                         const cellW = colWidth - colPadding;
                         const codprod = r[0];
                         const descricao = r[1] || '';
-                        const precoVal = (r[2] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                        const precoVal = catalogoComPreco ? (r[2] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '';
                         const unidade = r[3] ? r[3].trim() : 'UN';
                         const ean = r[4] ? String(r[4]).trim() : '';
                         
@@ -694,8 +704,12 @@ class SacBotService {
                         doc.fillColor('#1e293b').fontSize(10).font('Helvetica-Bold').text(descricao, x + 5, currentY + 128, { width: cellW - 10, height: 25, ellipsis: true });
                         
                         // Price (Left) and Unit (Right)
-                        doc.fillColor('#0284c7').fontSize(14).font('Helvetica-Bold').text(precoVal, x + 5, currentY + 160, { width: cellW - 10, align: 'left' });
-                        doc.fillColor('#64748b').fontSize(9).font('Helvetica-Bold').text(`/ ${unidade}`, x + 5, currentY + 164, { width: cellW - 10, align: 'right' });
+                        if (catalogoComPreco) {
+                            doc.fillColor('#0284c7').fontSize(14).font('Helvetica-Bold').text(precoVal, x + 5, currentY + 160, { width: cellW - 10, align: 'left' });
+                            doc.fillColor('#64748b').fontSize(9).font('Helvetica-Bold').text(`/ ${unidade}`, x + 5, currentY + 164, { width: cellW - 10, align: 'right' });
+                        } else {
+                            doc.fillColor('#64748b').fontSize(10).font('Helvetica-Bold').text(`Consulte condições`, x + 5, currentY + 160, { width: cellW - 10, align: 'center' });
+                        }
                         
                         // Reset colors
                         doc.fillColor('black');

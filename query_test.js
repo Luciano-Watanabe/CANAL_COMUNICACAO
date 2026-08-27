@@ -7,10 +7,10 @@ async function run() {
             password: process.env.ORACLE_PASS,
             connectString: process.env.ORACLE_CONN_STR
         });
-        await conn.execute(`SELECT ID, DT_REQUISICAO, CONTEUDO FROM JCWEBHOOK WHERE ORIGEM = 'whats' AND ID > 0 ORDER BY ID ASC`);
-        console.log("JCWEBHOOK OK");
+        await conn.execute(`SELECT ID, DT_REQUISICAO, CONTEUDO FROM CANAL_WEBHOOK WHERE ORIGEM = 'whats' AND ID > 0 ORDER BY ID ASC`);
+        console.log("CANAL_WEBHOOK OK");
     } catch(e) {
-        console.error("Erro JCWEBHOOK:", e.message);
+        console.error("Erro CANAL_WEBHOOK:", e.message);
     }
     
     try {

@@ -273,7 +273,7 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
+            <span className="text-slate-800 dark:text-white">
               Olá, {userName}!
             </span>
             <span>👋</span>

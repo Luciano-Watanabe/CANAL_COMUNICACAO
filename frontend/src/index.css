@@ -10,24 +10,88 @@
 }
 
 @layer base {
-  :root {
-    --bg-main: #f8fafc;
-    --text-main: #0f172a;
-    --sidebar-bg: #ffffff;
-    --border-color: #e2e8f0;
-  }
-  
-  .dark {
-    --bg-main: #0f172a;
-    --text-main: #f8fafc;
-    --sidebar-bg: #1e293b;
-    --border-color: #334155;
+  :root { 
+    /* Cores de Marca (Brand) */
+    --p: #0d9488;          /* Primary - Teal 600 */
+    
+    /* Textos */
+    --text: #f8fafc;       /* Text Primary - Slate 50 */
+    --s: #94a3b8;          /* Text Secondary - Slate 400 */
+    
+    /* Backgrounds & Surfaces */
+    --bg: radial-gradient(circle at top right, #114c49, #0f172a); /* Background Principal do App */
+    --card-bg: rgba(30, 41, 59, 0.65); /* Fundo de Cards e Modais */
+    
+    /* Borders */
+    --border: rgba(255, 255, 255, 0.08); /* Bordas de inputs, tabelas e cards */
+    
+    /* Feedback (Alertas) */
+    --success: #10b981;    /* Verde (Emerald 500) */
+    --warning: #f59e0b;    /* Laranja (Amber 500) */
+    --danger: #ef4444;     /* Vermelho (Red 500) */
+
+    /* Legacy variables for compatibility */
+    --bg-main: transparent;
+    --text-main: var(--text);
+    --sidebar-bg: var(--card-bg);
+    --border-color: var(--border);
   }
 
   body {
-    @apply bg-[var(--bg-main)] text-[var(--text-main)] antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-family: 'Outfit', sans-serif;
+    @apply antialiased;
   }
+}
+
+@layer components {
+  .card { 
+      background: var(--card-bg); 
+      border: 1px solid var(--border); 
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 20px; 
+      box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.3);
+      padding: 1.5rem;
+  }
+  
+  .btn-primary { 
+      background: var(--p); 
+      color: white; 
+      border: none; 
+      border-radius: 10px; 
+      font-weight: 600; 
+      padding: 12px 24px;
+      cursor: pointer; 
+      transition: all 0.3s ease; 
+  }
+  
+  .btn-primary:hover { 
+      background: #0f766e;
+      box-shadow: 0 0 15px rgba(13, 148, 136, 0.4);
+  }
+  
+  input { 
+      background: rgba(15, 23, 42, 0.4);
+      color: var(--text); 
+      border: 1px solid var(--border); 
+      border-radius: 8px; 
+      padding: 12px; 
+      transition: all 0.3s ease; 
+  }
+  
+  input:focus { 
+      outline: none; 
+      border-color: var(--p); 
+      box-shadow: 0 0 10px rgba(13, 148, 136, 0.2); 
+  }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+  ::-webkit-scrollbar-thumb { background: rgba(13, 148, 136, 0.3); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(13, 148, 136, 0.6); }
 }
 
 @layer utilities {

@@ -32,6 +32,7 @@ const sacRoutes = require('./routes/sac');
 const clientesRoutes = require('./routes/clientes');
 const contatosRoutes = require('./routes/contatos');
 const configRoutes = require('./routes/config');
+const webhookConfigRoutes = require('./routes/webhookConfig');
 const chatRoutes = require('./routes/chat');
 const vendedoresRoutes = require('./routes/vendedores');
 const produtosRoutes = require('./routes/produtos');
@@ -51,6 +52,7 @@ const rotasRoutes = require('./routes/rotas');
 const catalogoRoutes = require('./routes/catalogo');
 const geolocalizacaoRoutes = require('./routes/geolocalizacao');
 const prospeccaoRoutes = require('./routes/prospeccao');
+const objetivosRoutes = require('./routes/objetivos');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/clientes', clientesRoutes);
@@ -60,6 +62,7 @@ app.use('/api/contatos', contatosRoutes);
 app.use('/api/vendedores', vendedoresRoutes);
 app.use('/api/visitas', visitasRoutes);
 app.use('/api/config', configRoutes);
+app.use('/api/webhook-config', webhookConfigRoutes);
 app.use('/api/rotas', rotasRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/sac', sacRoutes);
@@ -76,6 +79,7 @@ app.use('/api', metricasRoutes);
 app.use('/api', whatsappRoutes);
 app.use('/api/catalogo', catalogoRoutes);
 app.use('/api/geolocalizacao', geolocalizacaoRoutes);
+app.use('/api/objetivos', objetivosRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Canal de Comunicacao Backend' });
@@ -173,11 +177,70 @@ const PORT = process.env.PORT || 3001;
 const initializeOracleDatabase = require('./scripts/init_oracle');
 const cacheService = require('./services/cacheService');
 const oraclePool = require('./services/oraclePool');
+const webhookServerManager = require('./services/webhookServerManager');
+const { exec } = require('child_process');
 
 // Inicia o pool Oracle antes de qualquer coisa
 oraclePool.initPool()
     .then(() => initializeOracleDatabase())
-    .then(() => {
+    .then(async () => {
+        // Verifica config do webhook nativo e inicia se necessário
+        try {
+            const connection = await oraclePool.getConnection();
+            const result = await connection.execute(`SELECT PORTA, TOKEN, ATIVO FROM CANAL_WEBHOOK_CONFIG WHERE ID = 1`);
+            await connection.close();
+            if (result.rows && result.rows.length > 0) {
+                const [porta, token, ativo] = result.rows[0];
+                if (ativo === 'S') {
+                    // Fetch NOME_EMPRESA
+                    let nomeEmpresa = 'webhook';
+                    try {
+                        const configConn = await oraclePool.getConnection();
+                        const configResult = await configConn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'NOME_EMPRESA'`);
+                        if (configResult.rows && configResult.rows.length > 0 && configResult.rows[0][0]) {
+                            const rawName = configResult.rows[0][0];
+                            nomeEmpresa = 'webhook-' + rawName.replaceAll(' ', '').toLowerCase();
+                        }
+                        await configConn.close();
+                    } catch (e) {
+                        console.error('[STARTUP] Erro ao buscar NOME_EMPRESA', e);
+                    }
+
+                    console.log(`[STARTUP] Iniciando webhook nativo na porta ${porta} com hostname ${nomeEmpresa}`);
+                    
+                    exec(`tailscale up --hostname=${nomeEmpresa} --accept-routes`, (upErr) => {
+                        if (upErr) console.error('[STARTUP] Erro no tailscale up:', upErr.message);
+                        
+                        exec(`tailscale status --json`, (statusErr, stdout) => {
+                            let domain = '';
+                            if (!statusErr && stdout) {
+                                try {
+                                    const statusObj = JSON.parse(stdout);
+                                    if (statusObj.Self && statusObj.Self.DNSName) {
+                                        domain = statusObj.Self.DNSName.replace(/\\.$/, '');
+                                    }
+                                } catch(e){}
+                            }
+                            
+                            const certCmd = domain ? `mkdir -p ../certs && tailscale cert --cert-file ../certs/webhook.crt --key-file ../certs/webhook.key ${domain}` : `mkdir -p ../certs`;
+
+                            exec(certCmd, { cwd: __dirname }, (certErr) => {
+                                if (certErr) console.error('[STARTUP] Erro no tailscale cert:', certErr.message);
+
+                                webhookServerManager.startWebhookServer(porta, token);
+                                
+                                exec(`tailscale funnel -bg ${porta}`, (err) => {
+                                    if(err) console.error('[STARTUP] Erro no tailscale funnel:', err.message);
+                                });
+                            });
+                        });
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('[STARTUP] Erro ao carregar config de webhook:', e.message);
+        }
+
         // Inicia a API imediatamente para não recusar conexões (ex: Tela de Login)
         server.listen(PORT, () => {
             console.log(`Backend server running on port ${PORT}`);

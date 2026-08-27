@@ -47,11 +47,18 @@ const TBL_COLS = [
     { label: 'Peso (kg)',   w: 56  },
 ]; // soma = 544
 
+const OBJ_COLS = [
+    { label: 'Data',          w: 80 },
+    { label: 'Objetivo',      w: 154 },
+    { label: 'Feito',         w: 154 },
+    { label: 'Atingido (%)',  w: 156 },
+]; // soma = 544
+
 const ROW_H      = 18;
 const TBL_HDR_H  = 24;
 const SEC2_HDR_H = 42;
 const KPI_H      = 58;  // faixa de KPIs entre cabeçalho e cards
-const TOP_H      = 80;  // seção Top Oportunidades (24 header + 3×18 rows + 2 border)
+const TOP_H      = 116;  // seção Top Oportunidades (24 header + 5×18 rows + 2 border)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function trunc(str, maxChars) {
@@ -70,17 +77,26 @@ function drawBar(doc, x, y, w, perc, label, percStr, barColor) {
     doc.roundedRect(x, barY, fillW, BAR_H, 3).fill(barColor);
 }
 
-function calcPageHeight(numMetasRows, numClientesRows) {
+function calcPageHeight(numMetasRows, numClientesRows, numObjetivosRows = 0, mesRef = '') {
     const numLines  = Math.ceil(numMetasRows / COLS);
     const cardsH    = numLines * (CARD_H + GAP);
     const clientesH = numClientesRows > 0
         ? GAP + TOP_H + GAP + SEC2_HDR_H + TBL_HDR_H + numClientesRows * ROW_H + MARGIN
         : 0;
-    return MARGIN * 2 + HEADER + KPI_H + GAP + cardsH + clientesH;
+        
+    let objetivosH = 0;
+    if (numObjetivosRows > 0 && mesRef) {
+        const [mm, yyyy] = mesRef.split('/');
+        const daysInMonth = new Date(yyyy, mm, 0).getDate();
+        const startWeekday = new Date(yyyy, mm - 1, 1).getDay();
+        const numWeeks = Math.ceil((daysInMonth + startWeekday) / 7);
+        objetivosH = GAP + SEC2_HDR_H + TBL_HDR_H + numWeeks * 45 + MARGIN + 40; // 45 = WEEK_H
+    }
+    return MARGIN * 2 + HEADER + KPI_H + GAP + cardsH + clientesH + objetivosH;
 }
 
 // ─── Exportação principal ─────────────────────────────────────────────────────
-async function gerarImagemMetas(mesRef, rowsMetas, rowsClientes = [], nomeVendedor = '', resumo = {}) {
+async function gerarImagemMetas(mesRef, rowsMetas, rowsClientes = [], nomeVendedor = '', resumo = {}, rowsObjetivos = []) {
     return new Promise((resolve, reject) => {
         // Ordena cards por CODEPTO crescente
         const metasOrdenadas = [...rowsMetas].sort((a, b) => (a.codepto || 0) - (b.codepto || 0));
@@ -102,7 +118,7 @@ async function gerarImagemMetas(mesRef, rowsMetas, rowsClientes = [], nomeVended
         });
 
         const pageW = MARGIN * 2 + COLS * CARD_W + (COLS - 1) * GAP;
-        const pageH = calcPageHeight(metasOrdenadas.length, clientesOrdenados.length);
+        const pageH = calcPageHeight(metasOrdenadas.length, clientesOrdenados.length, rowsObjetivos.length, mesRef);
 
         const doc = new PDFDocument({ size: [pageW, pageH], margin: 0, autoFirstPage: true });
         const chunks = [];
@@ -118,7 +134,7 @@ async function gerarImagemMetas(mesRef, rowsMetas, rowsClientes = [], nomeVended
         doc.rect(0, 0, 4, HEADER + MARGIN).fill(BAR_OK);
 
         doc.fillColor(TXT_WHITE).fontSize(16).font('Helvetica-Bold')
-           .text('Painel de Metas', MARGIN + 10, MARGIN + 4, { width: pageW - MARGIN * 2 });
+           .text('Painel de Objetivos', MARGIN + 10, MARGIN + 4, { width: pageW - MARGIN * 2 });
 
         if (nomeVendedor) {
             doc.fillColor(BAR_OK).fontSize(9).font('Helvetica-Bold')
@@ -321,7 +337,7 @@ async function gerarImagemMetas(mesRef, rowsMetas, rowsClientes = [], nomeVended
             }
             const topClientes = Object.values(aggMap)
                 .sort((a, b) => b.peso - a.peso)
-                .slice(0, 3);
+                .slice(0, 5);
 
             const numLines = Math.ceil(metasOrdenadas.length / COLS);
             let ty = CARDS_START + numLines * (CARD_H + GAP) + GAP;
@@ -336,8 +352,8 @@ async function gerarImagemMetas(mesRef, rowsMetas, rowsClientes = [], nomeVended
                      MARGIN + 215, ty + 8, { width: pageW - MARGIN - 220, align: 'right', lineBreak: false });
             ty += 24;
 
-            const medals      = ['1.', '2.', '3.'];
-            const medalColors = ['#FFD700', '#C0C0C0', '#CD7F32'];
+            const medals      = ['1.', '2.', '3.', '4.', '5.'];
+            const medalColors = ['#FFD700', '#C0C0C0', '#CD7F32', '#8B949E', '#8B949E'];
             const PESO_X  = pageW - MARGIN - 80;
 
             topClientes.forEach((cli, idx) => {
@@ -418,6 +434,118 @@ async function gerarImagemMetas(mesRef, rowsMetas, rowsClientes = [], nomeVended
             }
 
             doc.rect(MARGIN, sy, pageW - MARGIN * 2, 1).fill(BORDER);
+        }
+
+        // ── Seção 3 — Calendário de Objetivos ─────────────────────────────────
+        if (rowsObjetivos.length > 0) {
+            const numLines = Math.ceil(metasOrdenadas.length / COLS);
+            let oy = MARGIN + HEADER + KPI_H + GAP + numLines * (CARD_H + GAP) + GAP;
+            
+            if (clientesOrdenados.length > 0) {
+                oy += TOP_H + GAP + SEC2_HDR_H + TBL_HDR_H + clientesOrdenados.length * ROW_H + MARGIN;
+            }
+
+            doc.rect(0, oy, pageW, SEC2_HDR_H).fill(HEADER_BG);
+            doc.rect(0, oy, 4, SEC2_HDR_H).fill(BAR_OK);
+            doc.fillColor(TXT_WHITE).fontSize(13).font('Helvetica-Bold')
+               .text('Calendário de Objetivos (Faturamento)', MARGIN + 10, oy + 8, { width: pageW - MARGIN * 2 });
+            doc.fillColor(TXT_DIM).fontSize(8).font('Helvetica')
+               .text('Acompanhamento diário das metas de vendas em Reais (R$)',
+                     MARGIN + 10, oy + 26, { width: pageW - MARGIN * 2 });
+            oy += SEC2_HDR_H;
+
+            doc.rect(MARGIN, oy, pageW - MARGIN * 2, TBL_HDR_H).fill(TBL_HDR);
+            
+            const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+            const colW = (pageW - MARGIN * 2) / 7;
+            for (let i = 0; i < 7; i++) {
+                doc.fillColor(TXT_DIM).fontSize(8).font('Helvetica-Bold')
+                   .text(diasSemana[i].toUpperCase(), MARGIN + i * colW, oy + 8, { width: colW, align: 'center' });
+            }
+            oy += TBL_HDR_H;
+
+            const [mm, yyyy] = mesRef.split('/');
+            const daysInMonth = new Date(yyyy, mm, 0).getDate();
+            const startWeekday = new Date(yyyy, mm - 1, 1).getDay();
+            const numWeeks = Math.ceil((daysInMonth + startWeekday) / 7);
+            const WEEK_H = 45;
+
+            const daysData = {};
+            let somaObjetivo = 0;
+            let somaFeito = 0;
+            rowsObjetivos.forEach(r => {
+                const d = parseInt(r.data.split('/')[0], 10);
+                daysData[d] = r;
+                somaObjetivo += r.objetivo;
+                somaFeito += r.feito;
+            });
+
+            const formatShort = (v) => {
+                if (v >= 1000) return 'R$ ' + (v / 1000).toFixed(1).replace('.', ',') + 'k';
+                return 'R$ ' + v.toFixed(0);
+            };
+
+            let currentDay = 1;
+            for (let w = 0; w < numWeeks; w++) {
+                for (let d = 0; d < 7; d++) {
+                    const cx = MARGIN + d * colW;
+                    const cy = oy + w * WEEK_H;
+                    
+                    doc.rect(cx, cy, colW, WEEK_H).fill(d % 2 === 0 ? TBL_ODD : TBL_EVEN);
+                    doc.rect(cx, cy, colW, WEEK_H).lineWidth(0.5).stroke(BORDER);
+                    
+                    if (w === 0 && d < startWeekday) {
+                        continue;
+                    }
+                    if (currentDay > daysInMonth) {
+                        continue;
+                    }
+                    
+                    const cellData = daysData[currentDay];
+                    
+                    doc.fillColor(TXT_DIM).fontSize(7).font('Helvetica-Bold').text(currentDay.toString(), cx + 4, cy + 4);
+                    
+                    if (cellData) {
+                        doc.fillColor(TXT_DIM).fontSize(6).font('Helvetica')
+                           .text('O:', cx + 4, cy + 16, { width: colW - 8, continued: true });
+                        doc.fillColor(TXT_WHITE).fontSize(6).font('Helvetica')
+                           .text(formatShort(cellData.objetivo), { align: 'right' });
+                           
+                        doc.fillColor(TXT_DIM).fontSize(6).font('Helvetica')
+                           .text('F:', cx + 4, cy + 24, { width: colW - 8, continued: true });
+                        doc.fillColor(TXT_WHITE).fontSize(6).font('Helvetica-Bold')
+                           .text(formatShort(cellData.feito), { align: 'right' });
+                           
+                        const percColor = cellData.perc >= 100 ? BAR_OK : (cellData.perc >= 80 ? BAR_BOOM : TXT_BOOM);
+                        doc.fillColor(percColor).fontSize(7).font('Helvetica-Bold')
+                           .text(cellData.perc.toFixed(1) + '%', cx + 4, cy + 34, { width: colW - 8, align: 'center' });
+                    }
+                    
+                    currentDay++;
+                }
+            }
+            oy += numWeeks * WEEK_H;
+            
+            // Draw Resumo
+            doc.rect(MARGIN, oy, pageW - MARGIN * 2, ROW_H + 12).fill(TBL_HDR);
+            doc.rect(MARGIN, oy, pageW - MARGIN * 2, 1).fill(BORDER);
+            
+            doc.fillColor(TXT_WHITE).fontSize(8).font('Helvetica-Bold')
+               .text('RESUMO DO MÊS', MARGIN + 4, oy + 10, { width: 120, align: 'left' });
+               
+            const percTotal = somaObjetivo > 0 ? (somaFeito / somaObjetivo) * 100 : 0;
+            const percColor = percTotal >= 100 ? BAR_OK : (percTotal >= 80 ? BAR_BOOM : TXT_BOOM);
+            
+            doc.fillColor(TXT_WHITE).fontSize(8).font('Helvetica-Bold')
+               .text('O: ' + somaObjetivo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), MARGIN + 120, oy + 10, { width: 150, align: 'right' });
+            
+            doc.fillColor(TXT_WHITE).fontSize(8).font('Helvetica-Bold')
+               .text('F: ' + somaFeito.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }), MARGIN + 270, oy + 10, { width: 150, align: 'right' });
+               
+            doc.fillColor(percColor).fontSize(9).font('Helvetica-Bold')
+               .text(percTotal.toFixed(2) + '%', pageW - MARGIN - 100, oy + 9, { width: 90, align: 'right' });
+
+            doc.rect(MARGIN, oy + ROW_H + 12, pageW - MARGIN * 2, 1).fill(BORDER);
         }
 
         doc.end();

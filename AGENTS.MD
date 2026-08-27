@@ -59,6 +59,6 @@ Para evitar sobrecarga de banco de dados e lentidão no frontend, a listagem de 
 
 Para garantir escalabilidade, a recepção de mensagens do WhatsApp ocorre em um modelo de arquitetura orientada a eventos em duas fases. Os Agentes devem respeitar essa arquitetura ao criar novas funcionalidades:
 
-1. **Recepção e Buffer (JCWEBHOOK)**: Eventos que chegam da API externa (Evolution/GO) DEVEM ser recebidos de forma rápida e ter seu *payload bruto* embutido na tabela `JCWEBHOOK`. Esta tabela atua APENAS como fila/buffer. Nenhum endpoint de front-end deve fazer `SELECT` nela para exibição de histórico.
-2. **Worker e Processamento (webhookPoller.js)**: A inteligência de extração (textos, downloads de mídias, transcrição de áudios via IA) ocorre num worker isolado. O worker lê a `JCWEBHOOK`, trata o JSON e insere o registro consolidado na `CANAL_MENSAGENS`.
+1. **Recepção e Buffer (CANAL_WEBHOOK)**: Eventos que chegam da API externa (Evolution/GO) DEVEM ser recebidos de forma rápida e ter seu *payload bruto* embutido na tabela `CANAL_WEBHOOK`. Esta tabela atua APENAS como fila/buffer. Nenhum endpoint de front-end deve fazer `SELECT` nela para exibição de histórico.
+2. **Worker e Processamento (webhookPoller.js)**: A inteligência de extração (textos, downloads de mídias, transcrição de áudios via IA) ocorre num worker isolado. O worker lê a `CANAL_WEBHOOK`, trata o JSON e insere o registro consolidado na `CANAL_MENSAGENS`.
 3. **Consumo de Histórico**: Consultas de API para recuperar o chat (`/chat`, `/mensagens`) DEVEM ler exclusivamente da `CANAL_MENSAGENS`.

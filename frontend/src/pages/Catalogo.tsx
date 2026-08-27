@@ -32,6 +32,18 @@ export default function Catalogo() {
   const user = userStr ? JSON.parse(userStr) : null;
 
   useEffect(() => {
+    // Buscar config global para inicializar mostrarPrecos
+    fetch('/api/config/global')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.configs && data.configs['BOT_CATALOGO_COM_PRECO']) {
+          setMostrarPrecos(data.configs['BOT_CATALOGO_COM_PRECO'] === 'ON');
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
     // Buscar vendedores
     if (!user) return;
     fetch(`/api/vendedores?codusur=${user.matricula}&role=${user.role}`)

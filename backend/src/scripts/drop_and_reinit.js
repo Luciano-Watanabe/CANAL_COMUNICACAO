@@ -11,7 +11,8 @@ async function run() {
             connectString: process.env.ORACLE_CONN_STR
         });
         
-        try { await conn.execute(`DROP TABLE JCWEBHOOK CASCADE CONSTRAINTS`); console.log('Dropped JCWEBHOOK'); } catch(e){}
+        try { await conn.execute(`DROP TABLE CANAL_TOKENS_EVOLUTION CASCADE CONSTRAINTS`); console.log('Dropped CANAL_TOKENS_EVOLUTION'); } catch(e){}
+        try { await conn.execute(`DROP TABLE CANAL_WEBHOOK CASCADE CONSTRAINTS`); console.log('Dropped CANAL_WEBHOOK'); } catch(e){}
         try { await conn.execute(`DROP TABLE CANAL_AGENDAMENTO_STATUS CASCADE CONSTRAINTS`); console.log('Dropped CANAL_AGENDAMENTO_STATUS'); } catch(e){}
         try { await conn.execute(`DROP TABLE CANAL_WEBHOOK_STATE CASCADE CONSTRAINTS`); console.log('Dropped CANAL_WEBHOOK_STATE'); } catch(e){}
         

@@ -18,6 +18,7 @@ export default function Configuracoes() {
   const [contatoFinanceiro, setContatoFinanceiro] = useState('');
   const [contatoCompras, setContatoCompras] = useState('');
   const [nomeEmpresa, setNomeEmpresa] = useState('');
+  const [catalogoComPreco, setCatalogoComPreco] = useState(false);
   const [savingGlobal, setSavingGlobal] = useState(false);
   const [sacBotCodusur, setSacBotCodusur] = useState('');
   const { isPrivacyMode, setPrivacyMode, maskData } = usePrivacy();
@@ -35,6 +36,12 @@ export default function Configuracoes() {
   const [cronDiasSemana, setCronDiasSemana] = useState<number[]>([1, 2, 3, 4, 5]);
   const [cronHoraInicio, setCronHoraInicio] = useState(8);
   const [cronHoraFim, setCronHoraFim] = useState(18);
+
+  // Webhook Nativo Config
+  const [webhookPorta, setWebhookPorta] = useState(3005);
+  const [webhookToken, setWebhookToken] = useState('');
+  const [webhookAtivo, setWebhookAtivo] = useState(false);
+  const [savingWebhook, setSavingWebhook] = useState(false);
 
   // Departments Config
   const [departamentos, setDepartamentos] = useState<any[]>([]);
@@ -93,6 +100,9 @@ export default function Configuracoes() {
           if (dataGlob.configs['NOME_EMPRESA']) {
             setNomeEmpresa(dataGlob.configs['NOME_EMPRESA']);
           }
+          if (dataGlob.configs['BOT_CATALOGO_COM_PRECO']) {
+            setCatalogoComPreco(dataGlob.configs['BOT_CATALOGO_COM_PRECO'] === 'ON');
+          }
           if (dataGlob.configs['CRON_DIAS_SEMANA']) {
             try { setCronDiasSemana(JSON.parse(dataGlob.configs['CRON_DIAS_SEMANA'])); } catch (e) {}
           }
@@ -119,6 +129,16 @@ export default function Configuracoes() {
           const dataIa = await resIa.json();
           setIaUsage(dataIa);
         }
+        // Fetch Webhook Config
+        const resWh = await fetch('/api/webhook-config');
+        if (resWh.ok) {
+          const dataWh = await resWh.json();
+          if (dataWh.success) {
+            setWebhookPorta(dataWh.porta);
+            setWebhookToken(dataWh.token);
+            setWebhookAtivo(dataWh.ativo === 'S');
+          }
+        }
       } catch (err) {
         console.error('Erro ao buscar configurações:', err);
       } finally {
@@ -128,6 +148,32 @@ export default function Configuracoes() {
 
     fetchData();
   }, [isGerente]);
+
+  const handleSaveWebhook = async () => {
+    setSavingWebhook(true);
+    try {
+      const response = await fetch('/api/webhook-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          porta: webhookPorta,
+          token: webhookToken,
+          ativo: webhookAtivo ? 'S' : 'N'
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        alert('Configurações do Webhook Nativo salvas!');
+      } else {
+        alert('Erro ao salvar Webhook: ' + data.message);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao salvar webhook.');
+    } finally {
+      setSavingWebhook(false);
+    }
+  };
 
   const saveGlobalConfig = async () => {
     setSavingGlobal(true);
@@ -149,6 +195,7 @@ export default function Configuracoes() {
             MODO_TESTE_GESTOR: modoTeste ? 'S' : 'N',
             NUMERO_TESTE_GESTOR: numeroTeste,
             NOME_EMPRESA: nomeEmpresa,
+            BOT_CATALOGO_COM_PRECO: catalogoComPreco ? 'ON' : 'OFF',
             CRON_DIAS_SEMANA: JSON.stringify(cronDiasSemana),
             CRON_HORA_INICIO: cronHoraInicio.toString(),
             CRON_HORA_FIM: cronHoraFim.toString(),
@@ -427,7 +474,73 @@ export default function Configuracoes() {
         </div>
       </div>
 
+      <div className="glass-card p-6 flex flex-col md:flex-row gap-4 items-center bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700/50 mb-6">
+        <div className="flex-1 w-full">
+          <h3 className="font-bold text-indigo-800 dark:text-indigo-400 flex items-center gap-2 mb-3">
+            <Settings2 size={20} /> Webhook Nativo (Tailscale Funnel)
+          </h3>
+          <p className="text-sm text-indigo-700/80 dark:text-indigo-500/80 mb-4">
+            Ative o recebimento de webhooks diretamente nesta instância, criando um túnel seguro via Tailscale. O túnel irá expor a porta configurada abaixo.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Porta do Webhook</label>
+                <input
+                  type="number"
+                  min="1024"
+                  max="65535"
+                  value={webhookPorta}
+                  onChange={(e) => setWebhookPorta(Number(e.target.value))}
+                  disabled={webhookAtivo}
+                  title={webhookAtivo ? "Desative o webhook para alterar a porta" : ""}
+                  className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                />
+              </div>
+              <div className="flex-1 flex flex-col items-center justify-center pt-6">
+                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Ativar Túnel</label>
+                <button
+                  onClick={() => setWebhookAtivo(!webhookAtivo)}
+                  className={clsx(
+                    "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2",
+                    webhookAtivo ? "bg-indigo-600" : "bg-slate-300 dark:bg-slate-600"
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                      webhookAtivo ? "translate-x-6" : "translate-x-1"
+                    )}
+                  />
+                </button>
+              </div>
+            </div>
 
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Token de Autenticação</label>
+              <input
+                type="text"
+                value={webhookToken}
+                onChange={(e) => setWebhookToken(e.target.value)}
+                placeholder="Ex: meu-token-super-secreto"
+                className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+          
+          <div className="mt-4 flex justify-end">
+            <button 
+              onClick={handleSaveWebhook}
+              disabled={savingWebhook}
+              className="whitespace-nowrap px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <Save size={18} />
+              {savingWebhook ? 'Salvando...' : 'Salvar Webhook'}
+            </button>
+          </div>
+        </div>
+      </div>
       <div className="glass-card p-6 flex flex-col md:flex-row gap-4 items-end bg-primary-50 dark:bg-slate-800/50 border border-primary-100 dark:border-slate-700">
         <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -457,6 +570,28 @@ export default function Configuracoes() {
               placeholder="Ex: Minha Empresa"
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Catálogo com Preço (Global)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Define se os PDFs do catálogo (Bot e Tela) terão preços dos produtos por padrão.</p>
+            <div className="flex items-center h-[42px]">
+              <button
+                onClick={() => setCatalogoComPreco(!catalogoComPreco)}
+                className={clsx(
+                  "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2",
+                  catalogoComPreco ? "bg-primary-600" : "bg-slate-300 dark:bg-slate-600"
+                )}
+              >
+                <span
+                  className={clsx(
+                    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                    catalogoComPreco ? "translate-x-6" : "translate-x-1"
+                  )}
+                />
+              </button>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">

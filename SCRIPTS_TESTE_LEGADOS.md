@@ -46,7 +46,7 @@ require('dotenv').config();
       password: process.env.ORACLE_PASS,
       connectString: process.env.ORACLE_CONN_STR
     });
-    const result = await conn.execute(`SELECT PAYLOAD FROM JCWEBHOOK ORDER BY DATA_HORA DESC FETCH FIRST 3 ROWS ONLY`);
+    const result = await conn.execute(`SELECT PAYLOAD FROM CANAL_WEBHOOK ORDER BY DATA_HORA DESC FETCH FIRST 3 ROWS ONLY`);
     for(let row of result.rows) {
        console.log(JSON.stringify(JSON.parse(row[0]), null, 2));
     }
@@ -67,7 +67,7 @@ require('dotenv').config();
       password: process.env.ORACLE_PASS,
       connectString: process.env.ORACLE_CONN_STR
     });
-    const result = await conn.execute(`SELECT PAYLOAD FROM JCWEBHOOK ORDER BY DATA_HORA DESC FETCH FIRST 2 ROWS ONLY`);
+    const result = await conn.execute(`SELECT PAYLOAD FROM CANAL_WEBHOOK ORDER BY DATA_HORA DESC FETCH FIRST 2 ROWS ONLY`);
     for(let row of result.rows) {
        console.log(row[0]);
     }
@@ -88,7 +88,7 @@ require('dotenv').config();
       password: process.env.ORACLE_PASS,
       connectString: process.env.ORACLE_CONN_STR
     });
-    const result = await conn.execute(`SELECT PAYLOAD FROM JCWEBHOOK WHERE PAYLOAD LIKE '%audioMessage%' ORDER BY DATA_HORA DESC FETCH FIRST 1 ROWS ONLY`);
+    const result = await conn.execute(`SELECT PAYLOAD FROM CANAL_WEBHOOK WHERE PAYLOAD LIKE '%audioMessage%' ORDER BY DATA_HORA DESC FETCH FIRST 1 ROWS ONLY`);
     for(let row of result.rows) {
        console.log(JSON.stringify(JSON.parse(row[0]), null, 2));
     }
@@ -109,7 +109,7 @@ require('dotenv').config();
       password: process.env.ORACLE_PASS,
       connectString: process.env.ORACLE_CONN_STR
     });
-    const result = await conn.execute(`SELECT PAYLOAD FROM JCWEBHOOK WHERE PAYLOAD LIKE '%audioMessage%' ORDER BY DATA_HORA DESC FETCH FIRST 1 ROWS ONLY`);
+    const result = await conn.execute(`SELECT PAYLOAD FROM CANAL_WEBHOOK WHERE PAYLOAD LIKE '%audioMessage%' ORDER BY DATA_HORA DESC FETCH FIRST 1 ROWS ONLY`);
     for(let row of result.rows) {
        console.log(row[0]);
     }
@@ -615,7 +615,7 @@ async function run() {
 run();
 ```
 
-## test_jcwebhook.js
+## test_canal_webhook.js
 
 ```javascript
 const oracledb = require('oracledb');
@@ -637,13 +637,13 @@ async function run() {
       const result = await conn.execute(`
         SELECT column_name, data_type 
         FROM all_tab_cols 
-        WHERE table_name = 'JCWEBHOOK'
+        WHERE table_name = 'CANAL_WEBHOOK'
       `);
       console.log("COLUMNS:");
       console.log(result.rows);
 
       // Get 1 row to see the JSON
-      const data = await conn.execute(`SELECT * FROM JCWEBHOOK WHERE ROWNUM = 1`);
+      const data = await conn.execute(`SELECT * FROM CANAL_WEBHOOK WHERE ROWNUM = 1`);
       console.log("DATA:");
       console.log(data.rows);
   } catch (err) {
@@ -1213,7 +1213,7 @@ async function run() {
   });
   const data = await conn.execute(`
     SELECT ID, CONTEUDO 
-    FROM JCWEBHOOK 
+    FROM CANAL_WEBHOOK 
     WHERE ORIGEM = 'whats'
     ORDER BY ID DESC 
     FETCH FIRST 1 ROWS ONLY

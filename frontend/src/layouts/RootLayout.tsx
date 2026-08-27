@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import clsx from 'clsx';
-import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, Sun, Moon, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin, Target, Headset, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin, Target, Headset, ShieldAlert } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
@@ -39,6 +39,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
   }
   
   if (userRole === 'GERENTE' || userRole === 'SUPERVISOR') {
+    links.push({ name: 'Objetivos', path: '/objetivos', icon: Target });
     links.push({ name: 'Campanhas (Status)', path: '/campanhas', icon: ImagePlus });
     links.push({ name: 'Rotas de Visitas', path: '/rotas', icon: Calendar });
     links.push({ name: 'Clientes Inativos', path: '/inativos', icon: Users });
@@ -49,6 +50,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
   }
 
   if (userRole === 'BOT_GESTOR') {
+    links.push({ name: 'Objetivos', path: '/objetivos', icon: Target });
     links.push({ name: 'Gestão de Vendedores', path: '/vendedores', icon: Contact });
     links.push({ name: 'Automação de Mensagens', path: '/mensagens', icon: MessageSquare });
     links.push({ name: 'Agendamentos de vendedores', path: '/visitas', icon: Users });
@@ -79,11 +81,11 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
         <div className="flex items-center justify-between h-20 px-4 border-b border-[var(--border-color)]">
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="w-10 h-10 flex-shrink-0 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-primary-500/30">
-              CC
+              NC
             </div>
             {!isCollapsed && (
               <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-500 dark:from-white dark:to-slate-400 whitespace-nowrap animate-fade-in">
-                Canal de Com.
+                Nexthor - Comunicação
               </h1>
             )}
           </div>
@@ -112,7 +114,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
                   "flex items-center gap-3 px-3 py-3.5 rounded-xl font-medium transition-all duration-200 group relative",
                   isActive 
                     ? "bg-primary-500/10 text-primary-600 dark:text-primary-400" 
-                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white",
+                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white",
                   isCollapsed ? "justify-center" : "px-4"
                 )}
               >
@@ -150,10 +152,8 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
 
 export default function RootLayout() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isDark, setIsDark] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved) return saved === 'dark';
-    return false; // light default
+  const [isDark] = useState(() => {
+    return true; // NexThor is strictly Dark Mode
   });
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -254,12 +254,6 @@ export default function RootLayout() {
           </div>
           
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsDark(!isDark)}
-              className="p-2.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:scale-105 transition-transform"
-            >
-              {isDark ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
           </div>
         </header>
         

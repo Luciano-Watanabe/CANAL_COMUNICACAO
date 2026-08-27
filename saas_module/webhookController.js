@@ -12,11 +12,11 @@ exports.handleEvolutionWebhook = async (req, res) => {
         // 1. Libera a requisição HTTP IMEDIATAMENTE para a Evolution API não dar timeout
         res.status(200).json({ success: true, received: true });
 
-        // 2. Processamento assíncrono super-rápido no banco (Tabela JCWEBHOOK)
+        // 2. Processamento assíncrono super-rápido no banco (Tabela CANAL_WEBHOOK)
         // Convertendo o payload para string (CLOB)
         const conteudoJSON = JSON.stringify(payload);
 
-        const sql = `INSERT INTO JCWEBHOOK (CONTEUDO, ORIGEM) VALUES (:conteudo, :origem)`;
+        const sql = `INSERT INTO CANAL_WEBHOOK (CONTEUDO, ORIGEM) VALUES (:conteudo, :origem)`;
         const binds = {
             conteudo: conteudoJSON,
             origem: instanciaOrigem
@@ -26,7 +26,7 @@ exports.handleEvolutionWebhook = async (req, res) => {
         await db.execute(sql, binds, { autoCommit: true });
         
         // Console comentado para não flodar produção
-        // console.log(`[WEBHOOK] Mensagem salva na JCWEBHOOK. Origem: ${instanciaOrigem}`);
+        // console.log(`[WEBHOOK] Mensagem salva na CANAL_WEBHOOK. Origem: ${instanciaOrigem}`);
 
     } catch (error) {
         // Como o res.status(200) já foi enviado, o client não recebe 500, mas nós logamos

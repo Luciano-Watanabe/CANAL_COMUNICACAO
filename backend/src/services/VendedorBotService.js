@@ -72,7 +72,7 @@ class VendedorBotService {
                 case 'VENDEDOR_ASSISTENTE_COMUNICACAO_BUSCA_CLIENTE':
                     return await this.processarAssistenteComunicacaoBuscaCliente(telefone, text, instanceName, conn, dados, codvendedor);
                 
-                case 'VENDEDOR_MINHAS_METAS':
+                case 'VENDEDOR_MEUS_OBJETIVOS':
                     return await this.processarMinhasMetas(telefone, text, instanceName, conn, dados, codvendedor);
 
                 case 'VENDEDOR_TICKETS_STATUS':
@@ -110,7 +110,7 @@ class VendedorBotService {
     }
 
     async enviarMenuPrincipal(telefone, instanceName, conn) {
-        const menuText = `💼 *Copiloto do Vendedor*\n\nOlá! Como posso te ajudar hoje?\n\n1️⃣ - 💬 Assistente de Comunicação\n2️⃣ - 📊 Minhas Metas\n3️⃣ - 🎫 Consultar Tickets da Carteira\n4️⃣ - 🎫 Abrir ticket para cliente\n5️⃣ - 🔍 Consultar CNPJ/CPF\n0️⃣ - Finalizar`;
+        const menuText = `💼 *Copiloto do Vendedor*\n\nOlá! Como posso te ajudar hoje?\n\n1️⃣ - 💬 Assistente de Comunicação\n2️⃣ - 📊 Meus Objetivos\n3️⃣ - 🎫 Consultar Tickets da Carteira\n4️⃣ - 🎫 Abrir ticket para cliente\n5️⃣ - 🔍 Consultar CNPJ/CPF\n0️⃣ - Finalizar`;
         await this.webhookPoller.enviarMensagemBot(telefone, menuText, conn, instanceName);
     }
 
@@ -122,7 +122,7 @@ class VendedorBotService {
                 await this.webhookPoller.enviarMensagemBot(telefone, "💬 *Assistente de Comunicação*\n\nQual CODCLI ou CNPJ/CPF do cliente que deseja analisar?\n\nDigite VOLTAR caso queira cancelar.", conn, instanceName);
                 break;
             case '2':
-                await this.setState(telefone, 'VENDEDOR_MINHAS_METAS', {}, conn);
+                await this.setState(telefone, 'VENDEDOR_MEUS_OBJETIVOS', {}, conn);
                 await this.processarMinhasMetas(telefone, '', instanceName, conn, {}, codvendedor);
                 break;
             case '3':
@@ -292,9 +292,10 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                 PESO_POTENCIAL AS (
                     SELECT
                         A.CODEPTO,
-                        ROUND(SUM(A.QT * A.PESOLIQ), 2) AS PESO_POTENCIAL
+                        ROUND(SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ), 2) AS PESO_POTENCIAL
                     FROM PCMOV A
                     JOIN CLIENTES_PERDIDOS P ON P.CODCLI = A.CODCLI
+                    JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
                     WHERE A.CODUSUR = :codvendedor
                       AND A.CODOPER LIKE 'S%'
                       AND A.DTMOV < TRUNC(SYSDATE, 'MM')
@@ -303,24 +304,24 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                           WHERE E.CODPROD = A.CODPROD AND E.QTESTGER > 0
                       )
                     GROUP BY A.CODEPTO
-                    HAVING SUM(A.QT * A.PESOLIQ) > 0
+                    HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
                 )
                 SELECT
                     TO_CHAR(A.DTMOV, 'MM/YYYY')  AS MES_REF,
                     A.CODUSUR,
                     A.CODEPTO,
                     C.DESCRICAO,
-                    ROUND((SUM(A.QT * A.PESOLIQ) / B.QTPESOPREV) * 100, 2) AS PERC_FEITO,
+                    ROUND((SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) / B.QTPESOPREV) * 100, 2) AS PERC_FEITO,
                     ROUND(B.QTPESOPREV, 2)                                   AS META,
-                    ROUND(SUM(A.QT * A.PESOLIQ), 2)                          AS REALIZADO,
-                    ROUND(B.QTPESOPREV - SUM(A.QT * A.PESOLIQ), 2)          AS FALTA,
+                    ROUND(SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ), 2)                          AS REALIZADO,
+                    ROUND(B.QTPESOPREV - SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ), 2)          AS FALTA,
                     NVL(P.PESO_POTENCIAL, 0)                                  AS PESO_POTENCIAL,
-                    ROUND(((SUM(A.QT * A.PESOLIQ) + NVL(P.PESO_POTENCIAL, 0)) / B.QTPESOPREV) * 100, 2) AS PERC_POTENCIAL,
+                    ROUND(((SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) + NVL(P.PESO_POTENCIAL, 0)) / B.QTPESOPREV) * 100, 2) AS PERC_POTENCIAL,
                     CASE
                         WHEN NVL(P.PESO_POTENCIAL, 0) > 0 THEN
                             ROUND(
-                                ((SUM(A.QT * A.PESOLIQ) + NVL(P.PESO_POTENCIAL, 0)) / B.QTPESOPREV) * 100
-                                - (SUM(A.QT * A.PESOLIQ) / B.QTPESOPREV) * 100,
+                                ((SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) + NVL(P.PESO_POTENCIAL, 0)) / B.QTPESOPREV) * 100
+                                - (SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) / B.QTPESOPREV) * 100,
                                 2
                             )
                         ELSE NULL
@@ -329,6 +330,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                 JOIN PCMETA B  ON A.CODEPTO = B.CODIGO AND A.CODUSUR = B.CODUSUR
                 JOIN PCDEPTO C ON A.CODEPTO = C.CODEPTO
                 LEFT JOIN PESO_POTENCIAL P ON A.CODEPTO = P.CODEPTO
+                JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
                 WHERE A.CODUSUR = :codvendedor
                   AND A.CODOPER LIKE 'S%'
                   AND A.DTMOV >= TRUNC(SYSDATE, 'MM')
@@ -343,7 +345,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             const result = await conn.execute(sql, { codvendedor });
 
             if (result.rows.length === 0) {
-                await this.webhookPoller.enviarMensagemBot(telefone, '📊 *Minhas Metas*\n\nNenhuma meta encontrada para o mês atual.\n\nDigite VOLTAR para retornar ao menu.', conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, '📊 *Meus Objetivos*\n\nNenhuma meta encontrada para o mês atual.\n\nDigite VOLTAR para retornar ao menu.', conn, instanceName);
                 return;
             }
 
@@ -371,7 +373,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                     TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY')               AS DTULTCOMP,
                     A.CODEPTO,
                     D.DESCRICAO,
-                    ROUND(SUM(A.QT * A.PESOLIQ), 2)                  AS PESO
+                    ROUND(SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ), 2)                  AS PESO
                 FROM PCCLIENT C
                 JOIN PCMOV A
                     ON A.CODCLI = C.CODCLI
@@ -379,6 +381,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                    AND A.CODOPER LIKE 'S%'
                    AND A.DTMOV < TRUNC(SYSDATE, 'MM')
                 JOIN PCDEPTO D ON D.CODEPTO = A.CODEPTO
+                JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
                 WHERE C.CODUSUR1 = :codvendedor
                   AND C.DTULTCOMP >= TRUNC(SYSDATE) - 90
                   AND C.DTULTCOMP <  TRUNC(SYSDATE, 'MM')
@@ -389,7 +392,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                 GROUP BY
                     C.CODCLI, NVL(C.FANTASIA, C.CLIENTE), C.CGCENT,
                     TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY'), A.CODEPTO, D.DESCRICAO
-                HAVING SUM(A.QT * A.PESOLIQ) > 0
+                HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
                 ORDER BY C.CODCLI, A.CODEPTO
             `;
             const resClientes = await conn.execute(sqlClientes, { codvendedor });
@@ -464,7 +467,8 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             try {
                 const resMesAnt = await conn.execute(`
                     SELECT
-                        NVL((SELECT ROUND(SUM(A.QT * A.PESOLIQ), 2) FROM PCMOV A
+                        NVL((SELECT ROUND(SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ), 2) FROM PCMOV A
+                             JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
                              WHERE A.CODUSUR = :codvendedor AND A.CODOPER LIKE 'S%'
                                AND A.DTMOV >= ADD_MONTHS(TRUNC(SYSDATE,'MM'),-1)
                                AND A.DTMOV <  TRUNC(SYSDATE,'MM')), 0) AS REAL_ANT,
@@ -490,8 +494,9 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                                COUNT(*) OVER ()                            AS TOTAL
                         FROM (
                             SELECT A.CODUSUR,
-                                   ROUND(SUM(A.QT*A.PESOLIQ)/NULLIF(MAX(B.QTPESOPREV),0)*100,2) AS PERC
+                                   ROUND(SUM((A.QT-NVL(A.QTDEVOL,0))*X.PESOLIQ)/NULLIF(MAX(B.QTPESOPREV),0)*100,2) AS PERC
                             FROM PCMOV A
+                            JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
                             JOIN PCMETA B ON A.CODEPTO=B.CODIGO AND A.CODUSUR=B.CODUSUR
                             WHERE A.CODOPER LIKE 'S%'
                               AND A.DTMOV >= TRUNC(SYSDATE,'MM')
@@ -530,15 +535,57 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                 // rankTotal,     // ← descomente para exibir ranking no PDF
             };
 
+            // ── Busca os objetivos diários (Faturamento) ─────────────────────
+            let rowsObjetivos = [];
+            try {
+                const sqlObjetivos = `
+                    WITH CALENDAR AS (
+                        SELECT TRUNC(SYSDATE, 'MM') + LEVEL - 1 AS DATA
+                        FROM DUAL
+                        CONNECT BY TRUNC(SYSDATE, 'MM') + LEVEL - 1 < ADD_MONTHS(TRUNC(SYSDATE, 'MM'), 1)
+                    )
+                    SELECT 
+                        TO_CHAR(C.DATA, 'DD/MM/YYYY') AS DATA,
+                        CASE 
+                            WHEN NVL(SUM(B.VLTOTAL), 0) > 0 AND NVL(A.VLVENDAPREV, 0) = 0 THEN 1
+                            ELSE NVL(A.VLVENDAPREV, 0)
+                        END AS OBJETIVO,
+                        NVL(SUM(B.VLTOTAL), 0) AS FEITO,
+                        ROUND(
+                            (NVL(SUM(B.VLTOTAL), 0) / 
+                            NULLIF(
+                                CASE 
+                                    WHEN NVL(SUM(B.VLTOTAL), 0) > 0 AND NVL(A.VLVENDAPREV, 0) = 0 THEN 1
+                                    ELSE NVL(A.VLVENDAPREV, 0)
+                                END, 0
+                            )) * 100, 2
+                        ) AS PERC
+                    FROM CALENDAR C
+                    LEFT JOIN PCMETARCA A ON C.DATA = A.DATA AND A.CODUSUR = :codvendedor
+                    LEFT JOIN PCNFSAID B ON C.DATA = B.DTSAIDA AND B.CODUSUR = :codvendedor
+                    GROUP BY C.DATA, A.VLVENDAPREV
+                    ORDER BY C.DATA
+                `;
+                const resObj = await conn.execute(sqlObjetivos, { codvendedor });
+                rowsObjetivos = resObj.rows.map(r => ({
+                    data: r[0],
+                    objetivo: parseFloat(r[1]) || 0,
+                    feito: parseFloat(r[2]) || 0,
+                    perc: r[3] != null ? parseFloat(r[3]) : 0
+                }));
+            } catch (e) {
+                console.warn('[VendedorBot] Erro ao buscar objetivos diários:', e.message);
+            }
+
             // ── Gera e envia PDF (Seção 1: cards + Seção 2: tabela de clientes) ─
             try {
                 const { gerarImagemMetas } = require('./metasImageService');
-                await this.webhookPoller.enviarMensagemBot(telefone, '📊 Gerando seu painel de metas...', conn, instanceName);
-                const base64Pdf = await gerarImagemMetas(mesRef, rowsData, rowsClientes, nomeVendedor, resumo);
+                await this.webhookPoller.enviarMensagemBot(telefone, '📊 Gerando seu painel de objetivos...', conn, instanceName);
+                const base64Pdf = await gerarImagemMetas(mesRef, rowsData, rowsClientes, nomeVendedor, resumo, rowsObjetivos);
                 await this.webhookPoller.enviarDocumentoBot(
                     telefone,
                     base64Pdf,
-                    `metas_${mesRef.replace('/', '_')}.pdf`,
+                    `objetivos_${mesRef.replace('/', '_')}.pdf`,
                     'application/pdf',
                     conn,
                     instanceName
@@ -552,7 +599,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                     return '█'.repeat(filled) + '░'.repeat(10 - filled);
                 };
 
-                let linhas = [`📊 *Metas de ${mesRef}*\n`];
+                let linhas = [`📊 *Objetivos de ${mesRef}*\n`];
                 for (const row of rowsData) {
                     const bateu    = row.percFeito >= 100;
                     const emoji    = bateu ? ' 🎉' : '';
@@ -604,8 +651,8 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             await this.webhookPoller.enviarMensagemBot(telefone, 'Digite VOLTAR para retornar ao menu.', conn, instanceName);
 
         } catch (err) {
-            console.error('[VendedorBot] Erro ao processar Minhas Metas:', err);
-            await this.webhookPoller.enviarMensagemBot(telefone, '❌ Erro ao consultar metas. Tente novamente.\n\nDigite VOLTAR para retornar ao menu.', conn, instanceName);
+            console.error('[VendedorBot] Erro ao processar Meus Objetivos:', err);
+            await this.webhookPoller.enviarMensagemBot(telefone, '❌ Erro ao consultar objetivos. Tente novamente.\n\nDigite VOLTAR para retornar ao menu.', conn, instanceName);
         }
     }
 

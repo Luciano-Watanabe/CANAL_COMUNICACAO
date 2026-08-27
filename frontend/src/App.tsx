@@ -18,6 +18,7 @@ import Geolocalizacao from './pages/Geolocalizacao';
 import Prospeccao from './pages/Prospeccao';
 import SAC from './pages/SAC';
 import LogIdentificacao from './pages/LogIdentificacao';
+import Objetivos from './pages/Objetivos';
 import ProtectedRoute from './components/ProtectedRoute';
 import { SocketProvider } from './contexts/SocketContext';
 
@@ -58,6 +59,7 @@ function App() {
             <Route path="/prospeccao" element={<Prospeccao />} />
             <Route path="/sac" element={<SAC />} />
             <Route path="/logs-identificacao" element={<LogIdentificacao />} />
+            <Route path="/objetivos" element={<Objetivos />} />
           </Route>
         </Route>
       </Routes>
