@@ -10,6 +10,25 @@ import { OrgChart } from '../components/OrgChart';
 import { RadarPositivacao } from '../components/RadarPositivacao';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
+const DEFAULT_PERMISSIONS: any = {
+  GERENTE: {
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação']
+  },
+  SUPERVISOR: {
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação']
+  },
+  VENDEDOR: {
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo'],
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Radar Positivação']
+  },
+  ATENDENTE: {
+    menus: ['Dashboard', 'Chat (Atendimento)', 'SAC', 'Catálogo'],
+    dashboard: ['Métricas SAC', 'Mural de Avisos']
+  }
+};
+
 export default function Dashboard() {
   const [clientes, setClientes] = useState<any[]>([]);
   const [userName, setUserName] = useState('Usuário');
@@ -41,6 +60,30 @@ export default function Dashboard() {
   const [userRole, setUserRole] = useState('');
   const { socket } = useSocket();
   const [activeKpiModal, setActiveKpiModal] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<any>(DEFAULT_PERMISSIONS);
+
+  useEffect(() => {
+    const fetchPermissoes = async () => {
+      try {
+        const res = await fetch('/api/config/global');
+        const data = await res.json();
+        if (data.success && data.configs['MENU_PERMISSIONS']) {
+          try {
+            const serverPerms = JSON.parse(data.configs['MENU_PERMISSIONS']);
+            setPermissions((prev: any) => ({ ...prev, ...serverPerms }));
+          } catch (e) {}
+        }
+      } catch (e) {}
+    };
+    fetchPermissoes();
+  }, []);
+
+  const hasDashboardPermission = (option: string) => {
+    if (userRole === 'BOT_GESTOR') return true;
+    const rolePerms = permissions[userRole] || permissions['VENDEDOR'];
+    if (!rolePerms.dashboard) return false;
+    return rolePerms.dashboard.includes(option);
+  };
 
   useEffect(() => {
     const fetchDados = async () => {
@@ -51,7 +94,7 @@ export default function Dashboard() {
         if (user) {
           setUserName(maskData(user.nome || 'Usuário'));
           setUserMatricula(user.matricula);
-          setUserRole(user.role?.toUpperCase() || '');
+          setUserRole(user.role?.trim().toUpperCase() || '');
         }
 
         try {
@@ -283,7 +326,7 @@ export default function Dashboard() {
         {userMatricula && <WhatsAppMonitor codusur={userMatricula} />}
       </div>
 
-      {sacStats && (
+      {hasDashboardPermission('Métricas SAC') && sacStats && (
         <>
           <h2 className="text-xl font-bold text-slate-800 dark:text-white mt-8 mb-4">Métricas SAC</h2>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
@@ -410,6 +453,7 @@ export default function Dashboard() {
           </div>
         </div>
         
+        {hasDashboardPermission('Mural de Avisos') && (
         <div className="glass-card p-6 animate-slide-up flex flex-col" style={{ animationDelay: '500ms' }}>
           <h3 className="font-semibold text-lg text-slate-800 dark:text-white mb-4 flex items-center gap-2">
             <Megaphone size={20} className="text-amber-500" />
@@ -460,9 +504,10 @@ export default function Dashboard() {
             </div>
           )}
         </div>
+        )}
       </div>
 
-      {userRole !== 'VENDEDOR' && (
+      {userRole !== 'VENDEDOR' && hasDashboardPermission('Ranking de Vendas') && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
           <div className="glass-card rounded-2xl p-6">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
@@ -496,6 +541,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {hasDashboardPermission('Ranking de Clientes') && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
         <div className="glass-card rounded-2xl p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -527,7 +573,9 @@ export default function Dashboard() {
           <ClientRanking ranking={rankingClientesMesData} />
         </div>
       </div>
+      )}
 
+      {hasDashboardPermission('Ranking de Produtos') && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
         <div className="glass-card rounded-2xl p-6">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
@@ -559,7 +607,9 @@ export default function Dashboard() {
           <ProductRanking ranking={rankingProdutosMesData} />
         </div>
       </div>
+      )}
 
+      {hasDashboardPermission('Atividade por Hora') && (
       <div className="glass-card rounded-2xl p-6 mt-8">
         <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Atividade de Hoje por Hora</h2>
         <div className="h-80 w-full">
@@ -587,9 +637,11 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+      )}
 
       {(userRole === 'SUPERVISOR' || userRole === 'GERENTE') && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+          {hasDashboardPermission('Adesão ao Mix') && (
           <div className="glass-card rounded-2xl p-6 lg:col-span-1">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Adesão ao Mix (Cross-Sell)</h2>
             <div className="space-y-4">
@@ -610,19 +662,24 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+          )}
 
+          {hasDashboardPermission('Visão Hierárquica') && (
           <div className="glass-card rounded-2xl p-6 lg:col-span-2">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Visão Hierárquica</h2>
             <OrgChart data={arvoreData} />
           </div>
+          )}
         </div>
       )}
 
+      {hasDashboardPermission('Radar Positivação') && (
       <div className="grid grid-cols-1 gap-6 mt-8">
         <div className="glass-card rounded-2xl p-6">
           <RadarPositivacao user={{ matricula: userMatricula, role: userRole }} />
         </div>
       </div>
+      )}
 
       {activeKpiModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

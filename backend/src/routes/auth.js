@@ -28,20 +28,30 @@ router.post('/login', async (req, res) => {
 
             const query = `
                 SELECT 
-                    U.CODUSUR,
-                    U.NOME,
-                    U.USURFTP,
-                    U.SENHAFTP,
-                    CASE 
-                        WHEN G.CODGERENTE IS NOT NULL THEN 'gerente'
-                        WHEN S.CODSUPERVISOR IS NOT NULL THEN 'supervisor'
-                        ELSE 'vendedor'
-                    END AS CARGO
-                FROM PCUSUARI U
-                LEFT JOIN PCSUPERV S ON U.CODUSUR = S.COD_CADRCA
-                LEFT JOIN PCGERENTE G ON U.CODUSUR = G.COD_CADRCA
-                WHERE U.USURFTP = :username
-                  AND (U.BLOQUEIO = 'N' OR U.BLOQUEIO IS NULL)
+    U.CODUSUR,
+    U.NOME,
+    U.USURFTP,
+    U.SENHAFTP,
+    CASE 
+        WHEN G.CODGERENTE IS NOT NULL THEN 'gerente'
+        WHEN S.CODSUPERVISOR IS NOT NULL THEN 'supervisor'
+        ELSE 'vendedor'
+    END AS CARGO
+FROM PCUSUARI U
+LEFT JOIN PCSUPERV S ON U.CODUSUR = S.COD_CADRCA
+LEFT JOIN PCGERENTE G ON U.CODUSUR = G.COD_CADRCA
+WHERE U.USURFTP = :username
+  AND (U.BLOQUEIO = 'N' OR U.BLOQUEIO IS NULL)
+UNION ALL
+SELECT A.MATRICULA,
+       A.NOME_GUERRA NOME,
+       A.NOME_GUERRA USURFTP,
+       decrypt(A.senhaBD, A.nome_guerra) AS SENHAFTP,
+       'ATENDENTE' AS CARGO
+FROM   PCEMPR A
+WHERE  A.SITUACAO = 'A'
+AND    A.SENHABD IS NOT NULL
+AND    A.NOME_GUERRA = :username
             `;
             
             const result = await connection.execute(query, { username }, { outFormat: oracledb.OUT_FORMAT_OBJECT });

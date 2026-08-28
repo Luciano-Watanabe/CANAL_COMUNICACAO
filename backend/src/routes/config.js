@@ -190,7 +190,7 @@ router.get('/acessos-sac', async (req, res) => {
     try {
         connection = await oraclePool.getConnection();
 
-        const sql = `SELECT MATRICULA, DEPARTAMENTO_ID FROM CANAL_SAC_ACESSOS`;
+        const sql = `SELECT MATRICULA, DEPARTAMENTO_ID, TABELA FROM CANAL_SAC_ACESSOS`;
         const result = await connection.execute(sql, [], { outFormat: 4002 });
         
         // Group by matricula
@@ -215,7 +215,7 @@ router.get('/acessos-sac', async (req, res) => {
 
 // POST /api/config/acessos-sac
 router.post('/acessos-sac', async (req, res) => {
-    const { matricula, departamentos } = req.body;
+    const { matricula, departamentos, tabela } = req.body;
     if (!matricula) return res.status(400).json({ error: 'Matrícula obrigatória.' });
 
     let connection;
@@ -227,9 +227,9 @@ router.post('/acessos-sac', async (req, res) => {
 
         // 2. Inserir novos acessos
         if (Array.isArray(departamentos) && departamentos.length > 0) {
-            const sql = `INSERT INTO CANAL_SAC_ACESSOS (MATRICULA, DEPARTAMENTO_ID) VALUES (:m, :d)`;
+            const sql = `INSERT INTO CANAL_SAC_ACESSOS (MATRICULA, DEPARTAMENTO_ID, TABELA) VALUES (:m, :d, :t)`;
             for (const deptId of departamentos) {
-                await connection.execute(sql, { m: matricula, d: deptId }, { autoCommit: false });
+                await connection.execute(sql, { m: matricula, d: deptId, t: tabela || 'PCUSUARI' }, { autoCommit: false });
             }
         }
 

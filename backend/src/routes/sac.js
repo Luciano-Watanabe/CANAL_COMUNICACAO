@@ -228,9 +228,7 @@ router.get('/tickets', async (req, res) => {
         if (matricula) {
             binds.matricula = matricula;
             sql += ` AND (
-                NOT EXISTS (SELECT 1 FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :matricula)
-                OR t.DEPARTAMENTO_ID IS NULL
-                OR t.DEPARTAMENTO_ID IN (SELECT DEPARTAMENTO_ID FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :matricula)
+                t.DEPARTAMENTO_ID IN (SELECT DEPARTAMENTO_ID FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :matricula)
                 OR d.DEPARTAMENTO_PAI_ID IN (SELECT DEPARTAMENTO_ID FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :matricula)
             )`;
         }
@@ -612,7 +610,7 @@ router.post('/tickets/:id/reply', async (req, res) => {
     let conn;
     try {
         const { id } = req.params;
-        const { message, attendantName, grokUsed } = req.body;
+        const { message, attendantName, grokUsed, isInternal } = req.body;
         
         if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
 
@@ -671,41 +669,45 @@ router.post('/tickets/:id/reply', async (req, res) => {
         }
 
         const titulo = nomeCompletoDepto ? `[Ticket #${id} - ${nomeCompletoDepto}]` : `[Ticket #${id}]`;
-        const finalMessage = `*${titulo}*\n*Atendente:* ${attendantName || 'SAC'}\n\n${message}`;
+        const finalMessage = isInternal 
+            ? `🔒 *Nota Interna* (${attendantName || 'SAC'}): ${message}`
+            : `*${titulo}*\n*Atendente:* ${attendantName || 'SAC'}\n\n${message}`;
 
-        // 3. Envia API
-        try {
-            await axios.post(
-                `${apiUrl}/message/sendText/${instanceName}`,
-                {
-                    number: telFormatado(telefone),
-                    text: finalMessage
-                },
-                {
-                    headers: { 'apikey': apiToken, 'Content-Type': 'application/json' }
+        // 3. Envia API (Apenas se NÃO for nota interna)
+        if (!isInternal) {
+            try {
+                await axios.post(
+                    `${apiUrl}/message/sendText/${instanceName}`,
+                    {
+                        number: telFormatado(telefone),
+                        text: finalMessage
+                    },
+                    {
+                        headers: { 'apikey': apiToken, 'Content-Type': 'application/json' }
+                    }
+                );
+            } catch (evoErr) {
+                if (evoErr.response && evoErr.response.status === 404) {
+                    try {
+                        console.log(`[SAC] Rota padrão retornou 404. Tentando formato EVO GO...`);
+                        await axios.post(
+                            `${apiUrl}/send/text`,
+                            {
+                                number: telFormatado(telefone),
+                                text: finalMessage
+                            },
+                            {
+                                headers: { 'apikey': apiToken, 'instance': instanceName, 'Content-Type': 'application/json' }
+                            }
+                        );
+                    } catch (goErr) {
+                        console.error('[SAC] Erro Evolution GO:', goErr.response?.data || goErr.message);
+                        return res.status(500).json({ error: 'Falha ao enviar via Whatsapp (Evo GO)' });
+                    }
+                } else {
+                    console.error('[SAC] Erro Evolution API:', evoErr.response?.data || evoErr.message);
+                    return res.status(500).json({ error: 'Falha ao enviar via Whatsapp' });
                 }
-            );
-        } catch (evoErr) {
-            if (evoErr.response && evoErr.response.status === 404) {
-                try {
-                    console.log(`[SAC] Rota padrão retornou 404. Tentando formato EVO GO...`);
-                    await axios.post(
-                        `${apiUrl}/send/text`,
-                        {
-                            number: telFormatado(telefone),
-                            text: finalMessage
-                        },
-                        {
-                            headers: { 'apikey': apiToken, 'instance': instanceName, 'Content-Type': 'application/json' }
-                        }
-                    );
-                } catch (goErr) {
-                    console.error('[SAC] Erro Evolution GO:', goErr.response?.data || goErr.message);
-                    return res.status(500).json({ error: 'Falha ao enviar via Whatsapp (Evo GO)' });
-                }
-            } else {
-                console.error('[SAC] Erro Evolution API:', evoErr.response?.data || evoErr.message);
-                return res.status(500).json({ error: 'Falha ao enviar via Whatsapp' });
             }
         }
         
@@ -713,11 +715,12 @@ router.post('/tickets/:id/reply', async (req, res) => {
         const msgId = 'SAC_' + Date.now();
         await conn.execute(`
             INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, STATUS, DATA_HORA, TICKET_ID, GROK_USADO)
-            VALUES (:id_msg, :cod, :tel, 'OUT', :txt, 'ENVIADA', SYSDATE, :tId, :grok)
+            VALUES (:id_msg, :cod, :tel, 'OUT', :txt, :status, SYSDATE, :tId, :grok)
         `, {
             id_msg: msgId,
             cod: sacCodusur,
             tel: telefone,
+            status: isInternal ? 'SISTEMA' : 'ENVIADA',
             txt: finalMessage,
             tId: id,
             grok: grokUsed ? 'S' : 'N'
@@ -1199,6 +1202,209 @@ router.post('/tickets/:id/request-evaluation', async (req, res) => {
         res.status(500).json({ error: 'Configuração do bot do SAC não encontrada.' });
     } catch (error) {
         console.error('[SAC] Erro ao solicitar avaliação:', error);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (err) { console.error(err); }
+        }
+    }
+});
+
+// Obter Lista de Atendentes
+router.get('/atendentes', async (req, res) => {
+    let conn;
+    try {
+        conn = await oraclePool.getConnection();
+        const sql = `
+            SELECT U.CODUSUR, U.NOME, U.TELEFONE1, U.TELEFONE2 
+            FROM PCUSUARI U
+            WHERE (U.BLOQUEIO = 'N' OR U.BLOQUEIO IS NULL)
+              AND EXISTS (SELECT 1 FROM CANAL_SAC_ACESSOS A WHERE A.MATRICULA = U.CODUSUR AND A.TABELA = 'PCUSUARI')
+            UNION
+            SELECT E.MATRICULA AS CODUSUR, E.NOME, E.FONE AS TELEFONE1, E.CELULAR AS TELEFONE2
+            FROM PCEMPR E
+            WHERE E.SITUACAO = 'A'
+              AND EXISTS (SELECT 1 FROM CANAL_SAC_ACESSOS A WHERE A.MATRICULA = E.MATRICULA AND A.TABELA = 'PCEMPR')
+            ORDER BY NOME
+        `;
+        const result = await conn.execute(sql);
+        const atendentes = result.rows.map(r => ({
+            codusur: r[0],
+            nome: r[1],
+            telefone: r[2] || r[3] || ''
+        })).filter(a => a.telefone); // Só retorna quem tem telefone
+        res.json(atendentes);
+    } catch (e) {
+        console.error('[SAC] Erro ao buscar atendentes:', e);
+        res.status(500).json({ error: 'Erro interno' });
+    } finally {
+        if (conn) try { await conn.close(); } catch (e) {}
+    }
+});
+
+// Avisar Atendente
+router.post('/tickets/:id/avisar', async (req, res) => {
+    let conn;
+    try {
+        const { id } = req.params;
+        const { atendenteCod, atendenteNome, atendenteTel, myName } = req.body;
+        conn = await oraclePool.getConnection();
+
+        // Obtém o ticket, descrição e departamento
+        const ticketRes = await conn.execute(`
+            SELECT t.TELEFONE, t.DESCRICAO, d.NOME 
+            FROM CANAL_SAC_TICKETS t
+            LEFT JOIN CANAL_SAC_DEPARTAMENTOS d ON t.DEPARTAMENTO_ID = d.ID
+            WHERE t.ID = :id
+        `, { id });
+        if (ticketRes.rows.length === 0) return res.status(404).json({ error: 'Ticket não encontrado' });
+        
+        const telefoneTicket = ticketRes.rows[0][0];
+        const descricao = ticketRes.rows[0][1];
+        const depto = ticketRes.rows[0][2] || 'Sem Departamento';
+
+        // Busca configuração da API do SAC
+        const sacConfigRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
+        const sacCodusur = sacConfigRes.rows.length > 0 ? sacConfigRes.rows[0][0] : '9999';
+        
+        const instRes = await conn.execute(`SELECT INSTANCE_NAME, API_TOKEN, COALESCE(API_URL, (SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'EVOLUTION_API_URL')) FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
+        if (instRes.rows.length === 0) {
+            return res.status(500).json({ error: 'Instância do SAC BOT não configurada' });
+        }
+        
+        const instanceName = instRes.rows[0][0];
+        const apiToken = instRes.rows[0][1];
+        const apiUrl = instRes.rows[0][2];
+        
+        const axios = require('axios');
+        const telFormatado = (tel) => {
+            let p = String(tel).replace(/[^0-9]/g, '');
+            if (!p.startsWith('55')) p = '55' + p;
+            return p;
+        };
+
+        const titulo = descricao ? (String(descricao).length > 30 ? String(descricao).substring(0, 30) + '...' : String(descricao)) : 'Sem título';
+        const notificationMsg = `Tem ticket para vc:\n - Ticket #${id} - ${titulo} - ${depto}`;
+
+        // 1. Envia WhatsApp para o atendente referenciado
+        try {
+            await axios.post(
+                `${apiUrl}/message/sendText/${instanceName}`,
+                {
+                    number: telFormatado(atendenteTel),
+                    text: notificationMsg
+                },
+                {
+                    headers: { 'apikey': apiToken, 'Content-Type': 'application/json' }
+                }
+            );
+        } catch (evoErr) {
+            if (evoErr.response && evoErr.response.status === 404) {
+                try {
+                    await axios.post(
+                        `${apiUrl}/send/text`,
+                        {
+                            number: telFormatado(atendenteTel),
+                            text: notificationMsg
+                        },
+                        {
+                            headers: { 'apikey': apiToken, 'instance': instanceName, 'Content-Type': 'application/json' }
+                        }
+                    );
+                } catch (goErr) {
+                    console.error('[SAC] Erro ao notificar atendente via WA (Evo GO):', goErr.response?.data || goErr.message);
+                }
+            } else {
+                console.error('[SAC] Erro ao notificar atendente via WA:', evoErr.response?.data || evoErr.message);
+            }
+        }
+
+        // 2. Salva nota interna no ticket indicando a menção
+        const internalMsg = `📌 *Atendente Mencionado*\n${atendenteNome} foi referenciado por ${myName || 'SAC'} para verificar este chamado.`;
+        const msgId = 'SAC_AVISO_' + Date.now();
+        await conn.execute(`
+            INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, STATUS, DATA_HORA, TICKET_ID)
+            VALUES (:id_msg, :cod, :tel, 'OUT', :txt, 'SISTEMA', SYSDATE, :tId)
+        `, {
+            id_msg: msgId,
+            cod: sacCodusur,
+            tel: telefoneTicket,
+            txt: internalMsg,
+            tId: id
+        }, { autoCommit: true });
+
+        res.json({ message: 'Atendente notificado com sucesso' });
+    } catch (error) {
+        console.error('[SAC] Erro ao avisar atendente:', error);
+        res.status(500).json({ error: 'Erro interno do servidor' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (err) { console.error(err); }
+        }
+    }
+});
+
+// Transferir Ticket de Departamento
+router.put('/tickets/:id/transferir', async (req, res) => {
+    let conn;
+    try {
+        const { id } = req.params;
+        const { departamentoId, attendantName } = req.body;
+        conn = await oraclePool.getConnection();
+        
+        // Verifica se o departamento existe
+        const deptoRes = await conn.execute(`
+            SELECT d.NOME, p.NOME 
+            FROM CANAL_SAC_DEPARTAMENTOS d
+            LEFT JOIN CANAL_SAC_DEPARTAMENTOS p ON d.DEPARTAMENTO_PAI_ID = p.ID
+            WHERE d.ID = :deptoId
+        `, { deptoId: departamentoId });
+
+        if (deptoRes.rows.length === 0) {
+            return res.status(404).json({ error: 'Departamento não encontrado' });
+        }
+
+        const deptoNome = deptoRes.rows[0][0];
+        const paiNome = deptoRes.rows[0][1];
+        let nomeCompletoDepto = paiNome ? `${paiNome} / ${deptoNome}` : deptoNome;
+
+        // Atualiza o departamento do ticket
+        const sql = `UPDATE CANAL_SAC_TICKETS SET DEPARTAMENTO_ID = :departamentoId, ATUALIZADO_EM = SYSDATE WHERE ID = :id RETURNING TELEFONE INTO :tel`;
+        const result = await conn.execute(sql, { 
+            departamentoId, 
+            id,
+            tel: { type: require('oracledb').STRING, dir: require('oracledb').BIND_OUT }
+        }, { autoCommit: true });
+
+        if (result.rowsAffected === 0) {
+            return res.status(404).json({ error: `Ticket ID ${id} não encontrado.` });
+        }
+
+        const telefone = result.outBinds.tel && result.outBinds.tel[0] ? result.outBinds.tel[0] : null;
+
+        // Registra uma mensagem interna indicando a transferência
+        if (telefone) {
+            const sacConfigRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
+            const sacCodusur = sacConfigRes.rows.length > 0 ? sacConfigRes.rows[0][0] : '9999';
+            
+            const msgId = 'SAC_TRANSF_' + Date.now();
+            const textoChat = `🔄 *Transferência de Departamento*\nO atendente *${attendantName || 'SAC'}* transferiu este chamado para o departamento *${nomeCompletoDepto}*.`;
+            
+            await conn.execute(`
+                INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, STATUS, DATA_HORA, TICKET_ID)
+                VALUES (:id_msg, :cod, :tel, 'OUT', :txt, 'SISTEMA', SYSDATE, :tId)
+            `, {
+                id_msg: msgId,
+                cod: sacCodusur,
+                tel: telefone,
+                txt: textoChat,
+                tId: id
+            }, { autoCommit: true });
+        }
+
+        res.json({ message: 'Ticket transferido com sucesso', novoDepartamento: nomeCompletoDepto });
+    } catch (error) {
+        console.error('[SAC] Erro ao transferir ticket:', error);
         res.status(500).json({ error: 'Erro interno do servidor' });
     } finally {
         if (conn) {

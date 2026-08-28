@@ -3,6 +3,7 @@ import { Save, User, ShieldAlert, Clock, Plus, Settings2, Wand2 } from 'lucide-r
 import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 import { usePrivacy } from '../contexts/PrivacyContext';
 import { ControleAcessoSAC } from '../components/ControleAcessoSAC';
+import { ControleAcessosMenu } from '../components/ControleAcessosMenu';
 import clsx from 'clsx';
 
 export default function Configuracoes() {
@@ -400,6 +401,10 @@ export default function Configuracoes() {
             />
           </button>
         </div>
+      )}
+
+      {isBotGestor && (
+        <ControleAcessosMenu />
       )}
 
       <div className="glass-card p-6 flex flex-col md:flex-row gap-4 items-center bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/50">

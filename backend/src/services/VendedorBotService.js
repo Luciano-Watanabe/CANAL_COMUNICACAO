@@ -10,6 +10,51 @@ class VendedorBotService {
         this.webhookPoller = webhookPoller;
     }
 
+    async getHierarchySellers(codusur, conn) {
+        try {
+            const queryCargo = `
+                SELECT 
+                    CASE 
+                        WHEN G.CODGERENTE IS NOT NULL THEN 'GERENTE'
+                        WHEN S.CODSUPERVISOR IS NOT NULL THEN 'SUPERVISOR'
+                        ELSE 'VENDEDOR'
+                    END AS CARGO
+                FROM PCUSUARI U
+                LEFT JOIN PCSUPERV S ON U.CODUSUR = S.COD_CADRCA
+                LEFT JOIN PCGERENTE G ON U.CODUSUR = G.COD_CADRCA
+                WHERE U.CODUSUR = :cod
+            `;
+            const resCargo = await conn.execute(queryCargo, { cod: codusur });
+            let cargo = 'VENDEDOR';
+            if (resCargo.rows.length > 0) cargo = resCargo.rows[0][0];
+
+            if (cargo === 'GERENTE') {
+                const qGerente = `
+                    SELECT U.CODUSUR 
+                    FROM PCUSUARI U 
+                    JOIN PCSUPERV S ON U.CODSUPERVISOR = S.CODSUPERVISOR 
+                    WHERE S.CODGERENTE = (SELECT CODGERENTE FROM PCGERENTE WHERE COD_CADRCA = :cod)
+                `;
+                const res = await conn.execute(qGerente, { cod: codusur });
+                return res.rows.map(r => r[0]);
+            } else if (cargo === 'SUPERVISOR') {
+                const qSuperv = `
+                    SELECT U.CODUSUR 
+                    FROM PCUSUARI U 
+                    JOIN PCSUPERV S ON U.CODSUPERVISOR = S.CODSUPERVISOR 
+                    WHERE S.COD_CADRCA = :cod
+                `;
+                const res = await conn.execute(qSuperv, { cod: codusur });
+                return res.rows.map(r => r[0]);
+            } else {
+                return [parseInt(codusur, 10)];
+            }
+        } catch (e) {
+            console.error(`${TAG} Erro ao buscar hierarquia de vendedores para ${codusur}`, e);
+            return [parseInt(codusur, 10)]; // Fallback
+        }
+    }
+
     async getState(telefone, conn) {
         let timeoutHoras = 24;
         const result = await conn.execute(`
@@ -170,8 +215,10 @@ class VendedorBotService {
         }
 
         const codusur1 = resCli.rows[0][3];
-        if (String(codusur1) !== String(codvendedor)) {
-            await this.webhookPoller.enviarMensagemBot(telefone, "⚠️ *Atenção:* Este cliente não pertence à sua carteira.\n\nPor favor, informe outro CODCLI ou CNPJ, ou digite VOLTAR para cancelar.", conn, instanceName);
+        const hierarchySellers = await this.getHierarchySellers(codvendedor, conn);
+        
+        if (!hierarchySellers.includes(parseInt(codusur1, 10))) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "⚠️ *Atenção:* Este cliente não pertence à sua carteira (ou à de sua equipe).\n\nPor favor, informe outro CODCLI ou CNPJ, ou digite VOLTAR para cancelar.", conn, instanceName);
             return;
         }
 
@@ -280,6 +327,24 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             return await this.enviarMenuPrincipal(telefone, instanceName, conn);
         }
 
+        const hierarchySellers = await this.getHierarchySellers(codvendedor, conn);
+
+        if (hierarchySellers.length > 1) {
+            await this.webhookPoller.enviarMensagemBot(telefone, `📊 Identificamos que você possui uma equipe de ${hierarchySellers.length} vendedor(es).\nGerando painel de objetivos individualmente...`, conn, instanceName);
+        }
+
+        for (const codAlvo of hierarchySellers) {
+            await this.gerarEEnviarMetas(telefone, instanceName, conn, codAlvo);
+            
+            if (hierarchySellers.length > 1) {
+                await new Promise(r => setTimeout(r, 2500)); // Pequena pausa para evitar bloqueio no envio
+            }
+        }
+
+        await this.webhookPoller.enviarMensagemBot(telefone, 'Digite VOLTAR para retornar ao menu.', conn, instanceName);
+    }
+
+    async gerarEEnviarMetas(telefone, instanceName, conn, codvendedorAlvo) {
         try {
             const sql = `
                 WITH CLIENTES_PERDIDOS AS (
@@ -342,15 +407,13 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                     B.QTPESOPREV, C.DESCRICAO, P.PESO_POTENCIAL
                 ORDER BY A.CODEPTO
             `;
-            const result = await conn.execute(sql, { codvendedor });
+            const result = await conn.execute(sql, { codvendedor: codvendedorAlvo });
 
             if (result.rows.length === 0) {
-                await this.webhookPoller.enviarMensagemBot(telefone, '📊 *Meus Objetivos*\n\nNenhuma meta encontrada para o mês atual.\n\nDigite VOLTAR para retornar ao menu.', conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, `📊 Nenhuma meta encontrada para o vendedor ${codvendedorAlvo} neste mês.`, conn, instanceName);
                 return;
             }
 
-            // Colunas: [0]MES_REF [1]CODUSUR [2]CODEPTO [3]DESCRICAO [4]PERC_FEITO
-            //          [5]META [6]REALIZADO [7]FALTA [8]PESO_POTENCIAL [9]PERC_POTENCIAL [10]GANHO
             const mesRef = result.rows[0][0];
             const rowsData = result.rows.map(row => ({
                 codepto:        parseInt(row[2])    || 0,
@@ -364,7 +427,6 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                 ganho:          row[10] != null ? parseFloat(row[10]) : null,
             }));
 
-            // ── Busca clientes com peso potencial (antes de gerar o PDF) ─────
             const sqlClientes = `
                 SELECT
                     C.CODCLI,
@@ -395,9 +457,8 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                 HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
                 ORDER BY C.CODCLI, A.CODEPTO
             `;
-            const resClientes = await conn.execute(sqlClientes, { codvendedor });
+            const resClientes = await conn.execute(sqlClientes, { codvendedor: codvendedorAlvo });
 
-            // Mapeia linhas de clientes para o formato esperado pelo metasImageService
             const rowsClientes = resClientes.rows.map(r => ({
                 codcli:    r[0],
                 cliente:   r[1],
@@ -408,35 +469,30 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                 peso:      r[6],
             }));
 
-            // ── Busca nome do vendedor para o cabeçalho do PDF ───────────────
-            let nomeVendedor = '';
+            let nomeVendedor = codvendedorAlvo;
             try {
                 const resNome = await conn.execute(
                     `SELECT NOME FROM PCUSUARI WHERE CODUSUR = :codvendedor`,
-                    { codvendedor }
+                    { codvendedor: codvendedorAlvo }
                 );
                 if (resNome.rows.length > 0) nomeVendedor = String(resNome.rows[0][0] || '');
             } catch (_) {}
 
-            // ── Dados de contexto: dias do mês + carteira de clientes ─────────
             let diasRestantes = 0, diasCorridos = 1, diasTotais = 1;
             let ativosNoMes   = 0, totalCarteira = 0;
             try {
                 const resDias = await conn.execute(`
                     SELECT
-                        -- Dias úteis restantes: de amanhã até fim do mês (excl. sáb/dom)
                         (SELECT COUNT(*) FROM (
                             SELECT TRUNC(SYSDATE) + LEVEL AS DIA FROM DUAL
                             CONNECT BY TRUNC(SYSDATE) + LEVEL <= LAST_DAY(TRUNC(SYSDATE))
                         ) WHERE TRIM(TO_CHAR(DIA,'DAY','NLS_DATE_LANGUAGE=AMERICAN'))
                                 NOT IN ('SATURDAY','SUNDAY'))                    AS DIAS_RESTANTES,
-                        -- Dias úteis corridos: do 1º do mês até hoje (inclusive)
                         (SELECT COUNT(*) FROM (
                             SELECT TRUNC(SYSDATE,'MM') - 1 + LEVEL AS DIA FROM DUAL
                             CONNECT BY TRUNC(SYSDATE,'MM') - 1 + LEVEL <= TRUNC(SYSDATE)
                         ) WHERE TRIM(TO_CHAR(DIA,'DAY','NLS_DATE_LANGUAGE=AMERICAN'))
                                 NOT IN ('SATURDAY','SUNDAY'))                    AS DIAS_CORRIDOS,
-                        -- Total de dias úteis no mês
                         (SELECT COUNT(*) FROM (
                             SELECT TRUNC(SYSDATE,'MM') - 1 + LEVEL AS DIA FROM DUAL
                             CONNECT BY TRUNC(SYSDATE,'MM') - 1 + LEVEL <= LAST_DAY(TRUNC(SYSDATE))
@@ -452,7 +508,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                          FROM PCCLIENT
                          WHERE CODUSUR1 = :codvendedor)                          AS TOTAL_CARTEIRA
                     FROM DUAL
-                `, { codvendedor });
+                `, { codvendedor: codvendedorAlvo });
                 if (resDias.rows.length > 0) {
                     diasRestantes = parseInt(resDias.rows[0][0]) || 0;
                     diasCorridos  = parseInt(resDias.rows[0][1]) || 1;
@@ -462,7 +518,6 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                 }
             } catch (e) { console.warn('[VendedorBot] Erro contexto:', e.message); }
 
-            // ── Mês anterior: realizado e meta (para comparativo) ─────────────
             let realizadoMesAnt = 0, metaMesAnt = 0;
             try {
                 const resMesAnt = await conn.execute(`
@@ -477,43 +532,13 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                                AND B.DATA >= ADD_MONTHS(TRUNC(SYSDATE,'MM'),-1)
                                AND B.DATA <  TRUNC(SYSDATE,'MM')), 0)  AS META_ANT
                     FROM DUAL
-                `, { codvendedor });
+                `, { codvendedor: codvendedorAlvo });
                 if (resMesAnt.rows.length > 0) {
                     realizadoMesAnt = parseFloat(resMesAnt.rows[0][0]) || 0;
                     metaMesAnt      = parseFloat(resMesAnt.rows[0][1]) || 0;
                 }
             } catch (e) { console.warn('[VendedorBot] Erro mês anterior:', e.message); }
 
-            // ── Ranking (calculado, exibição OCULTA — remova os comentários para exibir) ──
-            let rankPos = null, rankTotal = null;
-            try {
-                const resRank = await conn.execute(`
-                    SELECT RANK, TOTAL FROM (
-                        SELECT V.CODUSUR,
-                               RANK() OVER (ORDER BY NVL(V.PERC, 0) DESC) AS RANK,
-                               COUNT(*) OVER ()                            AS TOTAL
-                        FROM (
-                            SELECT A.CODUSUR,
-                                   ROUND(SUM((A.QT-NVL(A.QTDEVOL,0))*X.PESOLIQ)/NULLIF(MAX(B.QTPESOPREV),0)*100,2) AS PERC
-                            FROM PCMOV A
-                            JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
-                            JOIN PCMETA B ON A.CODEPTO=B.CODIGO AND A.CODUSUR=B.CODUSUR
-                            WHERE A.CODOPER LIKE 'S%'
-                              AND A.DTMOV >= TRUNC(SYSDATE,'MM')
-                              AND A.DTMOV <  ADD_MONTHS(TRUNC(SYSDATE,'MM'),1)
-                              AND B.DATA  >= TRUNC(SYSDATE,'MM')
-                              AND B.DATA  <  ADD_MONTHS(TRUNC(SYSDATE,'MM'),1)
-                            GROUP BY A.CODUSUR
-                        ) V
-                    ) WHERE CODUSUR = :codvendedor
-                `, { codvendedor });
-                if (resRank.rows.length > 0) {
-                    rankPos   = parseInt(resRank.rows[0][0]) || null;
-                    rankTotal = parseInt(resRank.rows[0][1]) || null;
-                }
-            } catch (e) { console.warn('[VendedorBot] Erro ranking:', e.message); }
-
-            // ── KPIs derivados ────────────────────────────────────────────────
             const totalRealizado = rowsData.reduce((s, r) => s + r.realizado, 0);
             const totalMeta      = rowsData.reduce((s, r) => s + r.meta,      0);
             const totalFalta     = Math.max(0, totalMeta - totalRealizado);
@@ -523,19 +548,10 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             const percMesAnt     = metaMesAnt > 0 ? (realizadoMesAnt / metaMesAnt) * 100 : null;
 
             const resumo = {
-                diasRestantes,
-                diasCorridos,
-                diasTotais,
-                kgDiaNecessario,
-                ativosNoMes,
-                totalCarteira,
-                projecaoPerc,
-                percMesAnt,       // null = mês anterior sem meta (não exibido)
-                // rankPos,       // ← descomente para exibir ranking no PDF
-                // rankTotal,     // ← descomente para exibir ranking no PDF
+                diasRestantes, diasCorridos, diasTotais, kgDiaNecessario, ativosNoMes,
+                totalCarteira, projecaoPerc, percMesAnt
             };
 
-            // ── Busca os objetivos diários (Faturamento) ─────────────────────
             let rowsObjetivos = [];
             try {
                 const sqlObjetivos = `
@@ -566,93 +582,51 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                     GROUP BY C.DATA, A.VLVENDAPREV
                     ORDER BY C.DATA
                 `;
-                const resObj = await conn.execute(sqlObjetivos, { codvendedor });
+                const resObj = await conn.execute(sqlObjetivos, { codvendedor: codvendedorAlvo });
                 rowsObjetivos = resObj.rows.map(r => ({
-                    data: r[0],
-                    objetivo: parseFloat(r[1]) || 0,
-                    feito: parseFloat(r[2]) || 0,
-                    perc: r[3] != null ? parseFloat(r[3]) : 0
+                    data: r[0], objetivo: parseFloat(r[1]) || 0,
+                    feito: parseFloat(r[2]) || 0, perc: r[3] != null ? parseFloat(r[3]) : 0
                 }));
             } catch (e) {
                 console.warn('[VendedorBot] Erro ao buscar objetivos diários:', e.message);
             }
 
-            // ── Gera e envia PDF (Seção 1: cards + Seção 2: tabela de clientes) ─
             try {
                 const { gerarImagemMetas } = require('./metasImageService');
-                await this.webhookPoller.enviarMensagemBot(telefone, '📊 Gerando seu painel de objetivos...', conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, `📊 Gerando painel de objetivos para: *${nomeVendedor}*...`, conn, instanceName);
                 const base64Pdf = await gerarImagemMetas(mesRef, rowsData, rowsClientes, nomeVendedor, resumo, rowsObjetivos);
                 await this.webhookPoller.enviarDocumentoBot(
                     telefone,
                     base64Pdf,
-                    `objetivos_${mesRef.replace('/', '_')}.pdf`,
+                    `objetivos_${nomeVendedor.replace(/[^a-zA-Z0-9]/g, '')}_${mesRef.replace('/', '_')}.pdf`,
                     'application/pdf',
                     conn,
                     instanceName
                 );
             } catch (imgErr) {
-                // Fallback: envia em texto se a geração de PDF falhar
                 console.warn('[VendedorBot] Fallback texto — falha na geração de PDF:', imgErr.message);
-
                 const barraProgresso = (perc) => {
                     const filled = Math.round(Math.min(perc, 100) / 10);
                     return '█'.repeat(filled) + '░'.repeat(10 - filled);
                 };
-
-                let linhas = [`📊 *Objetivos de ${mesRef}*\n`];
+                let linhas = [`📊 *Objetivos de ${nomeVendedor} (${mesRef})*\n`];
                 for (const row of rowsData) {
                     const bateu    = row.percFeito >= 100;
                     const emoji    = bateu ? ' 🎉' : '';
                     const faltaTxt = row.falta < 0
                         ? `*+${Math.abs(row.falta).toFixed(1)} kg acima da meta*`
                         : `Faltam ${row.falta.toFixed(1)} kg`;
-                    const potTxt = row.pesoPotencial > 0
-                        ? `\n📦 Potencial: ${row.pesoPotencial.toFixed(1)} kg → ${row.percPotencial.toFixed(1)}% (+${(row.ganho || 0).toFixed(1)} pp)`
-                        : '';
-                    linhas.push(
-                        `*${row.descricao}*${emoji}\n` +
+                    linhas.push(`*${row.descricao}*${emoji}\n` +
                         `${barraProgresso(row.percFeito)} ${row.percFeito.toFixed(1)}%\n` +
                         `Meta: ${row.meta.toFixed(1)} kg | Realizado: ${row.realizado.toFixed(1)} kg\n` +
-                        `${faltaTxt}${potTxt}\n`
-                    );
+                        `${faltaTxt}\n`);
                 }
                 await this.webhookPoller.enviarMensagemBot(telefone, linhas.join('\n'), conn, instanceName);
-
-                // Fallback texto clientes (só quando o PDF falhou)
-                if (rowsClientes.length > 0) {
-                    let msgPot = `📦 *Clientes com Peso Potencial*\n_Compraram nos últimos 90 dias, mas ainda não compraram este mês_\n\n`;
-                    let codcliAtual = null;
-                    for (const r of rowsClientes) {
-                        if (r.codcli !== codcliAtual) {
-                            if (codcliAtual !== null) msgPot += '\n';
-                            msgPot += `*${r.codcli} - ${String(r.cliente).trim()}*\n`;
-                            msgPot += `CNPJ/CPF: ${r.cgcent || '—'}  |  Últ. compra: ${r.dtultcomp || '—'}\n`;
-                            codcliAtual = r.codcli;
-                        }
-                        msgPot += `  • ${String(r.descricao).trim()} (Depto ${r.codepto}): ${parseFloat(r.peso).toFixed(1)} kg\n`;
-                    }
-                    const MAX = 3800;
-                    if (msgPot.length <= MAX) {
-                        await this.webhookPoller.enviarMensagemBot(telefone, msgPot, conn, instanceName);
-                    } else {
-                        let parte = '';
-                        for (const linha of msgPot.split('\n')) {
-                            if ((parte + linha + '\n').length > MAX) {
-                                await this.webhookPoller.enviarMensagemBot(telefone, parte.trimEnd(), conn, instanceName);
-                                parte = '';
-                            }
-                            parte += linha + '\n';
-                        }
-                        if (parte.trim()) await this.webhookPoller.enviarMensagemBot(telefone, parte.trimEnd(), conn, instanceName);
-                    }
-                }
             }
 
-            await this.webhookPoller.enviarMensagemBot(telefone, 'Digite VOLTAR para retornar ao menu.', conn, instanceName);
-
         } catch (err) {
-            console.error('[VendedorBot] Erro ao processar Meus Objetivos:', err);
-            await this.webhookPoller.enviarMensagemBot(telefone, '❌ Erro ao consultar objetivos. Tente novamente.\n\nDigite VOLTAR para retornar ao menu.', conn, instanceName);
+            console.error('[VendedorBot] Erro ao processar gerarEEnviarMetas:', err);
+            await this.webhookPoller.enviarMensagemBot(telefone, `❌ Erro ao consultar objetivos de ${codvendedorAlvo}.`, conn, instanceName);
         }
     }
 
@@ -672,6 +646,9 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             return;
         }
 
+        const hierarchySellers = await this.getHierarchySellers(codvendedor, conn);
+        const sellersInClause = hierarchySellers.join(',');
+
         const sql = `
             WITH LATEST_LOG AS (
                 SELECT TELEFONE, CODCLI_LOCALIZADO,
@@ -682,14 +659,14 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             FROM CANAL_SAC_TICKETS T
             LEFT JOIN LATEST_LOG L ON T.TELEFONE = L.TELEFONE AND L.RN = 1
             JOIN PCCLIENT C ON C.CODCLI = NVL(T.CODCLI, L.CODCLI_LOCALIZADO)
-            WHERE C.CODUSUR1 = :codvendedor
+            WHERE C.CODUSUR1 IN (${sellersInClause})
               AND T.STATUS = :status
             ORDER BY T.ID DESC
             FETCH FIRST 10 ROWS ONLY
         `;
 
         try {
-            const result = await conn.execute(sql, { codvendedor, status: statusFilter }, {
+            const result = await conn.execute(sql, { status: statusFilter }, {
                 fetchInfo: { "DESCRICAO": { type: oracledb.STRING } }
             });
             if (result.rows.length === 0) {
@@ -734,8 +711,10 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
         }
 
         const codusur1 = result.rows[0][3];
-        if (String(codusur1) !== String(codvendedor)) {
-            await this.webhookPoller.enviarMensagemBot(telefone, "⚠️ *Atenção:* Este cliente não pertence à sua carteira, portanto, você não pode abrir um ticket para ele.\n\nPor favor, informe outro CODCLI ou CNPJ, ou digite VOLTAR para cancelar.", conn, instanceName);
+        const hierarchySellers = await this.getHierarchySellers(codvendedor, conn);
+        
+        if (!hierarchySellers.includes(parseInt(codusur1, 10))) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "⚠️ *Atenção:* Este cliente não pertence à sua carteira (ou à de sua equipe), portanto, você não pode abrir um ticket para ele.\n\nPor favor, informe outro CODCLI ou CNPJ, ou digite VOLTAR para cancelar.", conn, instanceName);
             return;
         }
 

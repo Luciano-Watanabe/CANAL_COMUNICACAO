@@ -69,7 +69,8 @@ export function ControleAcessoSAC() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           matricula: selectedMatricula,
-          departamentos: acessos[selectedMatricula] || []
+          departamentos: acessos[selectedMatricula] || [],
+          tabela: tipoUsuario === 'atendente' ? 'PCEMPR' : 'PCUSUARI'
         })
       });
       if (res.ok) {
@@ -193,9 +194,9 @@ export function ControleAcessoSAC() {
               }
             </select>
             <p className="mt-3 text-xs text-slate-500">
-              Selecione um funcionário para visualizar e restringir quais chamados do SAC ele pode acessar. 
+              Selecione um funcionário para configurar quais chamados do SAC ele pode acessar. 
               <br/><br/>
-              Se nenhuma restrição for marcada, ele terá acesso total.
+              Se nenhum departamento for marcado, ele não verá nenhum ticket.
             </p>
           </div>
 

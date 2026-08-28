@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Headset, CheckCircle2, Clock, User, MessageSquare, Send, X, Star, Paperclip, File as FileIcon, Plus, Search, ShieldAlert, Wand2, Calendar } from 'lucide-react';
+import { Headset, CheckCircle2, Clock, User, MessageSquare, Send, X, Star, Paperclip, File as FileIcon, Plus, Search, ShieldAlert, Wand2, Calendar, Lock } from 'lucide-react';
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import CalendarioSACModal from '../components/CalendarioSACModal';
@@ -53,14 +53,20 @@ export default function SAC() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
+  const [transferDeptoId, setTransferDeptoId] = useState('');
+  const [atendentes, setAtendentes] = useState<any[]>([]);
   const [departamentos, setDepartamentos] = useState<any[]>([]);
   const [newTicket, setNewTicket] = useState({ codcli: '', nome: '', telefone: '', departamentoId: '', subdepartamentoId: '', descricao: '' });
   const [ticketFile, setTicketFile] = useState<File | null>(null);
   const [loadingClient, setLoadingClient] = useState(false);
   const [submittingTicket, setSubmittingTicket] = useState(false);
+  const [transferringTicket, setTransferringTicket] = useState(false);
+  
+  // Notas internas
+  const [isInternalNote, setIsInternalNote] = useState(false);
 
   useEffect(() => {
     fetchTickets();
@@ -150,7 +156,6 @@ export default function SAC() {
     
     setSending(true);
     try {
-      // Pega o nome do atendente do localStorage
       let attendantName = 'SAC';
       const userStr = localStorage.getItem('user');
       if (userStr) {
@@ -160,16 +165,18 @@ export default function SAC() {
 
       const currentGrok = isGrokUsed;
       setIsGrokUsed(false);
+      const wasInternal = isInternalNote;
+      setIsInternalNote(false);
 
       const res = await fetch(`/api/sac/tickets/${selectedTicket.id}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: textToSend, attendantName, grokUsed: currentGrok })
+        body: JSON.stringify({ message: textToSend, attendantName, grokUsed: currentGrok, isInternal: wasInternal })
       });
       
       if (res.ok) {
         fetchChat(selectedTicket.id, true);
-        fetchTickets(); // Para atualizar o status caso mude para EM ATENDIMENTO
+        fetchTickets(); 
         if (selectedTicket.status === 'ABERTO') {
            setSelectedTicket({ ...selectedTicket, status: 'EM ATENDIMENTO' });
         }
@@ -235,6 +242,15 @@ export default function SAC() {
     }
   };
 
+  const fetchAtendentes = async () => {
+    try {
+      const res = await fetch('/api/sac/atendentes');
+      if (res.ok) setAtendentes(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleSolicitarAvaliacao = async (ticketId: number) => {
     if (!confirm('Deseja realmente solicitar a avaliação novamente ao cliente?')) return;
     try {
@@ -254,6 +270,11 @@ export default function SAC() {
   const handleOpenModal = () => {
     setIsModalOpen(true);
     if (departamentos.length === 0) fetchDepartamentos();
+  };
+
+  const handleOpenTransferModal = () => {
+    setIsTransferModalOpen(true);
+    if (atendentes.length === 0) fetchAtendentes();
   };
 
   const buscarCliente = async () => {
@@ -321,6 +342,51 @@ export default function SAC() {
       console.error('Erro:', error);
     } finally {
       setSubmittingTicket(false);
+    }
+  };
+
+  const handleTransferTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTicket || !transferDeptoId) return;
+
+    setTransferringTicket(true);
+    try {
+      let myName = 'SAC';
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        if (user.nome) myName = user.nome;
+      }
+
+      const selectedAtendente = atendentes.find(a => String(a.codusur) === String(transferDeptoId));
+      if (!selectedAtendente) return;
+
+      const res = await fetch(`/api/sac/tickets/${selectedTicket.id}/avisar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          atendenteCod: selectedAtendente.codusur, 
+          atendenteNome: selectedAtendente.nome, 
+          atendenteTel: selectedAtendente.telefone,
+          myName 
+        })
+      });
+
+      if (res.ok) {
+        alert('Atendente mencionado com sucesso!');
+        setIsTransferModalOpen(false);
+        setTransferDeptoId('');
+        
+        fetchChat(selectedTicket.id, true);
+        fetchTickets();
+      } else {
+        const err = await res.json();
+        alert('Erro ao mencionar: ' + err.error);
+      }
+    } catch (error) {
+      console.error('Erro ao mencionar:', error);
+    } finally {
+      setTransferringTicket(false);
     }
   };
 
@@ -456,13 +522,21 @@ export default function SAC() {
                  
                  <div className="flex gap-2">
                    {(selectedTicket.status === 'ABERTO' || selectedTicket.status === 'EM ATENDIMENTO') && (
-                     <button 
-                       onClick={() => fecharTicket(selectedTicket.id)}
-                       className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 shadow-sm shadow-green-500/20"
-                     >
-                       <CheckCircle2 size={16} />
-                       Resolver Chamado
-                     </button>
+                     <>
+                       <button 
+                         onClick={handleOpenTransferModal}
+                         className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm font-medium transition-colors shadow-sm shadow-indigo-500/20"
+                       >
+                         Mencionar
+                       </button>
+                       <button 
+                         onClick={() => fecharTicket(selectedTicket.id)}
+                         className="px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 shadow-sm shadow-green-500/20"
+                       >
+                         <CheckCircle2 size={16} />
+                         Resolver
+                       </button>
+                     </>
                    )}
                    <button onClick={() => setSelectedTicket(null)} className="p-1.5 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg">
                      <X size={20} />
@@ -482,9 +556,7 @@ export default function SAC() {
               )}
 
               {/* Mensagem Inicial (Relato) */}
-              <div className="flex-1 overflow-y-auto p-6 bg-[url('https://web.whatsapp.com/img/bg-chat-tile-dark_a4be512e7195b6b733d9110b408f075d.png')] bg-repeat bg-[length:400px_auto] dark:opacity-10 opacity-5 absolute inset-0 z-0 pointer-events-none"></div>
-              
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 relative z-10">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 relative z-10 bg-slate-50 dark:bg-slate-900">
                 <div className="flex justify-center">
                   <span className="text-[10px] bg-slate-200/80 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300 px-3 py-1 rounded-lg backdrop-blur-sm">
                     Início do Chamado - {new Date(selectedTicket.criadoEm).toLocaleString('pt-BR')}
@@ -503,15 +575,24 @@ export default function SAC() {
                    <div className="text-center text-sm text-slate-500 my-4">Carregando histórico...</div>
                 ) : (
                   chatMessages.map(msg => (
-                    <div key={msg.id} className={clsx("flex", msg.sentido === 'IN' ? "justify-start" : "justify-end")}>
+                    <div key={msg.id} className={clsx("flex flex-col", 
+                      msg.status === 'SISTEMA' ? "items-center" : msg.sentido === 'IN' ? "items-start" : "items-end"
+                    )}>
                       <div className={clsx(
-                        "max-w-[80%] rounded-2xl px-4 py-2 shadow-sm border",
-                        msg.sentido === 'IN' 
+                        "max-w-[85%] rounded-2xl px-4 py-2 shadow-sm border",
+                        msg.status === 'SISTEMA'
+                          ? "bg-amber-100 dark:bg-amber-900/40 border-amber-200 dark:border-amber-700/50 text-center w-full max-w-full"
+                          : msg.sentido === 'IN' 
                           ? "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 rounded-tl-none"
                           : "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/30 rounded-tr-none"
                       )}>
-                        {msg.sentido === 'IN' && <p className="text-[10px] text-primary-500 font-semibold mb-1">Cliente</p>}
-                        {msg.sentido !== 'IN' && <p className="text-[10px] text-emerald-600 font-semibold mb-1 text-right">Atendente</p>}
+                        {msg.status === 'SISTEMA' && (
+                          <div className="text-xs font-bold text-amber-600 dark:text-amber-400 mb-1 uppercase flex items-center justify-center gap-1">
+                            <Lock size={14} /> Nota Interna
+                          </div>
+                        )}
+                        {msg.sentido === 'IN' && msg.status !== 'SISTEMA' && <p className="text-[10px] text-primary-500 font-semibold mb-1">Cliente</p>}
+                        {msg.sentido === 'OUT' && msg.status !== 'SISTEMA' && <p className="text-[10px] text-emerald-600 font-semibold mb-1 text-right">Atendente</p>}
                         
                         {/* Renderização de Mídia */}
                         {msg.mediaUrl && (
@@ -534,7 +615,9 @@ export default function SAC() {
                           </div>
                         )}
 
-                        {msg.texto && <p className="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap">{msg.texto}</p>}
+                        {msg.texto && <p className={clsx("text-sm whitespace-pre-wrap", 
+                          msg.status === 'SISTEMA' ? "text-amber-900 dark:text-amber-100" : "text-slate-800 dark:text-slate-200"
+                        )}>{msg.texto}</p>}
                         <p className="text-[10px] text-right text-slate-400 mt-1">
                           {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                         </p>
@@ -742,6 +825,48 @@ export default function SAC() {
           </div>
         </div>
       )}
+
+      {/* Modal de Menção (Avisar Atendente) */}
+      {isTransferModalOpen && selectedTicket && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
+            <div className="flex justify-between items-center p-6 border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <h2 className="text-xl font-bold text-slate-800 dark:text-white">Avisar / Mencionar Atendente</h2>
+              <button onClick={() => setIsTransferModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleTransferTicket} className="p-6 overflow-y-auto flex-1 space-y-4">
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+                O atendente selecionado receberá uma mensagem no WhatsApp avisando sobre este ticket para dar continuidade ou realizar agendamentos.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Selecione o Atendente</label>
+                <select 
+                  required
+                  value={transferDeptoId}
+                  onChange={e => setTransferDeptoId(e.target.value)}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                >
+                  <option value="">Selecione...</option>
+                  {atendentes.map(a => (
+                    <option key={a.codusur} value={a.codusur}>{a.nome} ({a.telefone})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button type="button" onClick={() => setIsTransferModalOpen(false)} className="px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-sm font-medium transition-colors">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={transferringTicket || !transferDeptoId} className="px-6 py-2 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors shadow-sm shadow-indigo-500/20">
+                  {transferringTicket ? 'Avisando...' : 'Mencionar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Calendario Modal */}
       <CalendarioSACModal 
         isOpen={isCalendarOpen} 

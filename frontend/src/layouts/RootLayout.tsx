@@ -5,6 +5,25 @@ import clsx from 'clsx';
 import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin, Target, Headset, ShieldAlert } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
+const DEFAULT_PERMISSIONS: any = {
+  GERENTE: {
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação']
+  },
+  SUPERVISOR: {
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação']
+  },
+  VENDEDOR: {
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo'],
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Radar Positivação']
+  },
+  ATENDENTE: {
+    menus: ['Dashboard', 'Chat (Atendimento)', 'SAC', 'Catálogo'],
+    dashboard: ['Métricas SAC', 'Mural de Avisos']
+  }
+};
+
 const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -19,8 +38,30 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
   const { maskData } = usePrivacy();
   const userName = maskData(user?.nome || 'Usuário');
   const userInitials = userName.substring(0, 2).toUpperCase();
-  const userRole = user?.role ? user.role.toUpperCase() : 'VENDEDOR';
+  const userRole = user?.role ? user.role.trim().toUpperCase() : 'VENDEDOR';
   const userCode = user?.matricula || '';
+
+  const [permissions, setPermissions] = useState<any>(DEFAULT_PERMISSIONS);
+
+  useEffect(() => {
+    const fetchPermissoes = async () => {
+      try {
+        const res = await fetch('/api/config/global');
+        const data = await res.json();
+        if (data.success && data.configs['MENU_PERMISSIONS']) {
+          try {
+            const serverPerms = JSON.parse(data.configs['MENU_PERMISSIONS']);
+            setPermissions((prev: any) => ({ ...prev, ...serverPerms }));
+          } catch (e) {
+            console.error('Erro ao fazer parse de MENU_PERMISSIONS', e);
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao buscar permissões', e);
+      }
+    };
+    fetchPermissoes();
+  }, []);
 
   const links = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -62,6 +103,26 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     links.push({ name: 'Radar de Leads', path: '/prospeccao', icon: Target });
   }
 
+  // Filter links based on RBAC permissions
+  let filteredLinks = links;
+  if (userRole !== 'BOT_GESTOR') {
+    const rolePerms = permissions[userRole] || permissions['VENDEDOR'];
+    const allowedMenus = rolePerms.menus || [];
+    filteredLinks = links.filter(link => allowedMenus.includes(link.name));
+  }
+
+  useEffect(() => {
+    // Route blocking logic
+    if (userRole !== 'BOT_GESTOR') {
+      const rolePerms = permissions[userRole] || permissions['VENDEDOR'];
+      const allowedMenus = rolePerms.menus || [];
+      const currentLink = links.find(l => l.path !== '/' ? location.pathname.startsWith(l.path) : location.pathname === '/');
+      if (currentLink && !allowedMenus.includes(currentLink.name) && location.pathname !== '/') {
+        navigate('/');
+      }
+    }
+  }, [location.pathname, permissions, userRole, navigate, links]);
+
   return (
     <>
       {/* Mobile overlay */}
@@ -102,7 +163,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
         </button>
 
         <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
-          {links.map((link) => {
+          {filteredLinks.map((link) => {
             const Icon = link.icon;
             const isActive = location.pathname === link.path || (link.path !== '/' && location.pathname.startsWith(link.path));
             return (
