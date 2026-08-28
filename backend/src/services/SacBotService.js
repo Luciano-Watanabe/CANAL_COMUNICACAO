@@ -471,34 +471,80 @@ class SacBotService {
                     }
                 }
 
-                const fs = require('fs');
-                const { execSync } = require('child_process');
-                let pdfEncontrado = null;
+                const PdfGeneratorService = require('./PdfGeneratorService');
                 
                 try {
-                    // Utiliza o comando find para procurar o PDF recursivamente apenas pelo número da NF
-                    const stdout = execSync(`find /app/danfe_boletos -name "*${numnota}*.pdf" | head -n 1`, { encoding: 'utf8' });
-                    if (stdout && stdout.trim()) {
-                        pdfEncontrado = stdout.trim();
+                    // Buscar o XML da NFe no banco
+                    let sqlXml = `
+                        SELECT PCDOCELETRONICO.XMLNFE 
+                        FROM PCDOCELETRONICO 
+                        JOIN PCNFSAID ON PCNFSAID.NUMTRANSVENDA = PCDOCELETRONICO.NUMTRANSACAO
+                        WHERE PCNFSAID.NUMNOTA = :numnota 
+                        FETCH FIRST 1 ROWS ONLY
+                    `;
+                    const resXml = await conn.execute(sqlXml, { numnota });
+                    if (resXml.rows.length > 0 && resXml.rows[0][0]) {
+                        const xmlString = resXml.rows[0][0];
+                        const pdfBase64 = await PdfGeneratorService.gerarDanfe(xmlString);
+                        await this.enviarDocumentoBase64(telefone, pdfBase64, 'application/pdf', `DANFE_${numnota}.pdf`, instanceName, conn);
+                        console.log(`${TAG} [Financeiro] DANFE da NFe enviada para ${telefone} (Gerada Dinamicamente)`);
+                    } else {
+                        await this.webhookPoller.enviarMensagemBot(telefone, "O arquivo PDF desta Nota Fiscal ainda não está disponível no sistema (XML não encontrado).", conn, instanceName);
                     }
                 } catch (err) {
-                    console.error(`${TAG} [Financeiro] Erro ao procurar PDF com find:`, err);
+                    console.error(`${TAG} [Financeiro] Erro ao gerar DANFE:`, err);
+                    await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao tentar gerar o PDF da Nota Fiscal.", conn, instanceName);
                 }
 
-                if (pdfEncontrado) {
+                // Gerar Boleto se for aplicável
+                if (isBoleto) {
                     try {
-                        const pdfBase64 = fs.readFileSync(pdfEncontrado, { encoding: 'base64' });
-                        await this.enviarDocumentoBase64(telefone, pdfBase64, 'application/pdf', `NFe_${numnota}.pdf`, instanceName, conn);
-                        console.log(`${TAG} [Financeiro] PDF da NFe enviado para ${telefone} (Arquivo: ${pdfEncontrado})`);
+                        let sqlBoleto = `
+                            SELECT P.VALOR, P.DTVENC, P.DTEMISSAO, P.NOSSONUMBCO, P.LINHADIG, P.CODBARRA, P.CODBANCO,
+                                   B.AGENCIA, B.CONTA, B.NUMCARTEIRA
+                            FROM PCPREST P
+                            LEFT JOIN PCBANCO B ON P.CODBANCO = B.CODBANCO
+                            WHERE P.DUPLIC = :numnota AND P.DTBAIXA IS NULL
+                            ORDER BY P.PREST
+                            FETCH FIRST 1 ROWS ONLY
+                        `;
+                        const resBoleto = await conn.execute(sqlBoleto, { numnota });
+                        if (resBoleto.rows.length > 0) {
+                            const [valorBoleto, dtVenc, dtEmissao, nossoNum, linhaDig, codBarra, codBanco, agencia, conta, carteira] = resBoleto.rows[0];
+                            // Chama a geração do PDF do Boleto
+                            const pdfBoletoBase64 = await PdfGeneratorService.gerarBoleto({
+                                valor: valorBoleto,
+                                dataVencimento: dtVenc,
+                                dataEmissao: dtEmissao,
+                                nossoNumero: nossoNum,
+                                linhaDigitavel: linhaDig,
+                                codigoBarras: codBarra,
+                                banco: codBanco,
+                                numnota: numnota,
+                                razao: razao,
+                                cgc: cgc,
+                                dtVencimento: dtVenc,
+                                agencia: agencia,
+                                conta: conta,
+                                carteira: carteira
+                            });
+
+                            
+                            if (pdfBoletoBase64) {
+                                await this.enviarDocumentoBase64(telefone, pdfBoletoBase64, 'application/pdf', `Boleto_${numnota}.pdf`, instanceName, conn);
+                                console.log(`${TAG} [Financeiro] Boleto enviado para ${telefone}`);
+                            }
+                        }
                     } catch (err) {
-                        console.error(`${TAG} [Financeiro] Erro ao enviar PDF:`, err);
+                        console.error(`${TAG} [Financeiro] Erro ao gerar Boleto:`, err);
+                        await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao tentar gerar o PDF do Boleto.", conn, instanceName);
                     }
-                } else {
-                    await this.webhookPoller.enviarMensagemBot(telefone, "O arquivo PDF desta Nota Fiscal ainda não está disponível no sistema.", conn, instanceName);
                 }
+
 
                 await this.webhookPoller.enviarMensagemBot(telefone, "Para retornar ao menu anterior, use VOLTAR.\nPara finalizar o atendimento use 0.", conn, instanceName);
                 await this.setState(telefone, 'MENU_PRINCIPAL', {}, conn);
+
             } else {
                  await this.webhookPoller.enviarMensagemBot(telefone, `Não encontrei nenhuma Nota Fiscal para o número *${busca}*.\nVerifique e tente novamente.\n\nSe a sua solicitação já foi finalizada ou se deseja cancelar, digite *VOLTAR* para o menu ou *0* para encerrar o atendimento.`, conn, instanceName);
             }
