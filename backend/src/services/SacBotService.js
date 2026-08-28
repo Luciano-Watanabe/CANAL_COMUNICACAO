@@ -1347,6 +1347,7 @@ class SacBotService {
             SELECT ID, STATUS, DBMS_LOB.SUBSTR(DESCRICAO, 100, 1), DEPARTAMENTO_ID, CRIADO_EM
             FROM CANAL_SAC_TICKETS
             WHERE TELEFONE = :telefone
+            AND UPPER(STATUS) NOT IN ('FINALIZADO', 'FECHADO', 'FINALIZADOS', 'FECHADOS')
         `;
         let params = { telefone };
 
@@ -1356,7 +1357,8 @@ class SacBotService {
                 sql = `
                     SELECT ID, STATUS, DBMS_LOB.SUBSTR(DESCRICAO, 100, 1), DEPARTAMENTO_ID, CRIADO_EM
                     FROM CANAL_SAC_TICKETS
-                    WHERE CODCLI = :codcli OR TELEFONE = :telefone
+                    WHERE (CODCLI = :codcli OR TELEFONE = :telefone)
+                    AND UPPER(STATUS) NOT IN ('FINALIZADO', 'FECHADO', 'FINALIZADOS', 'FECHADOS')
                 `;
                 params = { codcli: resCli.rows[0][0], telefone };
             }

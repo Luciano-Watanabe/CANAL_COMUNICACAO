@@ -35,20 +35,21 @@ const OPCOES_DASHBOARD = [
   { id: 'Adesão ao Mix', nome: 'Adesão ao Mix' },
   { id: 'Visão Hierárquica', nome: 'Visão Hierárquica' },
   { id: 'Radar Positivação', nome: 'Radar Positivação' },
+  { id: 'Meus Clientes Recentes', nome: 'Meus Clientes Recentes' },
 ];
 
 const DEFAULT_PERMISSIONS: any = {
   GERENTE: {
     menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação']
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   SUPERVISOR: {
     menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação']
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   VENDEDOR: {
     menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Radar Positivação']
+    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   ATENDENTE: {
     menus: ['Dashboard', 'Chat (Atendimento)', 'SAC', 'Catálogo'],

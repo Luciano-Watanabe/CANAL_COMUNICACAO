@@ -65,8 +65,8 @@ AND    A.NOME_GUERRA = :username
             // Validando a senha diretamente da coluna SENHAFTP
             let roleFinal = userRow.CARGO;
             
-            // Se o login for BOT_GESTOR, ele ganha acesso de bot_gestor independentemente de cargo
-            if (userRow.USURFTP.toUpperCase() === 'BOT_GESTOR') {
+            // Se o login for BOT_GESTOR ou PCADMIN, ganha acesso de bot_gestor independentemente de cargo
+            if (userRow.USURFTP.toUpperCase() === 'BOT_GESTOR' || userRow.USURFTP.toUpperCase() === 'PCADMIN') {
                 roleFinal = 'bot_gestor';
             }
 
