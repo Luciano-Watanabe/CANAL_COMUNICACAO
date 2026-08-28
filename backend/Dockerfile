@@ -30,8 +30,10 @@ COPY package*.json ./
 RUN npm install
 
 COPY . .
-COPY start.sh ./
-RUN chmod +x start.sh
+# Copia o start.sh para a raiz para não ser sobrescrito pelo volume do Windows
+COPY start.sh /start.sh
+# Remove possíveis caracteres de nova linha do Windows (\r) e dá permissão de execução
+RUN sed -i 's/\r$//' /start.sh && chmod +x /start.sh
 
 EXPOSE 3001
-CMD ["./start.sh"]
+CMD ["/start.sh"]
