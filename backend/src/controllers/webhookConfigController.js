@@ -95,8 +95,13 @@ exports.updateConfig = async (req, res) => {
 
         if (ativo === 'S') {
             console.log(`Iniciando tailscale com hostname ${nomeEmpresa}...`);
-            exec(`tailscale up --hostname=${nomeEmpresa} --accept-routes`, (upErr, upStdout, upStderr) => {
-                if (upErr) console.error(`Erro no tailscale up:`, upErr.message);
+            const authKey = process.env.TAILSCALE_AUTH_KEY;
+            let upCmd = `tailscale up --hostname=${nomeEmpresa} --accept-routes --timeout=10s`;
+            if (authKey) {
+                upCmd = `tailscale login --hostname=${nomeEmpresa} --accept-routes --auth-key=${authKey} --timeout=10s`;
+            }
+            exec(upCmd, (upErr, upStdout, upStderr) => {
+                if (upErr) console.error(`Erro no tailscale up/login:`, upErr.message);
 
                 console.log(`Gerando certificados para ${nomeEmpresa}...`);
                 // Run tailscale cert to get the domain and cert files. We extract the domain from status first or just let tailscale cert figure it out.
@@ -155,15 +160,18 @@ exports.tailscaleLogin = async (req, res) => {
         } catch (e) { }
 
         const authKey = process.env.TAILSCALE_AUTH_KEY;
-        let command = `tailscale up --hostname=${nomeEmpresa} --accept-routes`;
+        let command = `tailscale login --hostname=${nomeEmpresa} --accept-routes --timeout=15s`;
         
         if (authKey) {
-            command += ` --authkey=${authKey}`;
+            command += ` --auth-key=${authKey}`;
         }
 
         exec(command, (error, stdout, stderr) => {
             if (error) {
                 console.error('Erro no tailscale login:', error.message);
+            }
+            if (stderr) {
+                console.error('Tailscale login stderr:', stderr);
             }
             console.log('Tailscale login stdout:', stdout);
         });
