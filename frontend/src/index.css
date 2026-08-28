@@ -92,6 +92,18 @@
   ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
   ::-webkit-scrollbar-thumb { background: rgba(13, 148, 136, 0.3); border-radius: 4px; }
   ::-webkit-scrollbar-thumb:hover { background: rgba(13, 148, 136, 0.6); }
+
+  /* Hide number input spinners globally */
+  input[type="number"]::-webkit-inner-spin-button, 
+  input[type="number"]::-webkit-outer-spin-button { 
+      -webkit-appearance: none; 
+      appearance: none;
+      margin: 0; 
+  }
+  input[type="number"] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+  }
 }
 
 @layer utilities {
