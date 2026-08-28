@@ -42,6 +42,7 @@ services:
       - ORACLE_CONN_STR=${ORACLE_CONN_STR}
       - LOCATIONIQ_API_KEY=${LOCATIONIQ_API_KEY}
       - GEOAPIFY_API_KEY=${GEOAPIFY_API_KEY}
+      - TAILSCALE_AUTH_KEY=${TAILSCALE_AUTH_KEY}
       # Diretório de imagens dos produtos
       - IMAGES_DIR=/app/imagens_produtos
     volumes:

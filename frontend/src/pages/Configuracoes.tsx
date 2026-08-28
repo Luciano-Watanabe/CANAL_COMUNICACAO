@@ -43,6 +43,8 @@ export default function Configuracoes() {
   const [webhookToken, setWebhookToken] = useState('');
   const [webhookAtivo, setWebhookAtivo] = useState(false);
   const [savingWebhook, setSavingWebhook] = useState(false);
+  const [webhookTailscaleStatus, setWebhookTailscaleStatus] = useState('off');
+  const [webhookTailscaleUrl, setWebhookTailscaleUrl] = useState('');
 
   // Departments Config
   const [departamentos, setDepartamentos] = useState<any[]>([]);
@@ -138,6 +140,8 @@ export default function Configuracoes() {
             setWebhookPorta(dataWh.porta);
             setWebhookToken(dataWh.token);
             setWebhookAtivo(dataWh.ativo === 'S');
+            setWebhookTailscaleStatus(dataWh.tailscaleStatus || 'off');
+            setWebhookTailscaleUrl(dataWh.tailscaleUrl || '');
           }
         }
       } catch (err) {
@@ -487,6 +491,38 @@ export default function Configuracoes() {
           <p className="text-sm text-indigo-700/80 dark:text-indigo-500/80 mb-4">
             Ative o recebimento de webhooks diretamente nesta instância, criando um túnel seguro via Tailscale. O túnel irá expor a porta configurada abaixo.
           </p>
+
+          <div className="mb-4 flex items-center gap-2">
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Status da Rede:</span>
+            {webhookTailscaleStatus === 'on' ? (
+              <span className="px-2 py-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs font-bold rounded-md flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-green-500"></span> Conectado
+              </span>
+            ) : (
+              <span className="px-2 py-1 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 text-xs font-bold rounded-md flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-500"></span> Desconectado
+              </span>
+            )}
+          </div>
+
+          {webhookTailscaleStatus === 'on' && webhookTailscaleUrl && (
+            <div className="mb-6 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg">
+              <span className="block text-xs font-semibold text-slate-500 mb-1">URL Pública do Webhook:</span>
+              <div className="flex items-center gap-2">
+                <code className="text-sm text-indigo-600 dark:text-indigo-400 flex-1 break-all">{webhookTailscaleUrl}/webhook/evolution</code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${webhookTailscaleUrl}/webhook/evolution`);
+                    alert('URL copiada para a área de transferência!');
+                  }}
+                  className="px-3 py-1 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-md text-xs font-semibold hover:bg-indigo-200 transition-colors"
+                >
+                  Copiar
+                </button>
+              </div>
+            </div>
+          )}
+
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="flex gap-4">

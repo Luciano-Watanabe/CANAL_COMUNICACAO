@@ -1,6 +1,9 @@
 const oraclePool = require('../services/oraclePool');
 const { exec } = require('child_process');
 
+const util = require('util');
+const execPromise = util.promisify(require('child_process').exec);
+
 exports.getConfig = async (req, res) => {
     let connection;
     try {
@@ -8,19 +11,36 @@ exports.getConfig = async (req, res) => {
         const sql = `SELECT PORTA, TOKEN, ATIVO, URL_PUBLICA FROM CANAL_WEBHOOK_CONFIG WHERE ID = 1`;
         const result = await connection.execute(sql);
         
+        let config = { success: true, porta: 3005, token: '', ativo: 'N', urlPublica: '' };
         if (result.rows && result.rows.length > 0) {
             const row = result.rows[0];
-            return res.json({
-                success: true,
-                porta: row[0],
-                token: row[1],
-                ativo: row[2],
-                urlPublica: row[3]
-            });
-        } else {
-            // Default se não encontrar
-            return res.json({ success: true, porta: 3005, token: '', ativo: 'N', urlPublica: '' });
+            config.porta = row[0];
+            config.token = row[1];
+            config.ativo = row[2];
+            config.urlPublica = row[3];
         }
+
+        // Check Tailscale status
+        config.tailscaleStatus = 'off';
+        config.tailscaleUrl = '';
+        
+        try {
+            const { stdout } = await execPromise('tailscale status --json');
+            const statusObj = JSON.parse(stdout);
+            
+            if (statusObj.BackendState === 'Running' || (statusObj.Self && statusObj.Self.Online)) {
+                config.tailscaleStatus = 'on';
+                if (statusObj.Self && statusObj.Self.DNSName) {
+                    const dnsName = statusObj.Self.DNSName.replace(/\.$/, '');
+                    // Funnel exposes the service on HTTPS (port 443) by default
+                    config.tailscaleUrl = `https://${dnsName}`;
+                }
+            }
+        } catch (tsErr) {
+            console.error('Erro ao verificar status do Tailscale:', tsErr.message);
+        }
+
+        return res.json(config);
     } catch (err) {
         console.error('Erro ao buscar configuração do webhook nativo:', err);
         return res.status(500).json({ success: false, message: 'Erro interno.' });
