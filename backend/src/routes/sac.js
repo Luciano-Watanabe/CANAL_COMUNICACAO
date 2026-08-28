@@ -893,6 +893,19 @@ router.post('/tickets/:id/send-media', upload.single('file'), async (req, res) =
             tId: id
         }, { autoCommit: true });
 
+        // Registra também no histórico de mensagens do SAC
+        try {
+            await conn.execute(`
+                INSERT INTO CANAL_SAC_TICKETS_MSGS (TICKET_ID, ENVIADO_POR, MENSAGEM)
+                VALUES (:tId, 'ATENDENTE', :msg)
+            `, {
+                tId: id,
+                msg: `📄 Arquivo enviado pelo atendente ${attendantName || 'SAC'}: ${fileName}`
+            }, { autoCommit: true });
+        } catch (e) {
+            console.error('[SAC] Erro ao inserir CANAL_SAC_TICKETS_MSGS:', e);
+        }
+
         // 6. Atualiza Ticket
         if (currentStatus === 'ABERTO') {
             await conn.execute(`UPDATE CANAL_SAC_TICKETS SET STATUS = 'EM ATENDIMENTO', ATUALIZADO_EM = SYSDATE WHERE ID = :id`, { id }, { autoCommit: true });
@@ -1058,6 +1071,19 @@ router.post('/tickets/internal', upload.single('file'), async (req, res) => {
                         mMime: mimetype,
                         tId: ticketId
                     }, { autoCommit: true });
+
+                    // Registra histórico
+                    try {
+                        await conn.execute(`
+                            INSERT INTO CANAL_SAC_TICKETS_MSGS (TICKET_ID, ENVIADO_POR, MENSAGEM)
+                            VALUES (:tId, 'SISTEMA', :msg)
+                        `, {
+                            tId: ticketId,
+                            msg: `📄 Arquivo inicial adicionado na abertura do chamado interno: ${fileName}`
+                        }, { autoCommit: true });
+                    } catch (e) {
+                        console.error('[SAC] Erro ao inserir CANAL_SAC_TICKETS_MSGS interno:', e);
+                    }
 
                     sentMessage = true;
                 } catch (e) {
