@@ -23,10 +23,15 @@ exports.getConfig = async (req, res) => {
         // Check Tailscale status
         config.tailscaleStatus = 'off';
         config.tailscaleUrl = '';
+        config.authUrl = '';
         
         try {
             const { stdout } = await execPromise('tailscale status --json');
             const statusObj = JSON.parse(stdout);
+            
+            if (statusObj.AuthURL) {
+                config.authUrl = statusObj.AuthURL;
+            }
             
             if (statusObj.BackendState === 'Running' || (statusObj.Self && statusObj.Self.Online)) {
                 config.tailscaleStatus = 'on';
@@ -127,6 +132,45 @@ exports.updateConfig = async (req, res) => {
         return res.json({ success: true, message: 'Configurações do webhook salvas com sucesso.' });
     } catch (err) {
         console.error('Erro ao atualizar configuração do webhook nativo:', err);
+        return res.status(500).json({ success: false, message: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+};
+
+exports.tailscaleLogin = async (req, res) => {
+    let connection;
+    try {
+        connection = await oraclePool.getConnection();
+        
+        let nomeEmpresa = 'webhook';
+        try {
+            const configResult = await connection.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'NOME_EMPRESA'`);
+            if (configResult.rows && configResult.rows.length > 0 && configResult.rows[0][0]) {
+                const rawName = configResult.rows[0][0];
+                nomeEmpresa = 'webhook-' + rawName.replace(/\\s+/g, '').toLowerCase();
+            }
+        } catch (e) { }
+
+        const authKey = process.env.TAILSCALE_AUTH_KEY;
+        let command = `tailscale up --hostname=${nomeEmpresa} --accept-routes`;
+        
+        if (authKey) {
+            command += ` --authkey=${authKey}`;
+        }
+
+        exec(command, (error, stdout, stderr) => {
+            if (error) {
+                console.error('Erro no tailscale login:', error.message);
+            }
+            console.log('Tailscale login stdout:', stdout);
+        });
+
+        return res.json({ success: true, message: 'Processo de login iniciado.' });
+    } catch (err) {
+        console.error('Erro ao iniciar tailscale login:', err);
         return res.status(500).json({ success: false, message: 'Erro interno.' });
     } finally {
         if (connection) {

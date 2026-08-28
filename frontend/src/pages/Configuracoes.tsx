@@ -45,6 +45,8 @@ export default function Configuracoes() {
   const [savingWebhook, setSavingWebhook] = useState(false);
   const [webhookTailscaleStatus, setWebhookTailscaleStatus] = useState('off');
   const [webhookTailscaleUrl, setWebhookTailscaleUrl] = useState('');
+  const [webhookAuthUrl, setWebhookAuthUrl] = useState('');
+  const [triggeringLogin, setTriggeringLogin] = useState(false);
 
   // Departments Config
   const [departamentos, setDepartamentos] = useState<any[]>([]);
@@ -142,6 +144,7 @@ export default function Configuracoes() {
             setWebhookAtivo(dataWh.ativo === 'S');
             setWebhookTailscaleStatus(dataWh.tailscaleStatus || 'off');
             setWebhookTailscaleUrl(dataWh.tailscaleUrl || '');
+            setWebhookAuthUrl(dataWh.authUrl || '');
           }
         }
       } catch (err) {
@@ -167,7 +170,7 @@ export default function Configuracoes() {
         })
       });
       const data = await response.json();
-      if (data.success) {
+      if (response.ok) {
         alert('Configurações do Webhook Nativo salvas!');
       } else {
         alert('Erro ao salvar Webhook: ' + data.message);
@@ -177,6 +180,28 @@ export default function Configuracoes() {
       alert('Erro de conexão ao salvar webhook.');
     } finally {
       setSavingWebhook(false);
+    }
+  };
+
+  const handleTailscaleLogin = async () => {
+    setTriggeringLogin(true);
+    try {
+      const response = await fetch('/api/webhook-config/tailscale-login', {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (response.ok) {
+        alert('Login no Tailscale iniciado! Verifique o log ou aguarde a atualização do status.');
+        // Recarregar a página para buscar o AuthURL se for gerado
+        setTimeout(() => window.location.reload(), 3000);
+      } else {
+        alert('Erro: ' + data.message);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão.');
+    } finally {
+      setTriggeringLogin(false);
     }
   };
 
@@ -523,7 +548,28 @@ export default function Configuracoes() {
             </div>
           )}
 
-          
+          {webhookAuthUrl && webhookTailscaleStatus === 'off' && (
+            <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700/50 rounded-lg">
+              <h4 className="font-bold text-yellow-800 dark:text-yellow-400 mb-2">Autenticação Pendente</h4>
+              <p className="text-sm text-yellow-700 dark:text-yellow-500 mb-3">
+                O Tailscale precisa de autenticação para iniciar o túnel. Por favor, clique no link abaixo para autorizar esta máquina na sua rede:
+              </p>
+              <a href={webhookAuthUrl} target="_blank" rel="noreferrer" className="text-sm font-bold text-indigo-600 hover:underline break-all">
+                {webhookAuthUrl}
+              </a>
+            </div>
+          )}
+
+          <div className="mb-6 flex gap-4">
+            <button
+              onClick={handleTailscaleLogin}
+              disabled={triggeringLogin}
+              className="px-4 py-2 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-semibold rounded-lg text-sm border border-slate-300 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+            >
+              {triggeringLogin ? 'Iniciando...' : 'Fazer login no Tailscale'}
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="flex gap-4">
               <div className="flex-1">
