@@ -17,12 +17,12 @@ function formatPhone(phone) {
     return p;
 }
 
-// Buscar histórico de mensagens de um cliente específico com o vendedor logado
+// Buscar histÃ³rico de mensagens de um cliente especÃ­fico com o vendedor logado
 router.get('/history', async (req, res) => {
     const { codusur, telefone } = req.query;
 
     if (!codusur || !telefone) {
-        return res.status(400).json({ success: false, error: 'codusur e telefone são obrigatórios' });
+        return res.status(400).json({ success: false, error: 'codusur e telefone sÃ£o obrigatÃ³rios' });
     }
 
     let connection;
@@ -33,9 +33,9 @@ router.get('/history', async (req, res) => {
             connectString: process.env.ORACLE_CONN_STR
         });
 
-        // Traz as últimas 50 mensagens
+        // Traz as Ãºltimas 50 mensagens
         const sql = `
-            SELECT ID_MENSAGEM, SENTIDO, TEXTO, DATA_HORA
+            SELECT ID_MENSAGEM, SENTIDO, TEXTO, DATA_HORA, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE
             FROM CANAL_MENSAGENS
             WHERE CODUSUR = :codusur AND TELEFONE_CLIENTE = :telefone
             ORDER BY DATA_HORA ASC
@@ -47,12 +47,15 @@ router.get('/history', async (req, res) => {
             id: row[0],
             sentido: row[1],
             texto: row[2],
-            timestamp: row[3]
+            timestamp: row[3],
+            mediaUrl: row[4] || null,
+            mediaType: row[5] || null,
+            mediaMime: row[6] || null
         }));
 
         res.json({ success: true, mensagens });
     } catch (err) {
-        console.error('Erro ao buscar histórico:', err);
+        console.error('Erro ao buscar histÃ³rico:', err);
         res.status(500).json({ success: false, error: 'Erro interno.' });
     } finally {
         if (connection) {
@@ -61,12 +64,158 @@ router.get('/history', async (req, res) => {
     }
 });
 
-// Buscar estatísticas de conversas (ex: Conversas Hoje)
+// Listar todas as conversas de todos os WhatsApp configurados (read-only)
+router.get('/todas-conversas', async (req, res) => {
+    const normalizeTel = (v) => String(v || '').replace(/[^0-9]/g, '');
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const sql = `
+            SELECT 
+                m.TELEFONE_CLIENTE,
+                m.CODUSUR,
+                NVL(t.NOME_ATENDENTE, u.NOME) AS NOME_CONTA,
+                NVL(t.INSTANCE_NAME, 'SEM-INSTANCIA') AS INSTANCE_NAME,
+                MAX(m.DATA_HORA) AS ULTIMA_MENSAGEM,
+                COUNT(*) AS QT_MENSAGENS,
+                (SELECT m2.TEXTO FROM CANAL_MENSAGENS m2 WHERE m2.TELEFONE_CLIENTE = m.TELEFONE_CLIENTE AND m2.CODUSUR = m.CODUSUR ORDER BY m2.DATA_HORA DESC FETCH FIRST 1 ROWS ONLY) AS PREVIEW,
+                (SELECT m2.MEDIA_TYPE FROM CANAL_MENSAGENS m2 WHERE m2.TELEFONE_CLIENTE = m.TELEFONE_CLIENTE AND m2.CODUSUR = m.CODUSUR ORDER BY m2.DATA_HORA DESC FETCH FIRST 1 ROWS ONLY) AS ULTIMO_MEDIA_TYPE,
+                (SELECT MAX(JSON_VALUE(CONTEUDO, '$.pushName')) FROM CANAL_WEBHOOK WHERE CONTEUDO LIKE '%' || m.TELEFONE_CLIENTE || '%') AS NOME_WHATSAPP
+            FROM CANAL_MENSAGENS m
+            LEFT JOIN CANAL_TOKENS_EVOLUTION t ON t.CODUSUR = m.CODUSUR
+            LEFT JOIN PCUSUARI u ON u.CODUSUR = m.CODUSUR
+            GROUP BY m.TELEFONE_CLIENTE, m.CODUSUR, NVL(t.NOME_ATENDENTE, u.NOME), NVL(t.INSTANCE_NAME, 'SEM-INSTANCIA')
+            ORDER BY MAX(m.DATA_HORA) DESC
+        `;
+
+        const result = await connection.execute(sql);
+
+        // Mapa de telefone normalizado -> nome do cliente (PCCLIENT + PCCONTATO)
+        const clientMap = {};
+        const resClientes = await connection.execute(`
+            SELECT CLIENTE, FANTASIA, TELCELENT, TELENT, TELCOM, TELCOB FROM PCCLIENT
+        `);
+        for (const row of resClientes.rows) {
+            const nome = (row[1] || row[0] || '').trim();
+            if (!nome) continue;
+            [row[2], row[3], row[4], row[5]].forEach(tel => {
+                const norm = normalizeTel(tel);
+                if (norm.length >= 8 && !clientMap[norm]) clientMap[norm] = nome;
+            });
+        }
+        const resContatos = await connection.execute(`
+            SELECT CT.NOMECONTATO, CT.TELEFONE, CT.CELULAR FROM PCCONTATO CT
+        `);
+        for (const row of resContatos.rows) {
+            const nome = (row[0] || '').trim();
+            if (!nome) continue;
+            [row[1], row[2]].forEach(tel => {
+                const norm = normalizeTel(tel);
+                if (norm.length >= 8 && !clientMap[norm]) clientMap[norm] = nome;
+            });
+        }
+
+        const findClientName = (tel) => {
+            const norm = normalizeTel(tel);
+            if (!norm) return null;
+            if (clientMap[norm]) return clientMap[norm];
+            for (let len = Math.min(norm.length - 1, 11); len >= 8; len--) {
+                const suffix = norm.slice(norm.length - len);
+                if (clientMap[suffix]) return clientMap[suffix];
+            }
+            return null;
+        };
+
+        const conversas = result.rows.map(row => {
+            const telefone = String(row[0] || '');
+            let preview = row[6] || '';
+            const mediaType = row[7] || null;
+            if (mediaType === 'image') preview = preview ? preview : '[Imagem]';
+            else if (mediaType === 'video') preview = preview ? preview : '[Video]';
+            else if (mediaType === 'audio') preview = preview ? preview : '[Audio]';
+            else if (mediaType === 'document') preview = preview ? preview : '[Documento]';
+            return {
+                telefone,
+                codusur: row[1],
+                nomeCliente: findClientName(telefone) || row[8] || null,
+                nomeConta: row[2] || 'Conta ' + row[1],
+                instanceName: row[3],
+                ultimaMensagem: row[4],
+                qtMensagens: row[5] || 0,
+                preview,
+                mediaType: mediaType || null
+            };
+        });
+
+        res.json({ success: true, conversas });
+    } catch (err) {
+        console.error('Erro ao buscar todas as conversas:', err);
+        res.status(500).json({ success: false, error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// Buscar histÃ³rico de mensagens de um cliente especÃ­fico em um CODUSUR especÃ­fico (read-only, todas contas)
+router.get('/todas-mensagens', async (req, res) => {
+    const { codusur, telefone } = req.query;
+
+    if (!codusur || !telefone) {
+        return res.status(400).json({ success: false, error: 'codusur e telefone sÃ£o obrigatÃ³rios' });
+    }
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const sql = `
+            SELECT ID_MENSAGEM, SENTIDO, TEXTO, DATA_HORA, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE
+            FROM CANAL_MENSAGENS
+            WHERE CODUSUR = :codusur AND TELEFONE_CLIENTE = :telefone
+            ORDER BY DATA_HORA ASC
+        `;
+        
+        const result = await connection.execute(sql, { codusur, telefone });
+
+        const mensagens = result.rows.map(row => ({
+            id: row[0],
+            sentido: row[1],
+            texto: row[2],
+            timestamp: row[3],
+            mediaUrl: row[4] || null,
+            mediaType: row[5] || null,
+            mediaMime: row[6] || null
+        }));
+
+        res.json({ success: true, mensagens });
+    } catch (err) {
+        console.error('Erro ao buscar mensagens de todas as conversas:', err);
+        res.status(500).json({ success: false, error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// Buscar estatÃ­sticas de conversas (ex: Conversas Hoje)
 router.get('/stats', async (req, res) => {
     const { codusur } = req.query;
 
     if (!codusur) {
-        return res.status(400).json({ success: false, error: 'codusur é obrigatório' });
+        return res.status(400).json({ success: false, error: 'codusur Ã© obrigatÃ³rio' });
     }
 
     let connection;
@@ -98,12 +247,12 @@ router.get('/stats', async (req, res) => {
     }
 });
 
-// Buscar dados para o gráfico do dashboard
+// Buscar dados para o grÃ¡fico do dashboard
 router.get('/chart', async (req, res) => {
     const { codusur } = req.query;
 
     if (!codusur) {
-        return res.status(400).json({ success: false, error: 'codusur é obrigatório' });
+        return res.status(400).json({ success: false, error: 'codusur Ã© obrigatÃ³rio' });
     }
 
     let connection;
@@ -139,7 +288,7 @@ router.get('/chart', async (req, res) => {
 
         res.json({ success: true, chartData });
     } catch (err) {
-        console.error('Erro ao buscar dados do gráfico:', err);
+        console.error('Erro ao buscar dados do grÃ¡fico:', err);
         res.status(500).json({ success: false, error: 'Erro interno.' });
     } finally {
         if (connection) {
@@ -152,7 +301,7 @@ router.get('/chart', async (req, res) => {
 // Enviar nova mensagem para a Evolution API
 router.post('/send', async (req, res) => {
     if (!cacheService.isWithinAllowedSchedule()) {
-        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+        return res.status(403).json({ success: false, error: 'Fora do horÃ¡rio permitido para envios.' });
     }
     const { codusur, telefone, texto, messageId } = req.body;
 
@@ -180,7 +329,7 @@ router.post('/send', async (req, res) => {
         `, { codusur });
 
         if (configResult.rows.length === 0) {
-            return res.status(400).json({ success: false, error: 'Instância Evolution não configurada para este vendedor.' });
+            return res.status(400).json({ success: false, error: 'InstÃ¢ncia Evolution nÃ£o configurada para este vendedor.' });
         }
 
         const instance = configResult.rows[0][0];
@@ -188,21 +337,21 @@ router.post('/send', async (req, res) => {
         let urlBase = configResult.rows[0][2];
 
         if (!urlBase || !token || !instance) {
-            return res.status(400).json({ success: false, error: 'Configuração Evolution (URL ou Token) incompleta.' });
+            return res.status(400).json({ success: false, error: 'ConfiguraÃ§Ã£o Evolution (URL ou Token) incompleta.' });
         }
 
-        // Garante que a URL não termine com barra
+        // Garante que a URL nÃ£o termine com barra
         if (urlBase.endsWith('/')) urlBase = urlBase.slice(0, -1);
 
         // 2. Chamar a API da Evolution para enviar o texto
         
-        // Formata o número (DDI + DDD + Numero). Assumindo BR 55 se não houver.
+        // Formata o nÃºmero (DDI + DDD + Numero). Assumindo BR 55 se nÃ£o houver.
         let numberToSend = cacheService.getDestinoFinal(formatPhone(telefone));
 
         const evolutionUrl = `${urlBase}/send/text`;
         
         console.log(`[DEBUG] Tentando enviar para: ${evolutionUrl}`);
-        console.log(`[DEBUG] Instância: ${instance}`);
+        console.log(`[DEBUG] InstÃ¢ncia: ${instance}`);
         console.log(`[DEBUG] Body: number=${numberToSend}, text=${texto}`);
 
         const randomDelayMs = Math.floor(Math.random() * (15000 - 1000 + 1)) + 1000;
@@ -226,7 +375,7 @@ router.post('/send', async (req, res) => {
         try {
             evData = JSON.parse(rawText);
         } catch (parseError) {
-            console.error('Resposta não-JSON da Evolution:', rawText);
+            console.error('Resposta nÃ£o-JSON da Evolution:', rawText);
             evData = { error: rawText };
         }
 
@@ -275,7 +424,7 @@ const getImagePath = (codprod) => {
 
 router.post('/send-produto', async (req, res) => {
     if (!cacheService.isWithinAllowedSchedule()) {
-        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+        return res.status(403).json({ success: false, error: 'Fora do horÃ¡rio permitido para envios.' });
     }
     const { codusur, telefone, codprod, isCatalogoMode, legenda, idBase64Map, text } = req.body;
     console.log(`[CHAT] Recebido pedido send-produto: usr=${codusur}, tel=${telefone}, prod=${codprod}`);
@@ -303,7 +452,7 @@ router.post('/send-produto', async (req, res) => {
         `, { codusur });
 
         if (configResult.rows.length === 0) {
-            return res.status(400).json({ success: false, error: 'Instância Evolution não configurada.' });
+            return res.status(400).json({ success: false, error: 'InstÃ¢ncia Evolution nÃ£o configurada.' });
         }
 
         const instance = configResult.rows[0][0];
@@ -490,7 +639,7 @@ const { createMontage } = require('../services/imageMontage');
 
 router.post('/send-carousel', async (req, res) => {
     if (!cacheService.isWithinAllowedSchedule()) {
-        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+        return res.status(403).json({ success: false, error: 'Fora do horÃ¡rio permitido para envios.' });
     }
     const { codusur, telefone, cards, message } = req.body;
     console.log(`[CHAT] Recebido pedido send-carousel (convertido para Flyer): usr=${codusur}, tel=${telefone}, cards=${cards?.length}`);
@@ -518,7 +667,7 @@ router.post('/send-carousel', async (req, res) => {
         `, { codusur });
 
         if (configResult.rows.length === 0) {
-            return res.status(400).json({ success: false, error: 'Instância Evolution não configurada.' });
+            return res.status(400).json({ success: false, error: 'InstÃ¢ncia Evolution nÃ£o configurada.' });
         }
 
         const instance = configResult.rows[0][0];
@@ -528,7 +677,7 @@ router.post('/send-carousel', async (req, res) => {
         if (urlBase.endsWith('/')) urlBase = urlBase.slice(0, -1);
         let numberToSend = cacheService.getDestinoFinal(formatPhone(telefone));
 
-        // Formata os cards preenchendo os caminhos corretos das imagens (verificando extensões)
+        // Formata os cards preenchendo os caminhos corretos das imagens (verificando extensÃµes)
         const enrichedCards = cards.map(c => ({
             ...c,
             imagePath: getImagePath(c.codprod)
@@ -631,7 +780,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/send-media', upload.single('file'), async (req, res) => {
     if (!cacheService.isWithinAllowedSchedule()) {
-        return res.status(403).json({ success: false, error: 'Fora do horário permitido para envios.' });
+        return res.status(403).json({ success: false, error: 'Fora do horÃ¡rio permitido para envios.' });
     }
     const { codusur, telefone, caption } = req.body;
     const file = req.file;
@@ -659,7 +808,7 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
         `, { codusur });
 
         if (configResult.rows.length === 0) {
-            return res.status(400).json({ success: false, error: 'Instância Evolution não configurada para este vendedor.' });
+            return res.status(400).json({ success: false, error: 'InstÃ¢ncia Evolution nÃ£o configurada para este vendedor.' });
         }
 
         const instance = configResult.rows[0][0];
@@ -667,7 +816,7 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
         let urlBase = configResult.rows[0][2];
 
         if (!urlBase || !token || !instance) {
-            return res.status(400).json({ success: false, error: 'Configuração Evolution incompleta.' });
+            return res.status(400).json({ success: false, error: 'ConfiguraÃ§Ã£o Evolution incompleta.' });
         }
 
         if (urlBase.endsWith('/')) urlBase = urlBase.slice(0, -1);
@@ -696,7 +845,7 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
         const randomDelayMs = Math.floor(Math.random() * (15000 - 1000 + 1)) + 1000;
         payload.delay = randomDelayMs;
 
-        console.log(`[DEBUG] Tentando enviar mídia para: ${evolutionUrl}`);
+        console.log(`[DEBUG] Tentando enviar mÃ­dia para: ${evolutionUrl}`);
 
         const evResponse = await fetch(evolutionUrl, {
             method: 'POST',
@@ -747,14 +896,14 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
             
             if (!evResponseFallback.ok || fbData.error) {
                 console.error('Erro na Evolution API (Media):', fallbackText);
-                return res.status(500).json({ success: false, error: 'Erro ao enviar mídia via WhatsApp', details: fallbackText });
+                return res.status(500).json({ success: false, error: 'Erro ao enviar mÃ­dia via WhatsApp', details: fallbackText });
             }
             evData = fbData;
         }
 
         const idMensagem = evData.key?.id || evData.messageId || `out_${Date.now()}`;
 
-        let msgText = `[Mídia Enviada: ${fileName}]` + (caption ? `\n${caption}` : '');
+        let msgText = `[MÃ­dia Enviada: ${fileName}]` + (caption ? `\n${caption}` : '');
         
         if (mediatype === 'audio' && req.file) {
             msgText = `[AUDIO]`;
@@ -809,9 +958,9 @@ router.post('/send-media', upload.single('file'), async (req, res) => {
             txt: msgText.substring(0, 4000)
         }, { autoCommit: true });
 
-        res.json({ success: true, message: 'Mídia enviada com sucesso', id_mensagem: idMensagem });
+        res.json({ success: true, message: 'MÃ­dia enviada com sucesso', id_mensagem: idMensagem });
     } catch (err) {
-        console.error('Erro ao enviar mídia:', err);
+        console.error('Erro ao enviar mÃ­dia:', err);
         res.status(500).json({ success: false, error: 'Erro interno no servidor.' });
     } finally {
         if (connection) {
@@ -825,14 +974,14 @@ router.post('/transcribe', async (req, res) => {
     const { messageId } = req.body;
 
     if (!messageId) {
-        return res.status(400).json({ success: false, error: 'messageId é obrigatório' });
+        return res.status(400).json({ success: false, error: 'messageId Ã© obrigatÃ³rio' });
     }
 
     try {
         const filePath = path.join(__dirname, '../../uploads', `${messageId}.ogg`);
         
         if (!fs.existsSync(filePath)) {
-            return res.status(404).json({ success: false, error: 'Áudio não encontrado no servidor' });
+            return res.status(404).json({ success: false, error: 'Ãudio nÃ£o encontrado no servidor' });
         }
 
         let apiKey = process.env.GROQ_API_KEY;
@@ -856,10 +1005,10 @@ router.post('/transcribe', async (req, res) => {
         }
 
         if (!apiKey || apiKey === 'SUA_CHAVE_AQUI') {
-            return res.status(400).json({ success: false, error: 'Chave da API de transcrição não configurada nas Configurações (Gerente).' });
+            return res.status(400).json({ success: false, error: 'Chave da API de transcriÃ§Ã£o nÃ£o configurada nas ConfiguraÃ§Ãµes (Gerente).' });
         }
 
-        // Configurar a API do Groq (utilizando SDK do OpenAI que é compatível)
+        // Configurar a API do Groq (utilizando SDK do OpenAI que Ã© compatÃ­vel)
         const openai = new OpenAI({
             apiKey: apiKey,
             baseURL: 'https://api.groq.com/openai/v1',
@@ -868,11 +1017,11 @@ router.post('/transcribe', async (req, res) => {
         // Chamada para a API Whisper do Groq
         const transcription = await openai.audio.transcriptions.create({
             file: fs.createReadStream(filePath),
-            model: 'whisper-large-v3', // Modelo disponível no Groq
+            model: 'whisper-large-v3', // Modelo disponÃ­vel no Groq
             language: 'pt',
         });
 
-        // Salvar a transcrição no banco de dados
+        // Salvar a transcriÃ§Ã£o no banco de dados
         try {
             connection = await oracledb.getConnection({
                 user: process.env.ORACLE_USER,
@@ -885,7 +1034,7 @@ router.post('/transcribe', async (req, res) => {
                 WHERE ID_MENSAGEM = :id AND TEXTO NOT LIKE '%[TRANSCRICAO]%'
             `, { transcricao: transcription.text, id: messageId }, { autoCommit: true });
         } catch (dbErr) {
-            console.error('Erro ao salvar transcrição no banco:', dbErr);
+            console.error('Erro ao salvar transcriÃ§Ã£o no banco:', dbErr);
         } finally {
             if (connection) {
                 try { await connection.close(); } catch (e) {}
@@ -894,9 +1043,10 @@ router.post('/transcribe', async (req, res) => {
 
         res.json({ success: true, text: transcription.text });
     } catch (err) {
-        console.error('Erro na transcrição:', err);
-        res.status(500).json({ success: false, error: 'Erro ao transcrever áudio' });
+        console.error('Erro na transcriÃ§Ã£o:', err);
+        res.status(500).json({ success: false, error: 'Erro ao transcrever Ã¡udio' });
     }
 });
 
 module.exports = router;
+

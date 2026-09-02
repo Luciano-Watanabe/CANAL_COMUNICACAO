@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const botMsgs = require('./botMensagensService');
 
 // Prefixo para todos os logs do SAC Bot (facilita grep em tempo real)
 const TAG = '[SAC-BOT]';
@@ -82,6 +83,7 @@ class SacBotService {
         if (estado === 'AGUARDANDO_TICKET_ACAO') {
             if (cmd === 'sair' || cmd === 'encerrar') {
                 console.log(`${TAG} → Cliente solicitou sair da bolha do Ticket (SAC_CHAT). Voltando ao MENU_PRINCIPAL.`);
+                await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_TICKET_CHAT_ENCERRAR'), conn, instanceName);
                 await this.setState(telefone, 'MENU_PRINCIPAL', {}, conn);
                 return await this.enviarMenuPrincipal(telefone, instanceName, conn);
             }
@@ -95,11 +97,11 @@ class SacBotService {
                 if (estado === 'MENU_PRINCIPAL') {
                     console.log(`${TAG} → Opção 0/Encerrar no Menu Principal. Finalizando atendimento.`);
                     await conn.execute(`DELETE FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, { tel: telefone }, { autoCommit: true });
-                    return await this.webhookPoller.enviarMensagemBot(telefone, "Atendimento finalizado. Se precisar de algo, basta mandar uma mensagem novamente. Até logo!", conn, instanceName);
+                    return await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_ENCERRAR_ATENDIMENTO'), conn, instanceName);
                 } else {
                     console.log(`${TAG} → Opção 0/Encerrar. Finalizando atendimento.`);
                     await conn.execute(`DELETE FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, { tel: telefone }, { autoCommit: true });
-                    return await this.webhookPoller.enviarMensagemBot(telefone, "Atendimento finalizado. Se precisar de algo, basta mandar uma mensagem novamente. Até logo!", conn, instanceName);
+                    return await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_ENCERRAR_ATENDIMENTO'), conn, instanceName);
                 }
             } else {
                 console.log(`${TAG} → Comando de voltar. Voltando ao MENU_PRINCIPAL.`);
@@ -162,7 +164,7 @@ class SacBotService {
             }
         } catch (error) {
             console.error(`${TAG} ❌ Erro no fluxo (estado="${estado}"):`, error);
-            await this.webhookPoller.enviarMensagemBot(telefone, "Desculpe, ocorreu um erro ao processar sua solicitação. Para retornar ao menu anterior, use VOLTAR.\nPara finalizar o atendimento use 0.", conn, instanceName);
+            await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_ERRO_GENERICO'), conn, instanceName);
         }
     }
 
@@ -174,7 +176,15 @@ class SacBotService {
                 nomeAtendente = res.rows[0][0];
             }
         } catch(e) {}
-        
+
+        let nomeEmpresa = '';
+        try {
+            const resCfg = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'NOME_EMPRESA'`);
+            if (resCfg.rows.length > 0 && resCfg.rows[0][0]) {
+                nomeEmpresa = resCfg.rows[0][0];
+            }
+        } catch(e) {}
+
         let nomeCliente = "";
         try {
             const sqlIdent = `
@@ -201,13 +211,19 @@ class SacBotService {
             console.error(`${TAG} Erro ao buscar nome do cliente para saudação:`, e);
         }
         
-        let saudacao = `Olá! Sou o assistente virtual do ${nomeAtendente}.`;
+        const substituirVariaveis = (tpl) => tpl
+            .replace(/\{\{nome_atendente\}\}/g, nomeAtendente)
+            .replace(/\{\{nome_cliente\}\}/g, nomeCliente)
+            .replace(/\{\{nome_empresa\}\}/g, nomeEmpresa);
+
+        let saudacao = substituirVariaveis(botMsgs.getMsg('SAC_MENU_SAUDACAO_SEM_NOME'));
         if (nomeCliente) {
-            saudacao = `Olá *${nomeCliente}*, sou o assistente virtual do ${nomeAtendente}.`;
+            saudacao = substituirVariaveis(botMsgs.getMsg('SAC_MENU_SAUDACAO_COM_NOME'));
         }
 
         console.log(`${TAG} [Menu Principal] Enviando menu para ${telefone} (atendente: ${nomeAtendente}, cliente: ${nomeCliente || 'Desconhecido'})`);
-        const menuText = `${saudacao} Como posso te ajudar hoje?\nDigite o número da opção desejada:\n\n1️⃣ - Status de Pedido / Entrega\n2️⃣ - 2ª Via de Boleto e Notas Fiscais\n3️⃣ - Pegar Catálogo\n4️⃣ - Trocas e Devoluções\n5️⃣ - Quero me Cadastrar (Novos Clientes)\n6️⃣ - Falar com meu Vendedor\n7️⃣ - Abrir Chamado (Atendimento Humano)\n8️⃣ - Consultar ticket\n9️⃣ - Fornecedor\n0️⃣ - Finalizar Atendimento`;
+        const menuOpcoes = botMsgs.getMsg('SAC_MENU_OPCOES');
+        const menuText = `${saudacao}\n${menuOpcoes}`;
         await this.webhookPoller.enviarMensagemBot(telefone, menuText, conn, instanceName);
     }
 
@@ -222,7 +238,7 @@ class SacBotService {
             // Options that require client auth: 1, 2, 3, 4, 6, 7, 8
             if (['1', '2', '3', '4', '6', '7', '8'].includes(opcao)) {
                 await this.setState(telefone, 'AGUARDANDO_CNPJ_GLOBAL', { opcaoDesejada: opcao }, conn);
-                await this.webhookPoller.enviarMensagemBot(telefone, "Para acessar esta opção, por favor informe o seu *CNPJ* ou *CPF* (apenas números).", conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_GLOBAL_PEDIR_CNPJ'), conn, instanceName);
                 return;
             }
         }
@@ -230,14 +246,14 @@ class SacBotService {
         switch (opcao) {
             case '0':
                 await conn.execute(`DELETE FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, [telefone]);
-                await this.webhookPoller.enviarMensagemBot(telefone, "Atendimento finalizado. Qualquer nova mensagem iniciará um novo atendimento. Até logo!", conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_ENCERRAR_ATENDIMENTO'), conn, instanceName);
                 break;
             case '1':
                 if (isCliente && contato.cnpj) {
                     await this.processarStatusPedido(telefone, contato.cnpj, instanceName, conn, {});
                 } else {
                     await this.setState(telefone, 'AGUARDANDO_PEDIDO_STATUS', {}, conn);
-                    await this.webhookPoller.enviarMensagemBot(telefone, "Para consultar o status do seu pedido, por favor digite o *Número do Pedido* ou o *CNPJ* cadastrado (apenas números).", conn, instanceName);
+                    await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_PEDIDO_PEDIR_NUMERO'), conn, instanceName);
                 }
                 break;
             case '2':
@@ -245,7 +261,7 @@ class SacBotService {
                     await this.processarFinanceiro(telefone, contato.cnpj, instanceName, conn, {});
                 } else {
                     await this.setState(telefone, 'AGUARDANDO_NOTA_FINANCEIRO', {}, conn);
-                    await this.webhookPoller.enviarMensagemBot(telefone, "Para baixar a 2ª via da Nota Fiscal ou Gerar PIX, por favor digite o *Número da Nota Fiscal* ou o seu *CNPJ*.", conn, instanceName);
+                    await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_FINANCEIRO_PEDIR_NOTA'), conn, instanceName);
                 }
                 break;
             case '3':
@@ -253,7 +269,7 @@ class SacBotService {
                     await this.gerarCatalogoDireto(telefone, contato.codcli, instanceName, conn);
                 } else {
                     await this.setState(telefone, 'AGUARDANDO_CNPJ_CATALOGO', {}, conn);
-                    await this.webhookPoller.enviarMensagemBot(telefone, "Para gerar o seu catálogo, por favor me informe o seu *CNPJ* (apenas números).", conn, instanceName);
+                    await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_CATALOGO_PEDIR_CNPJ'), conn, instanceName);
                 }
                 break;
             case '4': {
@@ -280,15 +296,16 @@ class SacBotService {
                 const ticketId = resInsert.outBinds.ticketId[0];
 
                 await this.setState(telefone, 'AGUARDANDO_FOTOS_DEVOLUCAO', { etapa: 'inicio', tsInicio: Date.now(), ticketId: ticketId }, conn);
-                await this.webhookPoller.enviarMensagemBot(telefone, `Você entrou no menu de Trocas e Devoluções.\nSeu chamado foi iniciado sob o número *#${ticketId}*.\nPor favor, envie as *FOTOS* do produto, da caixa e um breve relato do problema.\n\nQuando terminar de enviar, digite *OK* para eu registrar, ou *0* para voltar.`, conn, instanceName);
+                const msgDevolucao = botMsgs.getMsg('SAC_DEVOLUCAO_INICIO').replace('{{ticket_id}}', ticketId);
+                await this.webhookPoller.enviarMensagemBot(telefone, msgDevolucao, conn, instanceName);
                 break;
             }
             case '5':
                 if (isCliente) {
-                    await this.webhookPoller.enviarMensagemBot(telefone, "Você já possui cadastro conosco! Para retornar ao menu anterior, use VOLTAR.\nPara finalizar o atendimento use 0.", conn, instanceName);
+                    await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_CADASTRO_JA_EXISTE'), conn, instanceName);
                 } else {
                     await this.setState(telefone, 'AGUARDANDO_CNPJ_CADASTRO', {}, conn);
-                    await this.webhookPoller.enviarMensagemBot(telefone, "Para iniciar seu cadastro, por favor digite o seu *CNPJ* (apenas números).", conn, instanceName);
+                    await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_CADASTRO_PEDIR_CNPJ'), conn, instanceName);
                 }
                 break;
             case '6':
@@ -302,7 +319,7 @@ class SacBotService {
                     await this.processarListarTickets(telefone, contato.cnpj, instanceName, conn, {});
                 } else {
                     await this.setState(telefone, 'AGUARDANDO_CNPJ_TICKETS', {}, conn);
-                    await this.webhookPoller.enviarMensagemBot(telefone, "Para consultar seus tickets, por favor digite o seu *CNPJ* (apenas números) ou digite *1* para buscar os tickets vinculados a este número de telefone.", conn, instanceName);
+                    await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_TICKETS_PEDIR_CNPJ'), conn, instanceName);
                 }
                 break;
             case '9':
@@ -320,7 +337,7 @@ class SacBotService {
         console.log(`${TAG} [Global CNPJ] ${telefone} informou CNPJ: "${busca}" para opção "${dados.opcaoDesejada}"`);
         
         if (!busca) {
-            await this.webhookPoller.enviarMensagemBot(telefone, "CNPJ ou CPF inválido. Digite apenas números.\n\nPara voltar ao menu, digite VOLTAR.", conn, instanceName);
+            await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_CNPJ_INVALIDO'), conn, instanceName);
             return;
         }
 
@@ -622,9 +639,9 @@ class SacBotService {
                     P.UNIDADE,
                     P.CODAUXILIAR
                 FROM PCPRODUT P
-                JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '1'
+                JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}'
                 JOIN COMPRAS_GERAIS CG ON CG.CODPROD = P.CODPROD
-                LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
                 WHERE NVL(P.OBS2, 'X') NOT IN ('FL')
                 AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
                 ORDER BY P.DESCRICAO
@@ -1344,27 +1361,23 @@ class SacBotService {
     }
 
     async processarFornecedor(telefone, instanceName, conn) {
-        let msg = "🏢 *Contatos para Fornecedores:*\n\n";
-        
+        const msg = botMsgs.getMsg('SAC_FORNECEDOR_MENU');
+
         const sql = `SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE IN ('CONTATO_FINANCEIRO', 'CONTATO_COMPRAS')`;
         const res = await conn.execute(sql);
         const configs = {};
         res.rows.forEach(r => configs[r[0]] = r[1]);
 
+        let contatos = '';
         if (configs['CONTATO_FINANCEIRO']) {
-            msg += `💰 *Financeiro:* ${configs['CONTATO_FINANCEIRO']}\n`;
-        } else {
-            msg += `💰 *Financeiro:* (Não configurado)\n`;
+            contatos += `\n💰 *Financeiro:* ${configs['CONTATO_FINANCEIRO']}`;
         }
-
         if (configs['CONTATO_COMPRAS']) {
-            msg += `🛒 *Compras:* ${configs['CONTATO_COMPRAS']}\n`;
-        } else {
-            msg += `🛒 *Compras:* (Não configurado)\n`;
+            contatos += `\n🛒 *Compras:* ${configs['CONTATO_COMPRAS']}`;
         }
 
-        msg += "\nPara retornar ao menu anterior, use VOLTAR.\nPara finalizar o atendimento use 0.";
-        await this.webhookPoller.enviarMensagemBot(telefone, msg, conn, instanceName);
+        const msgFinal = contatos ? `${msg}\n${contatos}` : msg;
+        await this.webhookPoller.enviarMensagemBot(telefone, msgFinal, conn, instanceName);
         await this.setState(telefone, 'MENU_PRINCIPAL', {}, conn);
     }
 

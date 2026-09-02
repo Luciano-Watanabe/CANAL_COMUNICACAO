@@ -90,6 +90,8 @@ services:
       - ORACLE_CONN_STR=${ORACLE_CONN_STR}
       - LOCATIONIQ_API_KEY=${LOCATIONIQ_API_KEY}
       - GEOAPIFY_API_KEY=${GEOAPIFY_API_KEY}
+      - ESTOQUE_CODFILIAL=${ESTOQUE_CODFILIAL}
+      - TABPR_NUMREGIAO=${TABPR_NUMREGIAO}
       # Diretório de imagens dos produtos
       - IMAGES_DIR=/app/imagens_produtos
       # URL pública do backend acessível externamente (para Evolution API baixar PDFs)

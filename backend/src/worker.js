@@ -22,9 +22,16 @@ oraclePool.initPool().then(() => initializeOracleDatabase()).then(async () => {
     await cacheService.loadAll();
     cacheService.startAutoRefresh();
 
+    // Inicializa o cache de mensagens do bot (mensagens personalizadas)
+    const botMensagensService = require('./services/botMensagensService');
+    await botMensagensService.loadCache();
+    botMensagensService.startAutoRefresh();
+
+
     
     // Carrega os crons
     require('./services/statusCron');
+    require('./services/statusWhatsCron');
     require('./services/cleanupCron');
     require('./services/automacoesCron');
     require('./services/vendedoresVisitasCron');

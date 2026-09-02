@@ -43,8 +43,9 @@ class CacheService {
             // 2. Load Vendedores
             console.log('[CACHE] Carregando vendedores...');
             const vendQuery = `
-                SELECT U.CODUSUR, U.NOME, U.TELEFONE1, U.TELEFONE2, U.BLOQUEIO
+                SELECT U.CODUSUR, U.NOME, U.TELEFONE1, U.TELEFONE2, U.BLOQUEIO, T.INSTANCE_NAME
                 FROM PCUSUARI U
+                LEFT JOIN CANAL_TOKENS_EVOLUTION T ON U.CODUSUR = T.CODUSUR
                 WHERE (U.BLOQUEIO = 'N' OR U.BLOQUEIO IS NULL)
             `;
             const vendResult = await conn.execute(vendQuery, [], { resultSet: true });
@@ -57,7 +58,8 @@ class CacheService {
                     NOME: row[1],
                     TELEFONE1: row[2],
                     TELEFONE2: row[3],
-                    BLOQUEIO: row[4]
+                    BLOQUEIO: row[4],
+                    INSTANCE_NAME: row[5] || null
                 }));
                 if (isFirstLoad) {
                     this.vendedores.push(...batch);
@@ -155,7 +157,7 @@ class CacheService {
                     FROM COMPRAS_GERAIS CG
                     JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
                     LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
-                    LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                    LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
                     OUTER APPLY (
                         SELECT CODAUXILIAR AS EAN, QTUNIT, NVL(FATORPRECO, 1) AS FATOPRECO, UNMEDIDA AS UNIDADE_EMB, TIPOEMBALAGEM
                         FROM PCEMBALAGEM PE2
@@ -199,9 +201,9 @@ class CacheService {
                     SELECT P.CODPROD, P.DESCRICAO, P.CODEPTO, D.DESCRICAO AS DEPARTAMENTO, 
                            NVL(PR.PVENDA, 0) AS PVENDA
                     FROM PCPRODUT P
-                    JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '1'
+                    JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}'
                     LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
-                    LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                    LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
                     WHERE NVL(P.OBS2, 'X') NOT IN ('FL')
                       AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
                 )
@@ -268,6 +270,8 @@ class CacheService {
             const configs = {};
             configRes.rows.forEach(row => {
                 configs[row[0]] = row[1];
+                if (row[0] === 'ESTOQUE_CODFILIAL') process.env.ESTOQUE_CODFILIAL = row[1];
+                if (row[0] === 'TABPR_NUMREGIAO') process.env.TABPR_NUMREGIAO = row[1];
             });
             this.globalConfigs = configs;
             console.log('[CACHE] Configurações Globais recarregadas com sucesso.');

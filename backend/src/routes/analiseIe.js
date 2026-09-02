@@ -5,6 +5,7 @@ const axios = require('axios');
 
 // GET /api/analise-ie
 router.get('/', async (req, res) => {
+    const { rca, situacao } = req.query;
     let connection;
     try {
         connection = await oracledb.getConnection({
@@ -13,8 +14,7 @@ router.get('/', async (req, res) => {
             connectString: process.env.ORACLE_CONN_STR
         });
 
-        // Traz apenas as IEs problemáticas (BAIXADA, DESATUALIZADA, CNPJ INVALIDO, ERRO)
-        const sql = `
+        let sql = `
             SELECT 
                 A.CODCLI, 
                 C.CLIENTE, 
@@ -27,11 +27,23 @@ router.get('/', async (req, res) => {
                 C.CODUSUR1 AS VENDEDOR
             FROM CANAL_ANALISE_IE A
             JOIN PCCLIENT C ON A.CODCLI = C.CODCLI
-            WHERE A.SITUACAO_IE <> 'ATIVA'
-            ORDER BY A.DATA_ATUALIZACAO DESC
+            WHERE 1=1
         `;
-        
-        const result = await connection.execute(sql);
+        const binds = {};
+
+        if (rca && rca.trim() !== '') {
+            sql += ` AND C.CODUSUR1 = :rca `;
+            binds.rca = rca;
+        }
+
+        if (situacao && situacao.trim() !== '' && situacao !== 'TODAS') {
+            sql += ` AND A.SITUACAO_IE = :situacao `;
+            binds.situacao = situacao;
+        }
+
+        sql += ` ORDER BY A.DATA_ATUALIZACAO DESC`;
+
+        const result = await connection.execute(sql, binds);
 
         const analises = result.rows.map(r => ({
             codcli: r[0],

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Shield, Save, Check } from 'lucide-react';
+import { Shield, Save, Check, Link2 } from 'lucide-react';
 import clsx from 'clsx';
+import { WhatsAppMonitor } from './WhatsAppMonitor';
 
 export function ControleAcessoSAC() {
   const [funcionarios, setFuncionarios] = useState<any[]>([]);
@@ -13,6 +14,8 @@ export function ControleAcessoSAC() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savingWa, setSavingWa] = useState<number | null>(null);
+  const [waForm, setWaForm] = useState<Record<number, { instance_name: string; api_token: string; linked: boolean }>>({});
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -39,6 +42,20 @@ export function ControleAcessoSAC() {
       setVendedores(vData.success ? vData.vendedores : []);
       setDepartamentos(dData || []);
       setAcessos(aData || {});
+      // Pré-preenche instância/token a partir da mesma base usada na lista de Vendedor/Gestor
+      const initialWa: Record<number, { instance_name: string; api_token: string; linked: boolean }> = {};
+      if (vData && vData.vendedores) {
+        vData.vendedores.forEach((v: any) => {
+          if (v.codusur != null) {
+            initialWa[Number(v.codusur)] = {
+              instance_name: v.instance_name || '',
+              api_token: v.api_token || '',
+              linked: !!(v.instance_name && v.api_token)
+            };
+          }
+        });
+      }
+      setWaForm(initialWa);
       setErrorMsg(null);
     }).catch(err => {
       console.error(err);
@@ -87,6 +104,39 @@ export function ControleAcessoSAC() {
     }
   };
 
+  const handleBindWhats = async (id: number) => {
+    const row = waForm[id];
+    if (!row) return;
+    if (!row.instance_name.trim() || !row.api_token.trim()) {
+      alert('Informe o Nome da Instância e o Token para vincular o WhatsApp.');
+      return;
+    }
+    setSavingWa(id);
+    try {
+      const res = await fetch('/api/config/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          codusur: id,
+          api_token: row.api_token,
+          instance_name: row.instance_name
+        })
+      });
+      if (res.ok) {
+        setWaForm(prev => ({ ...prev, [id]: { ...row, linked: true } }));
+        alert('Instância vinculada com sucesso! Abra o modal do QR Code para conectar.');
+      } else {
+        const err = await res.json();
+        alert('Erro ao vincular: ' + (err.message || err.error || 'erro desconhecido'));
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de comunicação ao vincular.');
+    } finally {
+      setSavingWa(null);
+    }
+  };
+
   if (loading) return <div className="p-4 text-slate-500">Carregando permissões...</div>;
   if (errorMsg) return <div className="p-4 text-rose-500 font-medium">{errorMsg}</div>;
 
@@ -124,17 +174,67 @@ export function ControleAcessoSAC() {
                   <th className="py-2 px-4 font-semibold text-slate-500">Tipo</th>
                   <th className="py-2 px-4 font-semibold text-slate-500">Usuário</th>
                   <th className="py-2 px-4 font-semibold text-slate-500">Departamentos Permitidos</th>
+                  {(usuariosComAcesso.some(u => u.tipo === 'Atendente')) && (
+                    <>
+                      <th className="py-2 px-4 font-semibold text-slate-500">Nome da Instância</th>
+                      <th className="py-2 px-4 font-semibold text-slate-500">Token (Evolution)</th>
+                      <th className="py-2 px-4 font-semibold text-slate-500 text-center">WhatsApp</th>
+                    </>
+                  )}
                   <th className="py-2 px-4 font-semibold text-slate-500 text-right">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {usuariosComAcesso.map(u => (
-                  <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 align-top">
                     <td className="py-2 px-4 text-slate-600 dark:text-slate-400">{u.tipo}</td>
                     <td className="py-2 px-4 font-medium text-slate-800 dark:text-slate-200">{u.nome} (Cód: {u.id})</td>
                     <td className="py-2 px-4 text-slate-600 dark:text-slate-400">
                       {acessos[u.id].map(deptId => departamentos.find(d => d.id === deptId)?.nome || `Dep ${deptId}`).join(', ')}
                     </td>
+                    {u.tipo === 'Atendente' ? (
+                      <>
+                        <td className="py-2 px-4">
+                          <input
+                            type="text"
+                            value={waForm[u.id]?.instance_name || ''}
+                            onChange={(e) => setWaForm(prev => ({ ...prev, [u.id]: { instance_name: e.target.value, api_token: prev[u.id]?.api_token || '', linked: prev[u.id]?.linked || false } }))}
+                            placeholder="Ex: RCA_Atendente"
+                            className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </td>
+                        <td className="py-2 px-4">
+                          <input
+                            type="text"
+                            value={waForm[u.id]?.api_token || ''}
+                            onChange={(e) => setWaForm(prev => ({ ...prev, [u.id]: { instance_name: prev[u.id]?.instance_name || '', api_token: e.target.value, linked: prev[u.id]?.linked || false } }))}
+                            placeholder="Colar Token aqui"
+                            className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </td>
+                        <td className="py-2 px-4 text-center">
+                          {waForm[u.id]?.linked ? (
+                            <WhatsAppMonitor codusur={u.id} />
+                          ) : (
+                            <button
+                              onClick={() => handleBindWhats(u.id)}
+                              disabled={savingWa === u.id || !(waForm[u.id]?.instance_name?.trim() && waForm[u.id]?.api_token?.trim())}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white rounded-lg text-xs font-medium transition-colors"
+                              title="Preencha Nome da Instância e Token para vincular"
+                            >
+                              <Link2 size={14} />
+                              {savingWa === u.id ? 'Vinculando...' : 'Vincular WhatsApp'}
+                            </button>
+                          )}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-2 px-4 text-slate-400">—</td>
+                        <td className="py-2 px-4 text-slate-400">—</td>
+                        <td className="py-2 px-4 text-center text-slate-400">—</td>
+                      </>
+                    )}
                     <td className="py-2 px-4 text-right">
                       <button 
                         onClick={() => {

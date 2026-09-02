@@ -22,6 +22,8 @@ export default function Configuracoes() {
   const [catalogoComPreco, setCatalogoComPreco] = useState(false);
   const [savingGlobal, setSavingGlobal] = useState(false);
   const [sacBotCodusur, setSacBotCodusur] = useState('');
+  const [estoqueCodfilial, setEstoqueCodfilial] = useState('1');
+  const [tabprNumregiao, setTabprNumregiao] = useState('1');
   const { isPrivacyMode, setPrivacyMode, maskData } = usePrivacy();
 
   const userStr = localStorage.getItem('user');
@@ -119,6 +121,12 @@ export default function Configuracoes() {
           }
           if (dataGlob.configs['SAC_BOT_CODUSUR']) {
             setSacBotCodusur(dataGlob.configs['SAC_BOT_CODUSUR']);
+          }
+          if (dataGlob.configs['ESTOQUE_CODFILIAL']) {
+            setEstoqueCodfilial(dataGlob.configs['ESTOQUE_CODFILIAL']);
+          }
+          if (dataGlob.configs['TABPR_NUMREGIAO']) {
+            setTabprNumregiao(dataGlob.configs['TABPR_NUMREGIAO']);
           }
         }
         
@@ -229,7 +237,9 @@ export default function Configuracoes() {
             CRON_DIAS_SEMANA: JSON.stringify(cronDiasSemana),
             CRON_HORA_INICIO: cronHoraInicio.toString(),
             CRON_HORA_FIM: cronHoraFim.toString(),
-            SAC_BOT_CODUSUR: sacBotCodusur
+            SAC_BOT_CODUSUR: sacBotCodusur,
+            ESTOQUE_CODFILIAL: estoqueCodfilial,
+            TABPR_NUMREGIAO: tabprNumregiao
           }
         })
       });
@@ -792,6 +802,32 @@ export default function Configuracoes() {
               value={contatoCompras}
               onChange={(e) => setContatoCompras(e.target.value)}
               placeholder="Ex: 5511999999999"
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Filial Padrão (Estoque)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Código da filial usada para consulta de estoque no bot.</p>
+            <input 
+              type="text" 
+              value={estoqueCodfilial}
+              onChange={(e) => setEstoqueCodfilial(e.target.value)}
+              placeholder="Ex: 1"
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Região Padrão (Tabela de Preço)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Número da região usada para buscar preço no catálogo.</p>
+            <input 
+              type="text" 
+              value={tabprNumregiao}
+              onChange={(e) => setTabprNumregiao(e.target.value)}
+              placeholder="Ex: 1"
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
           </div>

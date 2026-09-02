@@ -3,6 +3,8 @@ import RootLayout from './layouts/RootLayout';
 import Dashboard from './pages/Dashboard';
 import Clientes from './pages/Clientes';
 import Chat from './pages/Chat';
+import MonitorConversas from './pages/MonitorConversas';
+import RelatorioSAC from './pages/RelatorioSAC';
 import Login from './pages/Login';
 import Configuracoes from './pages/Configuracoes';
 import Campanhas from './pages/Campanhas';
@@ -60,6 +62,8 @@ function App() {
             <Route path="/sac" element={<SAC />} />
             <Route path="/logs-identificacao" element={<LogIdentificacao />} />
             <Route path="/objetivos" element={<Objetivos />} />
+            <Route path="/monitor-conversas" element={<MonitorConversas />} />
+            <Route path="/relatorio-sac" element={<RelatorioSAC />} />
           </Route>
         </Route>
       </Routes>

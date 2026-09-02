@@ -182,7 +182,7 @@ router.get('/:codcli/pedidos', async (req, res) => {
                     (SELECT MAX(CASE WHEN NVL(ENVIAFV, 'N') = 'S' AND DTINATIVO IS NULL THEN 1 ELSE 0 END) FROM PCEMBALAGEM WHERE CODPROD = P.CODPROD) AS TEM_FV
                 FROM PCMOV P
                 LEFT JOIN PCPRODUT PR ON PR.CODPROD = P.CODPROD
-                LEFT JOIN PCTABPR TAB ON TAB.CODPROD = P.CODPROD AND TAB.NUMREGIAO = 1
+                LEFT JOIN PCTABPR TAB ON TAB.CODPROD = P.CODPROD AND TAB.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
                 LEFT JOIN PCNFSAID N ON N.NUMTRANSVENDA = P.NUMTRANSVENDA
                 LEFT JOIN PCPEDC C ON C.NUMPED = P.NUMPED
                 LEFT JOIN PCEMBALAGEM PE ON PE.CODPROD = P.CODPROD AND NVL(PE.ENVIAFV, 'N') = 'S'
@@ -422,14 +422,14 @@ router.get('/esquecidos', async (req, res) => {
                         FETCH FIRST 10 ROWS ONLY
                     ) CG
                     JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
-                    LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                    LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
                 `;
                 let mixRes = await connection.execute(sqlMix, { codatv1 });
                 if (mixRes.rows.length === 0) {
                     const sqlMixFallback = `
                         SELECT P.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE
                         FROM PCPRODUT P
-                        JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                        JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
                         WHERE EXISTS (
                             SELECT 1 FROM PCEST E 
                             WHERE E.CODPROD = P.CODPROD 
@@ -589,14 +589,14 @@ router.post('/:codcli/reativar', async (req, res) => {
                     FETCH FIRST 10 ROWS ONLY
                 ) CG
                 JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
-                LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
             `;
             let mixRes = await connection.execute(sqlMix, { codatv1 });
             if (mixRes.rows.length === 0) {
                 const sqlMixFallback = `
                     SELECT P.CODPROD, P.DESCRICAO, NVL(PR.PVENDA, 0) AS PVENDA, P.UNIDADE
                     FROM PCPRODUT P
-                    JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                    JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
                     WHERE EXISTS (
                         SELECT 1 FROM PCEST E 
                         WHERE E.CODPROD = P.CODPROD 

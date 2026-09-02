@@ -7,12 +7,18 @@ export default function AnaliseIE() {
   const [searchTerm, setSearchTerm] = useState('');
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [selectedRca, setSelectedRca] = useState<string>('');
+  const [selectedSituacao, setSelectedSituacao] = useState<string>('');
   const [status, setStatus] = useState({ total: 0, analisados: 0, ativas: 0, comProblema: 0 });
+
+  const situacoesIE = ['ATIVA', 'BAIXADA', 'DESATUALIZADA', 'BAIXADA (E DESATUALIZADA)', 'NENHUMA IE NO ESTADO', 'SEM INSCRIÇÕES ESTADUAIS', 'CNPJ NÃO ENCONTRADO', 'LIMITE DE REQUISIÇÕES ATINGIDO', 'ERRO NA CONSULTA'];
 
   const fetchDados = async () => {
     setLoading(true);
     try {
-      const url = selectedRca ? `/api/analise-ie?rca=${selectedRca}` : `/api/analise-ie`;
+      const params = new URLSearchParams();
+      if (selectedRca) params.set('rca', selectedRca);
+      if (selectedSituacao) params.set('situacao', selectedSituacao);
+      const url = `/api/analise-ie?${params.toString()}`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
@@ -58,7 +64,7 @@ export default function AnaliseIE() {
     }, 10000);
     
     return () => clearInterval(interval);
-  }, [selectedRca]);
+  }, [selectedRca, selectedSituacao]);
 
   const handleReconsultar = async (analise: any) => {
     try {
@@ -167,6 +173,16 @@ export default function AnaliseIE() {
               <option value="">Todos os Vendedores</option>
               {vendedores.map(v => (
                 <option key={v.CODUSUR} value={v.CODUSUR}>{v.CODUSUR} - {v.NOME}</option>
+              ))}
+            </select>
+            <select
+              value={selectedSituacao}
+              onChange={(e) => setSelectedSituacao(e.target.value)}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="">Todas as Situações</option>
+              {situacoesIE.map(s => (
+                <option key={s} value={s}>{s}</option>
               ))}
             </select>
           </div>

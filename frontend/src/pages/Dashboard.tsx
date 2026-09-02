@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, MessageSquare, TrendingUp, Clock, Send, Megaphone, Trophy, X } from 'lucide-react';
+import { Users, MessageSquare, TrendingUp, Clock, Send, Megaphone, Trophy, X, FileText } from 'lucide-react';
 import { ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 import { useSocket } from '../contexts/SocketContext';
@@ -12,11 +12,11 @@ import { usePrivacy } from '../contexts/PrivacyContext';
 
 const DEFAULT_PERMISSIONS: any = {
   GERENTE: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Status Whats', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
     dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   SUPERVISOR: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Status Whats', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
     dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   VENDEDOR: {
@@ -311,13 +311,16 @@ export default function Dashboard() {
 
   const ultimosClientes = clientes.slice(0, 3);
 
+  const hora = new Date().getHours();
+  const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <span className="text-slate-800 dark:text-white">
-              Olá, {userName}!
+              {saudacao}, {userName}!
             </span>
             <span>👋</span>
           </h1>
@@ -328,7 +331,15 @@ export default function Dashboard() {
 
       {hasDashboardPermission('Métricas SAC') && sacStats && (
         <>
-          <h2 className="text-xl font-bold text-slate-800 dark:text-white mt-8 mb-4">Métricas SAC</h2>
+          <div className="flex items-center justify-between mt-8 mb-4">
+            <h2 className="text-xl font-bold text-slate-800 dark:text-white">Métricas SAC</h2>
+            <button 
+              onClick={() => window.location.href = '/relatorio-sac'}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2"
+            >
+              <FileText size={16} /> Relatórios Detalhados
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
             <div className="glass-card p-6 flex items-center justify-between animate-slide-up cursor-pointer hover:shadow-md border border-transparent hover:border-primary-500/30 transition-all" onClick={() => setActiveKpiModal('TOTAL')} style={{ animationDelay: '0ms' }}>
               <div>

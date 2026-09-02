@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, Edit2, Save, X, Phone, User, Briefcase, RefreshCw, AlertCircle, Info } from 'lucide-react';
+import { WhatsAppMonitor } from '../components/WhatsAppMonitor';
 
 interface Vendedor {
   CODUSUR: number;
@@ -8,6 +9,7 @@ interface Vendedor {
   TELEFONE2: string;
   BLOQUEIO: string;
   CARGO: string;
+  INSTANCIA?: string;
 }
 
 export default function Vendedores() {
@@ -172,19 +174,22 @@ export default function Vendedores() {
                     </span>
                   </div>
                   
-                  <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400 mb-4">
-                    <div className="flex items-center gap-2">
-                      <Briefcase size={16} className="text-slate-400" />
-                      <span>{vendedor.CARGO || 'VENDEDOR'}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Phone size={16} className={vendedor.TELEFONE1 || vendedor.TELEFONE2 ? "text-green-500" : "text-rose-400"} />
-                      <span className={vendedor.TELEFONE1 || vendedor.TELEFONE2 ? "font-medium text-slate-700 dark:text-slate-300" : "italic"}>
-                        {formatPhone(vendedor.TELEFONE1 || vendedor.TELEFONE2)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                   <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400 mb-4">
+                     <div className="flex items-center gap-2">
+                       <Briefcase size={16} className="text-slate-400" />
+                       <span>{vendedor.CARGO || 'VENDEDOR'}</span>
+                     </div>
+                     <div className="flex items-center gap-2">
+                       <Phone size={16} className={vendedor.TELEFONE1 || vendedor.TELEFONE2 ? "text-green-500" : "text-rose-400"} />
+                       <span className={vendedor.TELEFONE1 || vendedor.TELEFONE2 ? "font-medium text-slate-700 dark:text-slate-300" : "italic"}>
+                         {formatPhone(vendedor.TELEFONE1 || vendedor.TELEFONE2)}
+                       </span>
+                     </div>
+                   </div>
+                   <div className="mt-3">
+                     {vendedor.INSTANCIA ? <WhatsAppMonitor codusur={vendedor.CODUSUR} /> : <span className="text-xs text-slate-400">WhatsApp não configurado</span>}
+                   </div>
+                 </div>
                 
                 <button
                   onClick={() => handleEditClick(vendedor)}

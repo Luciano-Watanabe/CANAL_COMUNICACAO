@@ -98,7 +98,56 @@ router.get('/produtos', async (req, res) => {
             binds.codatv1 = codatv1;
         }
 
+        let outerApplyEmbalagem = `
+            OUTER APPLY (
+                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA, TIPOEMBALAGEM
+                FROM PCEMBALAGEM PE2
+                WHERE PE2.CODPROD = P.CODPROD
+                AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                AND PE2.DTINATIVO IS NULL
+                ORDER BY PE2.QTUNIT DESC
+                FETCH FIRST 1 ROWS ONLY
+            ) PE
+        `;
+
+        let precoColumn = `NVL(PR.PVENDA, 0) AS PVENDA,`;
+
+        let dtfimvigenciaColumn = `NULL AS DTFIMVIGENCIA,`;
+
         if (campanha && campanha.trim() !== '') {
+            outerApplyEmbalagem = `
+            OUTER APPLY (
+                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA, TIPOEMBALAGEM
+                FROM PCEMBALAGEM PE2
+                WHERE PE2.CODPROD = P.CODPROD
+                AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                AND PE2.DTINATIVO IS NULL
+                AND UPPER(PE2.EMBALAGEM) LIKE UPPER('%' || :campanha || '%')
+                ORDER BY PE2.QTUNIT DESC
+                FETCH FIRST 1 ROWS ONLY
+            ) PE
+            `;
+
+            precoColumn = `
+                NVL((
+                    SELECT PROM.PVENDA
+                    FROM PCPRECOPROM PROM
+                    WHERE PROM.CODAUXILIAR = PE.CODAUXILIAR
+                      AND TRUNC(SYSDATE) BETWEEN PROM.DTINICIOVIGENCIA AND PROM.DTFIMVIGENCIA
+                      AND ROWNUM = 1
+                ), NVL(PR.PVENDA, 0)) AS PVENDA,
+            `;
+
+            dtfimvigenciaColumn = `
+                (
+                    SELECT PROM.DTFIMVIGENCIA
+                    FROM PCPRECOPROM PROM
+                    WHERE PROM.CODAUXILIAR = PE.CODAUXILIAR
+                      AND TRUNC(SYSDATE) BETWEEN PROM.DTINICIOVIGENCIA AND PROM.DTFIMVIGENCIA
+                      AND ROWNUM = 1
+                ) AS DTFIMVIGENCIA,
+            `;
+
             whereClause += `
                 AND EXISTS (
                     SELECT 1 FROM PCEMBALAGEM P_EMB 
@@ -118,25 +167,18 @@ router.get('/produtos', async (req, res) => {
                 P.DESCRICAO, 
                 P.CODEPTO, 
                 NVL(D.DESCRICAO, 'OUTROS') AS DEPARTAMENTO, 
-                NVL(PR.PVENDA, 0) AS PVENDA, 
+                ${precoColumn}
+                ${dtfimvigenciaColumn}
                 PE.CODAUXILIAR AS EAN, 
                 PE.QTUNIT, 
                 PE.UNMEDIDA AS UNIDADE_EMB,
                 PE.TIPOEMBALAGEM
             FROM PCPRODUT P
-            JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '1'
+            JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}'
             LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
-            LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+            LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
             ${joinClause}
-            OUTER APPLY (
-                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA, TIPOEMBALAGEM
-                FROM PCEMBALAGEM PE2
-                WHERE PE2.CODPROD = P.CODPROD
-                AND NVL(PE2.ENVIAFV, 'N') = 'S' 
-                AND PE2.DTINATIVO IS NULL
-                ORDER BY PE2.QTUNIT DESC
-                FETCH FIRST 1 ROWS ONLY
-            ) PE
+            ${outerApplyEmbalagem}
             WHERE NVL(P.OBS2, 'X') NOT IN ('FL')
             AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
             ${whereClause}
@@ -146,8 +188,8 @@ router.get('/produtos', async (req, res) => {
         const result = await conn.execute(sql, binds);
 
         const produtos = result.rows.map(row => {
-            const tipoEmbalagem = row[8];
-            let unidadeCalculada = row[7] || 'UN'; // default UNMEDIDA fallback
+            const tipoEmbalagem = row[9];
+            let unidadeCalculada = row[8] || 'UN'; // default UNMEDIDA fallback
             
             if (tipoEmbalagem === 'P') {
                 unidadeCalculada = 'KG';
@@ -161,8 +203,9 @@ router.get('/produtos', async (req, res) => {
                 codepto: row[2],
                 departamento: row[3],
                 preco: row[4],
-                ean: row[5] || '',
-                qtunit: row[6] || 1,
+                dtFimVigencia: row[5],
+                ean: row[6] || '',
+                qtunit: row[7] || 1,
                 unidade: unidadeCalculada
             };
         });

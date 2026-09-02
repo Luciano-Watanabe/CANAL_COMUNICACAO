@@ -34,7 +34,7 @@ SELECT
 FROM PCEST
 WHERE (QTESTGER - QTRESERV - QTBLOQUEADA) > 0;
 
--- 3. View de Preços Básicos
+-- 3. View de PreÃ§os BÃ¡sicos
 CREATE OR REPLACE VIEW VW_CANAL_PRECOS AS
 SELECT 
     CODPROD,
@@ -43,7 +43,7 @@ SELECT
     PVENDA AS PRECO_VENDA
 FROM PCTABPR;
 
--- 4. View de Autenticação de Usuários (Vendedores, Supervisores e Gerentes)
+-- 4. View de AutenticaÃ§Ã£o de UsuÃ¡rios (Vendedores, Supervisores e Gerentes)
 CREATE OR REPLACE VIEW VW_CANAL_USUARIOS AS
 SELECT 
     U.CODUSUR,
@@ -79,3 +79,4 @@ FROM PCCLIENT C
 -- Aqui pode-se adicionar filtros de bloqueio ou inatividade se existirem na sua regra, ex:
 -- WHERE C.BLOQUEIO = 'N'
 ;
+

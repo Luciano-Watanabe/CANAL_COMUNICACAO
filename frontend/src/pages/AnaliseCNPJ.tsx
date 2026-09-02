@@ -7,13 +7,19 @@ export default function AnaliseCNPJ() {
   const [searchTerm, setSearchTerm] = useState('');
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [selectedRca, setSelectedRca] = useState<string>('');
+  const [selectedSituacao, setSelectedSituacao] = useState<string>('');
   const [novosVendedores, setNovosVendedores] = useState<Record<number, string>>({});
   const [status, setStatus] = useState({ total: 0, analisados: 0 });
+
+  const situacoesCNPJ = ['ATIVA', 'BAIXADA', 'INAPTA', 'SUSPENSA', 'NULA', 'NAO_ENCONTRADO', 'CNPJ INVALIDO/NAO ENCONTRADO', 'CNPJ_INVALIDO', 'RATE_LIMIT', 'ERRO'];
 
   const fetchDados = async () => {
     setLoading(true);
     try {
-      const url = selectedRca ? `/api/analise-cnpj?rca=${selectedRca}` : `/api/analise-cnpj`;
+      const params = new URLSearchParams();
+      if (selectedRca) params.set('rca', selectedRca);
+      if (selectedSituacao) params.set('situacao', selectedSituacao);
+      const url = `/api/analise-cnpj?${params.toString()}`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
@@ -55,7 +61,7 @@ export default function AnaliseCNPJ() {
     }, 10000);
     
     return () => clearInterval(interval);
-  }, [selectedRca]);
+  }, [selectedRca, selectedSituacao]);
 
   const handleAlterarVendedor = async (codcli: number) => {
     const novoCodusur = novosVendedores[codcli];
@@ -165,6 +171,18 @@ export default function AnaliseCNPJ() {
           {vendedores.map((v) => (
             <option key={v.CODUSUR} value={v.CODUSUR} style={{ color: '#000', backgroundColor: '#fff' }}>
               {v.NOME}
+            </option>
+          ))}
+        </select>
+        <select
+          value={selectedSituacao}
+          onChange={(e) => setSelectedSituacao(e.target.value)}
+          className="w-full lg:w-64 bg-[var(--bg-color)] border border-[var(--border-color)] rounded-lg px-4 py-2.5 text-gray-100 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+        >
+          <option value="" style={{ color: '#000', backgroundColor: '#fff' }}>Todas as Situações</option>
+          {situacoesCNPJ.map((s) => (
+            <option key={s} value={s} style={{ color: '#000', backgroundColor: '#fff' }}>
+              {s}
             </option>
           ))}
         </select>

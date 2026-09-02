@@ -27,7 +27,7 @@ async function gerarPdfObjetivos(codvendedor, conn) {
               AND A.DTMOV < TRUNC(SYSDATE, 'MM')
               AND EXISTS (
                   SELECT 1 FROM PCEST E
-                  WHERE E.CODPROD = A.CODPROD AND E.QTESTGER > 0
+                  WHERE E.CODPROD = A.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' AND E.QTESTGER > 0
               )
             GROUP BY A.CODEPTO
             HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
@@ -111,7 +111,7 @@ async function gerarPdfObjetivos(codvendedor, conn) {
           AND C.DTULTCOMP <  TRUNC(SYSDATE, 'MM')
           AND EXISTS (
               SELECT 1 FROM PCEST E
-              WHERE E.CODPROD = A.CODPROD AND E.QTESTGER > 0
+              WHERE E.CODPROD = A.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' AND E.QTESTGER > 0
           )
         GROUP BY
             C.CODCLI, NVL(C.FANTASIA, C.CLIENTE), C.CGCENT,

@@ -3,7 +3,7 @@ const router = express.Router();
 const oracledb = require('oracledb');
 const axios = require('axios');
 router.get('/', async (req, res) => {
-    const { rca } = req.query;
+    const { rca, situacao } = req.query;
     let connection;
     try {
         connection = await oracledb.getConnection({
@@ -17,12 +17,18 @@ router.get('/', async (req, res) => {
             FROM CANAL_ANALISE_CNPJ A
             JOIN PCCLIENT C ON C.CODCLI = A.CODCLI
             LEFT JOIN PCUSUARI U ON C.CODUSUR1 = U.CODUSUR
+            WHERE 1=1
         `;
         const binds = {};
         
         if (rca && rca.trim() !== '') {
-            sql += ` WHERE C.CODUSUR1 = :rca `;
+            sql += ` AND C.CODUSUR1 = :rca `;
             binds.rca = rca;
+        }
+
+        if (situacao && situacao.trim() !== '' && situacao !== 'TODAS') {
+            sql += ` AND A.SITUACAO_CADASTRAL = :situacao `;
+            binds.situacao = situacao;
         }
 
         sql += `

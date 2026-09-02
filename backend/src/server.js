@@ -53,7 +53,12 @@ const catalogoRoutes = require('./routes/catalogo');
 const geolocalizacaoRoutes = require('./routes/geolocalizacao');
 const prospeccaoRoutes = require('./routes/prospeccao');
 const objetivosRoutes = require('./routes/objetivos');
+const botMensagensRoutes = require('./routes/botMensagens');
+const statusWhatsRoutes = require('./routes/statusWhats');
+const relatoriosRoutes = require('./routes/relatorios');
+const botMensagensService = require('./services/botMensagensService');
 
+app.use('/api/relatorios', relatoriosRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/clientes', clientesRoutes);
 app.use('/api/produtos', produtosRoutes);
@@ -80,6 +85,8 @@ app.use('/api', whatsappRoutes);
 app.use('/api/catalogo', catalogoRoutes);
 app.use('/api/geolocalizacao', geolocalizacaoRoutes);
 app.use('/api/objetivos', objetivosRoutes);
+app.use('/api/bot-mensagens', botMensagensRoutes);
+app.use('/api', statusWhatsRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Canal de Comunicacao Backend' });
@@ -183,6 +190,7 @@ const { exec } = require('child_process');
 // Inicia o pool Oracle antes de qualquer coisa
 oraclePool.initPool()
     .then(() => initializeOracleDatabase())
+    .then(() => botMensagensService.loadCache().then(() => botMensagensService.startAutoRefresh()))
     .then(async () => {
         // Verifica config do webhook nativo e inicia se necessário
         try {

@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const oraclePool = require('../services/oraclePool');
-const { determinarCargoAuto } = require('../utils/cargoHelper');
 
 // --- DEPARTAMENTOS ---
 
@@ -241,28 +240,14 @@ router.get('/tickets', async (req, res) => {
             binds.st = status;
         }
         
-        // Chave composta MATRICULA:CARGO para diferenciar VENDEDOR (PCUSUARI) de ATENDENTE (PCEMPR)
-        let matriculaKey = matricula;
+        // Ordena: tickets mencionados/referenciados para o usuário logado vêm primeiro
         if (matricula) {
-            const cargoLogado = await determinarCargoAuto(conn, matricula);
-            matriculaKey = String(matricula) + ':' + cargoLogado;
-        }
-
-        // Ordenacao:
-        // 1o - Tickets referenciados/mencionados AO USUARIO LOGADO (so aparece se o usuario tiver)
-        // 2o - Filtrar TODOS: ativos primeiro (ABERTO/EM ATENDIMENTO), finalizados/fechados no final
-        // 3o - Dentro de cada grupo: ticket aberto ha mais tempo primeiro (CRIADO_EM DESC)
-        if (status === 'TODOS') {
-            binds.matriculaKey = matriculaKey;
-            sql += ` ORDER BY CASE WHEN t.MENTIONED_MATRICULA = :matriculaKey THEN 0 ELSE 1 END,
-                      CASE WHEN t.STATUS IN ('ABERTO', 'EM ATENDIMENTO') THEN 0 ELSE 1 END,
-                      t.CRIADO_EM DESC`;
-        } else if (matricula) {
-            binds.ord = matriculaKey;
+            binds.ord = matricula;
             sql += ` ORDER BY CASE WHEN t.MENTIONED_MATRICULA = :ord THEN 0 ELSE 1 END, t.CRIADO_EM DESC`;
         } else {
             sql += ` ORDER BY t.CRIADO_EM DESC`;
         }
+
         const result = await conn.execute(sql, binds);
         
         const tickets = result.rows.map(row => {
@@ -306,7 +291,7 @@ router.get('/tickets', async (req, res) => {
                 agendamentoMotoristaTel: row[18],
                 agendamentoEnviado: row[19],
                 agendamentoProdutoNome: row[20],
-                mencionadoParaMim: !!matricula && String(row[21]) === String(matriculaKey),
+                mencionadoParaMim: !!matricula && String(row[21]) === String(matricula),
                 mencionadoParaNome: row[22] || null
             };
         });
@@ -751,14 +736,11 @@ router.post('/tickets/:id/reply', async (req, res) => {
                         if (empRes.rows.length > 0 && empRes.rows[0][0]) vendTel = empRes.rows[0][0];
                     }
                     const vendInst = await conn.execute(`SELECT INSTANCE_NAME, API_TOKEN, COALESCE(API_URL, (SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'EVOLUTION_API_URL')) FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :c`, { c: vendCodusur });
-                    
                     if (vendTel && vendInst.rows.length > 0) {
                         const vInst = vendInst.rows[0][0];
                         const vTok = vendInst.rows[0][1];
                         const vUrl = vendInst.rows[0][2];
-                        const vMsg = `*Ticket #${id} - ${titulo}*\n\n${finalMessage}`;
-                        
-                        // Envia para o Vendedor
+                        const vMsg = `*Notificação de Ticket #${id}*\n${titulo}\n\n*Resposta enviada ao cliente:*\n${finalMessage}`;
                         try {
                             await axios.post(`${vUrl}/message/sendText/${vInst}`, { number: telFormatado(vendTel), text: vMsg }, { headers: { 'apikey': vTok, 'Content-Type': 'application/json' }, timeout: 8000 });
                         } catch (e) {
@@ -1029,7 +1011,7 @@ router.get('/clientes/:codcli', async (req, res) => {
         const { codcli } = req.params;
         conn = await oraclePool.getConnection();
         const result = await conn.execute(`
-            SELECT CLIENTE, FANTASIA, TELCELENT, TELCOB, TELENT, TELCOM
+            SELECT CLIENTE, FANTASIA, TELEFONEENT, TELCOB, TELCOM
             FROM PCCLIENT
             WHERE CODCLI = :codcli
         `, { codcli });
@@ -1039,7 +1021,7 @@ router.get('/clientes/:codcli', async (req, res) => {
         }
 
         const nome = result.rows[0][1] || result.rows[0][0]; // Fantasia ou Cliente
-        let telefone = result.rows[0][2] || result.rows[0][3] || result.rows[0][4] || result.rows[0][5] || '';
+        let telefone = result.rows[0][2] || result.rows[0][3] || result.rows[0][4] || '';
         if (telefone) {
             telefone = String(telefone).replace(/[^0-9]/g, '');
         }
@@ -1358,7 +1340,7 @@ router.get('/atendentes', async (req, res) => {
             codusur: r[0],
             nome: r[1],
             telefone: r[2] || r[3] || ''
-        }));
+        })).filter(a => a.telefone); // Só retorna quem tem telefone
         res.json(atendentes);
     } catch (e) {
         console.error('[SAC] Erro ao buscar atendentes:', e);
@@ -1460,25 +1442,18 @@ router.post('/tickets/:id/avisar', async (req, res) => {
         }, { autoCommit: true });
 
         // 2b. Marca o ticket como mencionado/referenciado para o atendente (ordena primeiro na lista dele)
-        // Usa formato CODUSUR:CARGO para diferenciar VENDEDOR (PCUSUARI) de ATENDENTE (PCEMPR)
         try {
-            let cargoAtendente = 'VENDEDOR';
-            try {
-                cargoAtendente = await determinarCargoAuto(conn, atendenteCod);
-            } catch (cargoErr) {
-                console.error('[SAC] Erro ao determinar cargo do atendente:', cargoErr.message);
-            }
             await conn.execute(`
                 UPDATE CANAL_SAC_TICKETS
                 SET MENTIONED_MATRICULA = :m, MENTIONED_NOME = :n, ATUALIZADO_EM = SYSDATE
                 WHERE ID = :id
             `, {
-                m: String(atendenteCod || '') + ':' + cargoAtendente,
+                m: String(atendenteCod || ''),
                 n: atendenteNome || '',
                 id
             }, { autoCommit: true });
         } catch (e) {
-            console.error('[SAC] Erro ao marcar mencao no ticket:', e.message);
+            console.error('[SAC] Erro ao marcar menção no ticket:', e.message);
         }
 
         res.json({ message: 'Atendente notificado com sucesso' });

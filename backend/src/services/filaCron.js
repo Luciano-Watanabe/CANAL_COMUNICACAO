@@ -177,7 +177,7 @@ cron.schedule('* * * * *', async () => {
                             FETCH FIRST 10 ROWS ONLY
                         ) CG
                         JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
-                        LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = 1
+                        LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
                     `;
                     const bindsMix = { codatv1 };
                     if (campanhaSelecionada) bindsMix.campanha = campanhaSelecionada;
@@ -318,7 +318,7 @@ Regras:
                                     { role: "system", content: systemPrompt },
                                     { role: "user", content: prompt }
                                 ],
-                                model: "llama-3.3-70b-versatile",
+                                model: "groq/compound",
                                 stream: false,
                                 temperature: 0.7
                             }, {

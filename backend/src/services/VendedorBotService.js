@@ -2,6 +2,7 @@ const oracledb = require('oracledb');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const botMsgs = require('./botMensagensService');
 
 const TAG = '[VENDEDOR-BOT]';
 
@@ -150,12 +151,21 @@ class VendedorBotService {
             }
         } catch (error) {
             console.error(`${TAG} Erro no fluxo (estado="${estado}"):`, error);
-            await this.webhookPoller.enviarMensagemBot(telefone, "Desculpe, ocorreu um erro. Digite VOLTAR.", conn, instanceName);
+            await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_ERRO_GENERICO'), conn, instanceName);
         }
     }
 
     async enviarMenuPrincipal(telefone, instanceName, conn) {
-        const menuText = `💼 *Copiloto do Vendedor*\n\nOlá! Como posso te ajudar hoje?\n\n1️⃣ - 💬 Assistente de Comunicação\n2️⃣ - 📊 Meus Objetivos\n3️⃣ - 🎫 Consultar Tickets da Carteira\n4️⃣ - 🎫 Abrir ticket para cliente\n5️⃣ - 🔍 Consultar CNPJ/CPF\n0️⃣ - Finalizar`;
+        let nomeEmpresa = '';
+        try {
+            const resCfg = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'NOME_EMPRESA'`);
+            if (resCfg.rows.length > 0 && resCfg.rows[0][0]) {
+                nomeEmpresa = resCfg.rows[0][0];
+            }
+        } catch(e) {}
+
+        const menuText = botMsgs.getMsg('VEND_MENU_PRINCIPAL')
+            .replace(/\{\{nome_empresa\}\}/g, nomeEmpresa);
         await this.webhookPoller.enviarMensagemBot(telefone, menuText, conn, instanceName);
     }
 
@@ -164,7 +174,7 @@ class VendedorBotService {
         switch (opcao) {
             case '1':
                 await this.setState(telefone, 'VENDEDOR_ASSISTENTE_COMUNICACAO_BUSCA_CLIENTE', {}, conn);
-                await this.webhookPoller.enviarMensagemBot(telefone, "💬 *Assistente de Comunicação*\n\nQual CODCLI ou CNPJ/CPF do cliente que deseja analisar?\n\nDigite VOLTAR caso queira cancelar.", conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_ASSIST_BUSCA_CLIENTE'), conn, instanceName);
                 break;
             case '2':
                 await this.setState(telefone, 'VENDEDOR_MEUS_OBJETIVOS', {}, conn);
@@ -172,19 +182,19 @@ class VendedorBotService {
                 break;
             case '3':
                 await this.setState(telefone, 'VENDEDOR_TICKETS_STATUS', {}, conn);
-                await this.webhookPoller.enviarMensagemBot(telefone, "🎫 *Consultar Tickets*\n\nQual status você deseja consultar?\n1 - Abertos\n2 - Em Atendimento\n\nDigite o número da opção desejada ou VOLTAR.", conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_TICKET_STATUS_MENU'), conn, instanceName);
                 break;
             case '4':
                 await this.setState(telefone, 'VENDEDOR_ABRIR_TICKET_BUSCA_CLIENTE', {}, conn);
-                await this.webhookPoller.enviarMensagemBot(telefone, "Qual CODCLI ou CNPJ do cliente?\n\nDigite VOLTAR caso queira cancelar.", conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_TICKET_ABRIR_BUSCA'), conn, instanceName);
                 break;
             case '5':
                 await this.setState(telefone, 'VENDEDOR_CONSULTAR_CNPJ', {}, conn);
-                await this.webhookPoller.enviarMensagemBot(telefone, "🔍 *Consulta de Cadastro*\n\nDigite o *CNPJ* ou *CPF* que deseja consultar (apenas números).\n\nDigite VOLTAR para retornar ao menu.", conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_CNPJ_CONSULTA'), conn, instanceName);
                 break;
             case '0':
                 await conn.execute(`DELETE FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, [telefone]);
-                await this.webhookPoller.enviarMensagemBot(telefone, "Atendimento finalizado. Boa vendas!", conn, instanceName);
+                await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_ENCERRAR_ATENDIMENTO'), conn, instanceName);
                 break;
             default:
                 await this.enviarMenuPrincipal(telefone, instanceName, conn);
@@ -195,7 +205,7 @@ class VendedorBotService {
     async processarAssistenteComunicacaoBuscaCliente(telefone, text, instanceName, conn, dados, codvendedor) {
         const busca = (text || '').replace(/[^0-9]/g, '');
         if (!busca) {
-            await this.webhookPoller.enviarMensagemBot(telefone, "Código ou CNPJ inválido. Por favor, digite apenas números.\n\nQual CODCLI ou CNPJ/CPF do cliente?", conn, instanceName);
+            await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_CODCLI_INVALIDO'), conn, instanceName);
             return;
         }
 
@@ -366,7 +376,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                       AND A.DTMOV < TRUNC(SYSDATE, 'MM')
                       AND EXISTS (
                           SELECT 1 FROM PCEST E
-                          WHERE E.CODPROD = A.CODPROD AND E.QTESTGER > 0
+                          WHERE E.CODPROD = A.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' AND E.QTESTGER > 0
                       )
                     GROUP BY A.CODEPTO
                     HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
@@ -449,7 +459,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                   AND C.DTULTCOMP <  TRUNC(SYSDATE, 'MM')
                   AND EXISTS (
                       SELECT 1 FROM PCEST E
-                      WHERE E.CODPROD = A.CODPROD AND E.QTESTGER > 0
+                      WHERE E.CODPROD = A.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' AND E.QTESTGER > 0
                   )
                 GROUP BY
                     C.CODCLI, NVL(C.FANTASIA, C.CLIENTE), C.CGCENT,
@@ -693,7 +703,7 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
     async processarBuscaClienteTicket(telefone, text, instanceName, conn, dados, codvendedor) {
         const busca = (text || '').replace(/[^0-9]/g, '');
         if (!busca) {
-            await this.webhookPoller.enviarMensagemBot(telefone, "Código ou CNPJ inválido. Por favor, digite apenas números.\n\nQual CODCLI ou CNPJ do cliente?", conn, instanceName);
+            await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_CODCLI_INVALIDO'), conn, instanceName);
             return;
         }
 

@@ -2,16 +2,16 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import clsx from 'clsx';
-import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, MapPin, Target, Headset, ShieldAlert } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, Target, Headset, ShieldAlert, Smartphone } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 const DEFAULT_PERMISSIONS: any = {
   GERENTE: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Monitor Conversas', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
     dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   SUPERVISOR: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Monitor Conversas', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
     dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   VENDEDOR: {
@@ -77,6 +77,9 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
 
   if (userRole === 'GERENTE' || userRole === 'BOT_GESTOR') {
     links.push({ name: 'Configurações', path: '/configuracoes', icon: Settings });
+    if (!links.some(l => l.path === '/monitor-conversas')) {
+      links.push({ name: 'Monitor Conversas', path: '/monitor-conversas', icon: Smartphone });
+    }
   }
   
   if (userRole === 'GERENTE' || userRole === 'SUPERVISOR') {
@@ -86,21 +89,21 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     links.push({ name: 'Clientes Inativos', path: '/inativos', icon: Users });
     links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
     links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
-    links.push({ name: 'Geolocalização', path: '/geolocalizacao', icon: MapPin });
-    links.push({ name: 'Radar de Leads', path: '/prospeccao', icon: Target });
   }
 
   if (userRole === 'BOT_GESTOR') {
     links.push({ name: 'Objetivos', path: '/objetivos', icon: Target });
     links.push({ name: 'Gestão de Vendedores', path: '/vendedores', icon: Contact });
     links.push({ name: 'Automação de Mensagens', path: '/mensagens', icon: MessageSquare });
+    links.push({ name: 'Campanhas (Status)', path: '/campanhas', icon: ImagePlus });
+    if (!links.some(l => l.path === '/monitor-conversas')) {
+      links.push({ name: 'Monitor Conversas', path: '/monitor-conversas', icon: Smartphone });
+    }
     links.push({ name: 'Agendamentos de vendedores', path: '/visitas', icon: Users });
     links.push({ name: 'Clientes Inativos', path: '/inativos', icon: Users });
     links.push({ name: 'Rotas de Visitas', path: '/rotas', icon: Calendar });
     links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
     links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
-    links.push({ name: 'Geolocalização', path: '/geolocalizacao', icon: MapPin });
-    links.push({ name: 'Radar de Leads', path: '/prospeccao', icon: Target });
   }
 
   // Filter links based on RBAC permissions

@@ -457,6 +457,8 @@ export default function SAC() {
                       "p-3 rounded-xl border transition-all cursor-pointer hover:shadow-md",
                       selectedTicket?.id === ticket.id 
                         ? "bg-primary-50 dark:bg-primary-900/20 border-primary-200 dark:border-primary-800"
+                        : ticket.mencionadoParaMim
+                        ? "bg-amber-50 dark:bg-amber-900/10 border-amber-300 dark:border-amber-700 hover:border-amber-400"
                         : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 hover:border-primary-200"
                     )}
                   >
@@ -464,6 +466,11 @@ export default function SAC() {
                       <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm flex items-center gap-1.5">
                         <User size={14} className="text-slate-400" />
                         {ticket.telefone}
+                        {ticket.mencionadoParaMim && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-bold uppercase tracking-wide">
+                            Mencionado
+                          </span>
+                        )}
                       </div>
                       <span className={clsx(
                         "text-[10px] px-2 py-0.5 rounded-full font-medium border uppercase tracking-wider",
