@@ -24,6 +24,7 @@ export default function Configuracoes() {
   const [sacBotCodusur, setSacBotCodusur] = useState('');
   const [estoqueCodfilial, setEstoqueCodfilial] = useState('1');
   const [tabprNumregiao, setTabprNumregiao] = useState('1');
+  const [validadeOrcamento, setValidadeOrcamento] = useState('24 horas');
   const { isPrivacyMode, setPrivacyMode, maskData } = usePrivacy();
 
   const userStr = localStorage.getItem('user');
@@ -127,6 +128,9 @@ export default function Configuracoes() {
           }
           if (dataGlob.configs['TABPR_NUMREGIAO']) {
             setTabprNumregiao(dataGlob.configs['TABPR_NUMREGIAO']);
+          }
+          if (dataGlob.configs['VALIDADE_ORCAMENTO']) {
+            setValidadeOrcamento(dataGlob.configs['VALIDADE_ORCAMENTO']);
           }
         }
         
@@ -239,7 +243,8 @@ export default function Configuracoes() {
             CRON_HORA_FIM: cronHoraFim.toString(),
             SAC_BOT_CODUSUR: sacBotCodusur,
             ESTOQUE_CODFILIAL: estoqueCodfilial,
-            TABPR_NUMREGIAO: tabprNumregiao
+            TABPR_NUMREGIAO: tabprNumregiao,
+            VALIDADE_ORCAMENTO: validadeOrcamento
           }
         })
       });
@@ -828,6 +833,19 @@ export default function Configuracoes() {
               value={tabprNumregiao}
               onChange={(e) => setTabprNumregiao(e.target.value)}
               placeholder="Ex: 1"
+              className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Tempo de Validade do Orçamento (PDF)
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Tempo de validade que será impresso no topo do PDF gerado.</p>
+            <input 
+              type="text" 
+              value={validadeOrcamento}
+              onChange={(e) => setValidadeOrcamento(e.target.value)}
+              placeholder="Ex: 24 horas, 7 dias..."
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
           </div>

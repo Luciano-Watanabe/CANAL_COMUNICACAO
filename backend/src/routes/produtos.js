@@ -64,12 +64,16 @@ router.get('/mix/:codcli', async (req, res) => {
             return res.json({ success: true, mix: [] }); 
         }
 
-        // Busca apenas o que o cliente atual comprou no último ano
+        // Busca o histórico de compras do cliente (em algum momento)
         const sqlClient = `
-            SELECT M.CODPROD, SUM(M.QT) AS QTD_CLIENTE, MAX(M.DTMOV) AS ULTIMA_COMPRA
+            SELECT M.CODPROD, SUM(M.QT) AS QTD_CLIENTE, MAX(M.DTMOV) AS ULTIMA_COMPRA,
+                   (SELECT M2.PUNIT FROM PCMOV M2 
+                    WHERE M2.CODCLI = M.CODCLI AND M2.CODPROD = M.CODPROD 
+                    AND M2.CODOPER = 'S'
+                    ORDER BY M2.DTMOV DESC FETCH FIRST 1 ROWS ONLY) AS ULTIMO_PRECO_PAGO
             FROM PCMOV M
-            WHERE M.CODCLI = :codcli AND M.CODOPER = 'S' AND M.DTMOV >= SYSDATE - 365
-            GROUP BY M.CODPROD
+            WHERE M.CODCLI = :codcli AND M.CODOPER = 'S'
+            GROUP BY M.CODPROD, M.CODCLI
         `;
         const resClient = await conn.execute(sqlClient, { codcli });
 
@@ -77,12 +81,13 @@ router.get('/mix/:codcli', async (req, res) => {
         for (const r of resClient.rows) {
             clientPurchases[String(r[0])] = {
                 qtdCliente: r[1],
-                ultimaCompra: r[2]
+                ultimaCompra: r[2],
+                ultimoPrecoPago: r[3]
             };
         }
 
         const finalMix = mixCache.map(m => {
-            const clientInfo = clientPurchases[String(m.CODPROD)] || { qtdCliente: 0, ultimaCompra: null };
+            const clientInfo = clientPurchases[String(m.CODPROD)] || { qtdCliente: 0, ultimaCompra: null, ultimoPrecoPago: null };
             const qtdCliente = clientInfo.qtdCliente;
             const qtdClientesAtividade = m.QTD_CLIENTES_COMPRARAM || 1;
             const mediaAtividade = m.QTD_TOTAL / qtdClientesAtividade;
@@ -95,6 +100,7 @@ router.get('/mix/:codcli', async (req, res) => {
                 preco: m.PVENDA,
                 qtdCliente,
                 ultimaCompra: clientInfo.ultimaCompra ? new Date(clientInfo.ultimaCompra).toISOString() : null,
+                ultimoPrecoPago: clientInfo.ultimoPrecoPago,
                 ean: m.EAN,
                 qtunit: m.QTUNIT,
                 fatopreco: m.FATOPRECO,
@@ -236,6 +242,83 @@ router.post('/eans', async (req, res) => {
     } catch (err) {
         console.error('Erro ao buscar EANs:', err);
         res.status(500).json({ success: false, error: 'Erro ao buscar EANs' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+});
+
+// Busca produtos com paginação/busca para o Orçamento
+router.get('/busca', async (req, res) => {
+    const { termo = '', page = 1, limit = 100 } = req.query;
+    let conn;
+    try {
+        conn = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const maxRows = parseInt(limit);
+        const binds = {};
+
+        let whereClause = `WHERE NVL(P.OBS2, 'X') NOT IN ('FL') AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0`;
+
+        if (termo && termo.trim() !== '') {
+            whereClause += ` AND (UPPER(P.DESCRICAO) LIKE UPPER('%' || :termo || '%') OR TO_CHAR(P.CODPROD) = :termo OR TO_CHAR(PE.CODAUXILIAR) = :termo)`;
+            binds.termo = termo.trim();
+        }
+
+        binds.offset = offset;
+        binds.maxRows = maxRows;
+
+        const sql = `
+            SELECT 
+                P.CODPROD, 
+                P.DESCRICAO, 
+                NVL(D.DESCRICAO, 'OUTROS') AS DEPARTAMENTO, 
+                NVL(PR.PVENDA, 0) AS PRECO,
+                PE.CODAUXILIAR AS EAN, 
+                PE.QTUNIT, 
+                PE.UNMEDIDA AS UNIDADE_EMB,
+                PE.TIPOEMBALAGEM
+            FROM PCPRODUT P
+            JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}'
+            LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
+            LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+            OUTER APPLY (
+                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA, TIPOEMBALAGEM
+                FROM PCEMBALAGEM PE2
+                WHERE PE2.CODPROD = P.CODPROD
+                AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                AND PE2.DTINATIVO IS NULL
+                ORDER BY PE2.QTUNIT DESC
+                FETCH FIRST 1 ROWS ONLY
+            ) PE
+            ${whereClause}
+            ORDER BY P.DESCRICAO
+            OFFSET :offset ROWS FETCH NEXT :maxRows ROWS ONLY
+        `;
+
+        const result = await conn.execute(sql, binds);
+
+        const produtos = result.rows.map(row => ({
+            codprod: row[0],
+            descricao: row[1],
+            departamento: row[2],
+            preco: row[3],
+            ean: row[4] || '',
+            qtunit: row[5] || 1,
+            unidade: row[6] || 'UN',
+            tipoembalagem: row[7] || 'U'
+        }));
+
+        res.json({ success: true, produtos });
+    } catch (err) {
+        console.error('Erro ao buscar produtos:', err);
+        res.status(500).json({ success: false, error: 'Erro interno ao buscar produtos' });
     } finally {
         if (conn) {
             try { await conn.close(); } catch (e) {}

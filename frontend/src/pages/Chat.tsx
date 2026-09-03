@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Search, Info, Smile, Paperclip, Send, AlertCircle, Check, CheckCheck, MessageSquare, Tag, X, ShoppingCart, Download, FileText, Loader2, Mic, Square, Trash2 } from 'lucide-react';
+import { Search, Info, Smile, Paperclip, Send, AlertCircle, Check, CheckCheck, MessageSquare, Tag, X, ShoppingCart, Download, FileText, Loader2, Mic, Square, Trash2, ClipboardList } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import clsx from 'clsx';
 import { useSocket } from '../contexts/SocketContext';
 import { useCart } from '../contexts/CartContext';
@@ -133,6 +135,12 @@ export default function Chat() {
 
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<'info' | 'mix' | 'cart'>('info');
+  const [isOrcamentoModalOpen, setIsOrcamentoModalOpen] = useState(false);
+  const [orcamentoSearch, setOrcamentoSearch] = useState<string>('');
+  const [orcamentoProdutos, setOrcamentoProdutos] = useState<any[]>([]);
+  const [orcamentoLoading, setOrcamentoLoading] = useState(false);
+  const [orcamentoItems, setOrcamentoItems] = useState<Record<string, { qtd: number, perc: number, selecionado: boolean }>>({});
+  const [orcamentoGerando, setOrcamentoGerando] = useState(false);
   const { getCartItems, addToCart } = useCart();
 
   const [templates, setTemplates] = useState<any[]>([]);
@@ -512,6 +520,276 @@ export default function Chat() {
     setRecordingDuration(0);
   };
 
+  const handleBuscarOrcamentoProdutos = async () => {
+    setOrcamentoLoading(true);
+    try {
+      const res = await fetch(`/api/produtos/busca?termo=${encodeURIComponent(orcamentoSearch)}&limit=100`);
+      const data = await res.json();
+      if (data.success) {
+        setOrcamentoProdutos(data.produtos);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setOrcamentoLoading(false);
+  };
+
+  const handleGerarOrcamentoPDF = async (downloadOnly = false) => {
+    if (!activeChatData) return;
+    setOrcamentoGerando(true);
+    try {
+      const selected = Object.entries(orcamentoItems)
+        .filter(([_, data]) => data.selecionado)
+        .map(([codprod, data]) => {
+           const p = orcamentoProdutos.find(prod => String(prod.codprod) === codprod);
+           return { ...p, qtd: data.qtd, perc: data.perc };
+        }).filter(p => p.codprod);
+
+      if (selected.length === 0) {
+        alert('Selecione ao menos um produto para o orçamento.');
+        setOrcamentoGerando(false);
+        return;
+      }
+
+      let empresaData: any = null;
+      let clienteData: any = null;
+      let validadeOrc = '24 horas';
+      let logoBase64: string | null = null;
+      try {
+        const codcli = activeChatData.id.split('_')[0];
+        const resDados = await fetch(`/api/chat/orcamento-dados/${codcli}`);
+        const dataDados = await resDados.json();
+        if (dataDados.success) {
+           empresaData = dataDados.empresa;
+           clienteData = dataDados.cliente;
+           if (dataDados.validadeOrcamento) validadeOrc = dataDados.validadeOrcamento;
+        }
+
+        const logoRes = await fetch('/logo-ag.png');
+        if (logoRes.ok) {
+           const logoBlob = await logoRes.blob();
+           logoBase64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.readAsDataURL(logoBlob);
+           });
+        }
+      } catch (e) {
+        console.error('Erro ao buscar dados adicionais do orçamento', e);
+      }
+
+      const doc = new jsPDF('l', 'mm', 'a4');
+      
+      const startX = logoBase64 ? 50 : 14;
+
+      if (logoBase64) {
+         try {
+           doc.addImage(logoBase64, 'PNG', 14, 15, 30, 20);
+         } catch(e) {}
+      }
+      
+      // Cabeçalho da Empresa
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text(empresaData?.razaoSocial || '', startX, 20);
+      
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`CGC: ${empresaData?.cnpj || ''}`, startX, 25);
+      doc.text(`END: ${empresaData?.endereco || ''}`, startX, 30);
+      doc.text(`BAIRRO: ${empresaData?.bairro || ''}`, startX, 35);
+      
+      const cidUf = empresaData ? `${empresaData.cidade || ''} / ${empresaData.uf || ''}` : ' / ';
+      doc.text(`CIDADE/UF: ${cidUf !== ' / ' ? cidUf : ''}`, startX, 40);
+      
+      doc.text(`CEP: ${empresaData?.cep || ''}`, startX, 45);
+      doc.text(`FONE: ${empresaData?.telefone || ''}`, startX, 50);
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('ORÇAMENTO', 280, 25, { align: 'right' });
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      const todayStr = new Date().toLocaleDateString();
+      const timeStr = new Date().toLocaleTimeString();
+      doc.text(`Data: ${todayStr}`, 280, 30, { align: 'right' });
+      doc.text(`Impresso em ${todayStr} ${timeStr}`, 280, 35, { align: 'right' });
+      doc.text('Status: Pendente', 280, 40, { align: 'right' });
+      doc.text(`Validade: ${validadeOrc}`, 280, 45, { align: 'right' });
+      
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Representante:`, 80, 45);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`COD. ${activeCodusur} - ${user?.nome?.toUpperCase() || ''}`, 80, 50);
+      
+      // Caixa do Cliente
+      doc.setFillColor(240, 240, 240);
+      doc.rect(14, 55, 269, 25, 'F');
+      doc.rect(14, 55, 269, 25, 'S');
+      
+      if (clienteData) {
+          doc.text(`CLIENTE: ${clienteData.codcli} - ${clienteData.nome}`, 16, 60);
+          doc.text(`CPF/CNPJ: ${clienteData.cnpj || ''}`, 120, 60);
+          doc.text(`FONE: ${clienteData.telefone || activeChatData.preview}`, 210, 60);
+          doc.text(`END. COM: ${clienteData.endereco || ''}`, 16, 65);
+          doc.text(`BAIRRO: ${clienteData.bairro || ''}`, 120, 65);
+          doc.text(`CEP: ${clienteData.cep || ''}`, 210, 65);
+          doc.text(`CIDADE: ${clienteData.cidade || ''}`, 120, 70);
+          doc.text(`UF: ${clienteData.uf || ''}`, 210, 70);
+      } else {
+          doc.text(`CLIENTE: ${activeChatData.name}`, 16, 60);
+          doc.text(`FONE: ${activeChatData.preview}`, 210, 60);
+      }
+      
+      const tableData: any[] = [];
+      const images: Record<string, string> = {};
+
+      let totalProdutos = 0;
+      for (const p of selected) {
+         try {
+            const res = await fetch(`/api/produtos/imagem/${p.codprod}`);
+            const blob = await res.blob();
+            if (blob.type.startsWith('image/')) {
+                const base64 = await new Promise<string>((resolve) => {
+                   const reader = new FileReader();
+                   reader.onloadend = () => resolve(reader.result as string);
+                   reader.readAsDataURL(blob);
+                });
+                images[p.codprod] = base64;
+            }
+         } catch(e) {
+            console.error('Erro imagem:', e);
+         }
+
+          const precoFinal = p.preco - (p.preco * (p.perc / 100));
+          const totalItem = precoFinal * p.qtd;
+          totalProdutos += totalItem;
+          
+          tableData.push([
+            '', // ITEM
+            '', // FOTO
+            p.codprod, // COD
+            p.descricao,
+            p.ean,
+            p.qtunit + ' ' + p.unidade,
+            '', // COD. FAB
+            '', // MARCA
+            p.unidade, // UN
+            p.qtd,
+            Number(precoFinal).toFixed(2).replace('.', ','),
+            Number(totalItem).toFixed(2).replace('.', ',')
+          ]);
+      }
+      
+      let itemCounter = 1;
+      for(let row of tableData) {
+         row[0] = itemCounter++;
+      }
+      
+      autoTable(doc, {
+        startY: 85,
+        head: [['ITEM', 'FOTO', 'COD.', 'DESCRICAO', 'COD. BARRAS', 'EMB.', 'COD. FAB.', 'MARCA', 'UN', 'QTDE', 'VLR. UNIT.', 'TOTAL']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontSize: 7, fontStyle: 'bold', halign: 'center', lineWidth: 0.1, lineColor: [200,200,200] },
+        bodyStyles: { fontSize: 7, minCellHeight: 12, textColor: [50,50,50] },
+        columnStyles: {
+           0: { cellWidth: 10, halign: 'center' },
+           1: { cellWidth: 15, halign: 'center' },
+           2: { cellWidth: 12, halign: 'center' },
+           3: { cellWidth: 122 },
+           4: { cellWidth: 20 },
+           5: { cellWidth: 15 },
+           6: { cellWidth: 15 },
+           7: { cellWidth: 15 },
+           8: { cellWidth: 10, halign: 'center' },
+           9: { cellWidth: 10, halign: 'center' },
+           10: { cellWidth: 15, halign: 'right' },
+           11: { cellWidth: 15, halign: 'right' }
+        },
+        didDrawCell: (data) => {
+          if (data.section === 'body' && data.column.index === 1) {
+            const rowIndex = data.row.index;
+            const codprod = selected[rowIndex].codprod;
+            const base64 = images[codprod];
+            if (base64 && base64.startsWith('data:image') && !base64.includes('svg')) {
+              let format = 'JPEG';
+              if (base64.includes('image/png')) format = 'PNG';
+              else if (base64.includes('image/webp')) format = 'WEBP';
+              try {
+                // Adjust position to center the image within the 15mm cell
+                doc.addImage(base64, format, data.cell.x + 2.5, data.cell.y + 1, 10, 10);
+              } catch (e) {
+                console.error('Error adding image to pdf', e);
+              }
+            }
+          }
+        },
+        rowPageBreak: 'avoid',
+      });
+      
+      const finalY = (doc as any).lastAutoTable.finalY + 5;
+      
+      // Footer
+      doc.setFillColor(240, 240, 240);
+      doc.rect(14, finalY, 269, 30, 'F');
+      doc.rect(14, finalY, 269, 30, 'S');
+      
+      doc.setFontSize(8);
+      doc.text('FORM. PAGTO:', 16, finalY + 5);
+      doc.text('COND. PAGTO:', 16, finalY + 10);
+      doc.text('FRETE:', 16, finalY + 15);
+      
+      doc.text('VALOR TOTAL IPI:', 210, finalY + 5);
+      doc.text('R$ 0,00', 280, finalY + 5, { align: 'right' });
+      
+      doc.text('VALOR TOTAL ST:', 210, finalY + 10);
+      doc.text('R$ 0,00', 280, finalY + 10, { align: 'right' });
+      
+      doc.text('TOTAL PRODUTOS:', 210, finalY + 15);
+      doc.text('R$ ' + totalProdutos.toFixed(2).replace('.', ','), 280, finalY + 15, { align: 'right' });
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text('VALOR GERAL:', 210, finalY + 25);
+      doc.text('R$ ' + totalProdutos.toFixed(2).replace('.', ','), 280, finalY + 25, { align: 'right' });
+
+      const pdfBlob = doc.output('blob');
+      if (downloadOnly) {
+         doc.save(`orcamento_${activeChatData.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+         setOrcamentoGerando(false);
+         return;
+      }
+      
+      const file = new File([pdfBlob], 'orcamento.pdf', { type: 'application/pdf' });
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('telefone', activeChatData.preview);
+      formData.append('codusur', String(activeCodusur));
+
+      const response = await fetch('/api/chat/send-media', {
+        method: 'POST',
+        body: formData
+      });
+      const respData = await response.json();
+      
+      if (!respData.success) {
+        alert('Erro ao enviar orçamento: ' + respData.error);
+      } else {
+        setRightPanelTab('info');
+      }
+
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao gerar orçamento.');
+    }
+    setOrcamentoGerando(false);
+  };
+
+
   const handleSendMessage = async () => {
     if (!activeChatData || !activeCodusur) return;
     if (!messageInput.trim() && !selectedFile && !audioBlob) return;
@@ -782,6 +1060,13 @@ export default function Chat() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setIsOrcamentoModalOpen(true)}
+                  className="p-2 text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-xl transition-colors hidden sm:block" 
+                  title="Orçamento"
+                >
+                  <ClipboardList size={20} />
+                </button>
                 <button 
                   onClick={handleEditTags}
                   className="p-2 text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-500/10 rounded-xl transition-colors hidden sm:block" 
@@ -1127,6 +1412,7 @@ export default function Chat() {
                 </span>
               )}
             </button>
+
           </div>
           
           <div className="flex-1 overflow-y-auto">
@@ -1479,7 +1765,11 @@ export default function Chat() {
                             <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm flex items-center gap-1">
                               <Tag size={12} /> R$ {Number(prod.preco).toFixed(2).replace('.', ',')}
                             </span>
-                            {/* Multiplication logic removed for lowest fractional price display */}
+                            {prod.ultimoPrecoPago && (
+                              <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded">
+                                Último: R$ {Number(prod.ultimoPrecoPago).toFixed(2).replace('.', ',')}
+                              </span>
+                            )}
                           </div>
                           <div className="flex justify-between items-center text-xs text-slate-500 mt-2">
                             <span>Emb: {prod.qtunit} {prod.unidade}</span>
@@ -1514,6 +1804,166 @@ export default function Chat() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Orçamento */}
+      {isOrcamentoModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <ClipboardList size={20} className="text-primary-500" />
+                Orçamento
+              </h2>
+              <button 
+                onClick={() => setIsOrcamentoModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 flex flex-col min-h-0">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-700">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                      <input 
+                        type="text"
+                        placeholder="Buscar por descrição, cód ou EAN..."
+                        className="w-full pl-9 pr-4 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                        value={orcamentoSearch}
+                        onChange={e => setOrcamentoSearch(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleBuscarOrcamentoProdutos()}
+                      />
+                    </div>
+                    <button
+                      onClick={handleBuscarOrcamentoProdutos}
+                      disabled={orcamentoLoading}
+                      className="px-6 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shrink-0"
+                    >
+                      {orcamentoLoading ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                      Buscar
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-slate-50 dark:bg-slate-900/50">
+                  {orcamentoProdutos.length === 0 ? (
+                    <div className="text-center text-slate-500 text-sm mt-10">
+                      Nenhum produto encontrado.
+                    </div>
+                  ) : (
+                    orcamentoProdutos.map(prod => {
+                      const itemData = orcamentoItems[prod.codprod] || { selecionado: false, qtd: 1, perc: 0 };
+                      const isSelected = itemData.selecionado;
+                      const precoFinal = prod.preco - (prod.preco * (itemData.perc / 100));
+
+                      return (
+                        <div key={prod.codprod} className={clsx("shrink-0 p-4 rounded-xl border transition-all relative overflow-hidden", isSelected ? "border-primary-500 bg-primary-50 dark:bg-primary-900/20 shadow-sm" : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800")}>
+                          <div className="flex gap-4 items-start">
+                             <input 
+                               type="checkbox"
+                               checked={isSelected}
+                               onChange={(e) => setOrcamentoItems(prev => ({
+                                  ...prev,
+                                  [prod.codprod]: { ...itemData, selecionado: e.target.checked }
+                               }))}
+                               className="mt-1 w-5 h-5 text-primary-600 rounded border-slate-300 focus:ring-primary-500 cursor-pointer shrink-0"
+                             />
+                             <img 
+                               src={`/api/produtos/imagem/${prod.codprod}`} 
+                               alt={prod.descricao} 
+                               className="w-14 h-14 rounded-lg object-cover bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700" 
+                               onError={(e) => {
+                                 (e.target as HTMLImageElement).src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNjdjRkNTYiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cmVjdCB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHg9IjMiIHk9IjMiIHJ4PSIyIiByeT0iMiIvPjxjaXJjbGUgY3g9IjkiIGN5PSI5IiByPSIyIi8+PHBhdGggZD0ibTIxIDE1LTMuMDgtMy4wOGExLjIgMS4yIDAgMCAwLTEuNzIgMGwtNC4yNyA0LjI3Ii8+PHBhdGggZD0iTTcgMjFsNS4wMi01LjAyYTEuMiAxLjIgMCAwIDEgMS43MiAwbDEuODMgMS44MyIvPjwvc3ZnPg==';
+                               }}
+                             />
+                             <div className="flex-1 min-w-0">
+                                <div className="text-xs text-slate-500 font-medium mb-1 truncate">Cód: {prod.codprod} | EAN: {prod.ean}</div>
+                                <div className="text-sm font-bold text-slate-900 dark:text-white leading-tight mb-1 truncate">{maskData(prod.descricao)}</div>
+                                <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
+                                  <span>Emb: {prod.qtunit} {prod.unidade}</span>
+                                  <span>Preço Tab: R$ {Number(prod.preco).toFixed(2).replace('.', ',')}</span>
+                                </div>
+                                {isSelected && (
+                                  <div className="flex gap-4 items-center bg-white dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700 mt-2">
+                                    <div className="flex flex-col flex-1">
+                                      <label className="text-xs font-semibold text-slate-500 mb-1">Qtd.</label>
+                                      <input 
+                                        type="number" min="1"
+                                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-md p-2 bg-transparent"
+                                        value={itemData.qtd}
+                                        onChange={e => setOrcamentoItems(prev => ({
+                                           ...prev,
+                                           [prod.codprod]: { ...itemData, qtd: Number(e.target.value) }
+                                        }))}
+                                      />
+                                    </div>
+                                    <div className="flex flex-col flex-1">
+                                      <label className="text-xs font-semibold text-slate-500 mb-1">Desc (%)</label>
+                                      <input 
+                                        type="number" min="0" max="5" step="0.1"
+                                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-md p-2 bg-transparent"
+                                        value={itemData.perc}
+                                        onChange={e => {
+                                          let val = Number(e.target.value);
+                                          if (val > 5) val = 5;
+                                          if (val < 0) val = 0;
+                                          setOrcamentoItems(prev => ({
+                                           ...prev,
+                                           [prod.codprod]: { ...itemData, perc: val }
+                                          }))
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="flex flex-col flex-1 text-right justify-center">
+                                      <label className="text-xs font-semibold text-slate-500 mb-1">Preço Final</label>
+                                      <span className="text-lg font-bold text-primary-600 dark:text-primary-400">
+                                        R$ {Number(precoFinal).toFixed(2).replace('.', ',')}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                             </div>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+
+                <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex justify-end gap-3">
+                  <button
+                    onClick={() => setIsOrcamentoModalOpen(false)}
+                    className="px-6 py-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg font-medium transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                        handleGerarOrcamentoPDF(true);
+                        setIsOrcamentoModalOpen(false);
+                    }}
+                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {orcamentoGerando ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+                    Baixar PDF
+                  </button>
+                  <button
+                    onClick={() => {
+                        handleGerarOrcamentoPDF(false);
+                        setIsOrcamentoModalOpen(false);
+                    }}
+                    className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {orcamentoGerando ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}
+                    Gerar e Enviar PDF
+                  </button>
+                </div>
+            </div>
           </div>
         </div>
       )}

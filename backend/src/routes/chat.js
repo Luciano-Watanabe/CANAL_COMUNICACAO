@@ -64,6 +64,64 @@ router.get('/history', async (req, res) => {
     }
 });
 
+
+// Buscar dados para cabecalho do orcamento (empresa e cliente)
+router.get('/orcamento-dados/:codcli', async (req, res) => {
+    const { codcli } = req.params;
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const sqlEmpresa = `
+            SELECT CODIGO, RAZAOSOCIAL, CGC, ENDERECO, BAIRRO, CIDADE, UF, CEP, TELEFONE
+            FROM PCFILIAL
+            WHERE CODIGO = COALESCE((SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'CODFILIAL'), '1')
+        `;
+        const resEmpresa = await connection.execute(sqlEmpresa);
+        let empresa = null;
+        if (resEmpresa.rows.length > 0) {
+            const r = resEmpresa.rows[0];
+            empresa = {
+                codigo: r[0], razaoSocial: r[1], cnpj: r[2], endereco: r[3], bairro: r[4], cidade: r[5], uf: r[6], cep: r[7], telefone: r[8]
+            };
+        }
+
+        const sqlCliente = `
+            SELECT CODCLI, CLIENTE, CGCENT, ENDERENT, BAIRROENT, MUNICENT, ESTENT, CEPENT, TELENT
+            FROM PCCLIENT
+            WHERE CODCLI = :codcli
+        `;
+        const resCliente = await connection.execute(sqlCliente, { codcli });
+        let cliente = null;
+        if (resCliente.rows.length > 0) {
+            const r = resCliente.rows[0];
+            cliente = {
+                codcli: r[0], nome: r[1], cnpj: r[2], endereco: r[3], bairro: r[4], cidade: r[5], uf: r[6], cep: r[7], telefone: r[8]
+            };
+        }
+
+        const sqlConfig = `SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'VALIDADE_ORCAMENTO'`;
+        const resConfig = await connection.execute(sqlConfig);
+        let validadeOrcamento = '24 horas';
+        if (resConfig.rows.length > 0 && resConfig.rows[0][0]) {
+            validadeOrcamento = resConfig.rows[0][0];
+        }
+
+        res.json({ success: true, empresa, cliente, validadeOrcamento });
+    } catch (err) {
+        console.error('Erro ao buscar dados do orcamento:', err);
+        res.status(500).json({ success: false, error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
 // Listar todas as conversas de todos os WhatsApp configurados (read-only)
 router.get('/todas-conversas', async (req, res) => {
     const normalizeTel = (v) => String(v || '').replace(/[^0-9]/g, '');
