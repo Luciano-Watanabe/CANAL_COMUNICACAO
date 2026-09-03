@@ -4,6 +4,24 @@ const oracledb = require('oracledb');
 const oraclePool = require('../services/oraclePool');
 const OpenAI = require('openai');
 
+router.get('/vendedores', async (req, res) => {
+    let conn;
+    try {
+        conn = await oraclePool.getConnection();
+        const result = await conn.execute(
+            `SELECT CODUSUR, NOME FROM VW_CANAL_USUARIOS ORDER BY NOME`,
+            [],
+            { outFormat: oracledb.OUT_FORMAT_OBJECT }
+        );
+        res.json({ success: true, vendedores: result.rows });
+    } catch (err) {
+        console.error('Erro ao buscar vendedores (PCUSUARI):', err);
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        if (conn) await conn.close();
+    }
+});
+
 router.get('/sac-vendedor', async (req, res) => {
     const { codusur, dataInicio, dataFim } = req.query;
     if (!dataInicio || !dataFim) {
@@ -16,6 +34,7 @@ router.get('/sac-vendedor', async (req, res) => {
         let sql = `
             SELECT 
                 t.ID, t.CODCLI, NVL(c.FANTASIA, c.CLIENTE) as NOME_CLIENTE,
+                u.NOME as NOME_VENDEDOR,
                 t.CRIADO_EM, t.DATA_RESOLUCAO,
                 d.NOME as DEPARTAMENTO, p.NOME as PAI_NOME,
                 t.NOTA_AVALIACAO,
@@ -24,6 +43,7 @@ router.get('/sac-vendedor', async (req, res) => {
             LEFT JOIN CANAL_SAC_DEPARTAMENTOS d ON t.DEPARTAMENTO_ID = d.ID
             LEFT JOIN CANAL_SAC_DEPARTAMENTOS p ON d.DEPARTAMENTO_PAI_ID = p.ID
             LEFT JOIN PCCLIENT c ON c.CODCLI = t.CODCLI
+            LEFT JOIN PCUSUARI u ON u.CODUSUR = c.CODUSUR1
             WHERE t.CRIADO_EM BETWEEN TO_TIMESTAMP(:di, 'YYYY-MM-DD HH24:MI:SS') 
                                   AND TO_TIMESTAMP(:df, 'YYYY-MM-DD HH24:MI:SS')
         `;
@@ -34,8 +54,14 @@ router.get('/sac-vendedor', async (req, res) => {
         };
 
         if (codusur) {
-            sql += ` AND c.CODUSUR1 = :codusur`;
-            binds.codusur = codusur;
+            const codusurArray = codusur.split(',').map(s => s.trim()).filter(Boolean);
+            if (codusurArray.length > 0) {
+                const inClause = codusurArray.map((_, i) => `:codusur${i}`).join(',');
+                sql += ` AND c.CODUSUR1 IN (${inClause})`;
+                codusurArray.forEach((val, i) => {
+                    binds[`codusur${i}`] = val;
+                });
+            }
         }
 
         sql += ` ORDER BY t.CRIADO_EM DESC`;
@@ -55,22 +81,37 @@ router.get('/sac-vendedor', async (req, res) => {
         `;
         const bindsEvolutivo = {};
         if (codusur) {
-            sqlEvolutivo += ` AND c.CODUSUR1 = :codusur`;
-            bindsEvolutivo.codusur = codusur;
+            const codusurArray = codusur.split(',').map(s => s.trim()).filter(Boolean);
+            if (codusurArray.length > 0) {
+                const inClause = codusurArray.map((_, i) => `:codusur${i}`).join(',');
+                sqlEvolutivo += ` AND c.CODUSUR1 IN (${inClause})`;
+                codusurArray.forEach((val, i) => {
+                    bindsEvolutivo[`codusur${i}`] = val;
+                });
+            }
         }
         sqlEvolutivo += ` GROUP BY TO_CHAR(t.CRIADO_EM, 'YYYY-MM'), d.NOME ORDER BY MES ASC`;
 
         const resultEvolutivo = await conn.execute(sqlEvolutivo, bindsEvolutivo, { outFormat: oracledb.OUT_FORMAT_OBJECT });
 
+        // 3. Buscar nome do(s) vendedor(es)
         let nomeVendedor = 'Todos';
         if (codusur) {
-            const resultVendedor = await conn.execute(
-                `SELECT NOME FROM PCUSUARI WHERE CODUSUR = :codusur`, 
-                { codusur }, 
-                { outFormat: oracledb.OUT_FORMAT_OBJECT }
-            );
-            if (resultVendedor.rows.length > 0) {
-                nomeVendedor = resultVendedor.rows[0].NOME;
+            const codusurArray = codusur.split(',').map(s => s.trim()).filter(Boolean);
+            if (codusurArray.length > 0) {
+                const inClause = codusurArray.map((_, i) => `:codusur${i}`).join(',');
+                const bindsVendedor = {};
+                codusurArray.forEach((val, i) => { bindsVendedor[`codusur${i}`] = val; });
+                
+                const resultVendedor = await conn.execute(
+                    `SELECT NOME FROM PCUSUARI WHERE CODUSUR IN (${inClause})`,
+                    bindsVendedor,
+                    { outFormat: oracledb.OUT_FORMAT_OBJECT }
+                );
+                
+                if (resultVendedor.rows.length > 0) {
+                    nomeVendedor = resultVendedor.rows.map(r => r.NOME).join(', ');
+                }
             }
         }
 

@@ -365,21 +365,27 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
                       AND C.DTULTCOMP < TRUNC(SYSDATE, 'MM')
                 ),
                 PESO_POTENCIAL AS (
-                    SELECT
-                        A.CODEPTO,
-                        ROUND(SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ), 2) AS PESO_POTENCIAL
-                    FROM PCMOV A
-                    JOIN CLIENTES_PERDIDOS P ON P.CODCLI = A.CODCLI
-                    JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
-                    WHERE A.CODUSUR = :codvendedor
-                      AND A.CODOPER LIKE 'S%'
-                      AND A.DTMOV < TRUNC(SYSDATE, 'MM')
-                      AND EXISTS (
-                          SELECT 1 FROM PCEST E
-                          WHERE E.CODPROD = A.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' AND E.QTESTGER > 0
-                      )
-                    GROUP BY A.CODEPTO
-                    HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
+                    SELECT 
+                        CODEPTO, 
+                        ROUND(SUM(AVG_PESO_PRODUTO), 2) AS PESO_POTENCIAL
+                    FROM (
+                        SELECT
+                            A.CODEPTO,
+                            SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) / COUNT(A.CODPROD) AS AVG_PESO_PRODUTO
+                        FROM PCMOV A
+                        JOIN CLIENTES_PERDIDOS P ON P.CODCLI = A.CODCLI
+                        JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
+                        WHERE A.CODUSUR = :codvendedor
+                          AND A.CODOPER LIKE 'S%'
+                          AND A.DTMOV < TRUNC(SYSDATE, 'MM')
+                          AND EXISTS (
+                              SELECT 1 FROM PCEST E
+                              WHERE E.CODPROD = A.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' AND E.QTESTGER > 0
+                          )
+                        GROUP BY A.CODCLI, A.CODEPTO, A.CODPROD
+                        HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
+                    )
+                    GROUP BY CODEPTO
                 )
                 SELECT
                     TO_CHAR(A.DTMOV, 'MM/YYYY')  AS MES_REF,
@@ -438,34 +444,41 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             }));
 
             const sqlClientes = `
+                WITH MEDIA_PRODUTOS AS (
+                    SELECT
+                        A.CODCLI,
+                        A.CODEPTO,
+                        SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) / COUNT(A.CODPROD) AS AVG_PESO_PRODUTO
+                    FROM PCMOV A
+                    JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
+                    WHERE A.CODUSUR = :codvendedor
+                      AND A.CODOPER LIKE 'S%'
+                      AND A.DTMOV < TRUNC(SYSDATE, 'MM')
+                      AND EXISTS (
+                          SELECT 1 FROM PCEST E
+                          WHERE E.CODPROD = A.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' AND E.QTESTGER > 0
+                      )
+                    GROUP BY A.CODCLI, A.CODEPTO, A.CODPROD
+                    HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
+                )
                 SELECT
                     C.CODCLI,
                     NVL(C.FANTASIA, C.CLIENTE)                        AS CLIENTE,
                     C.CGCENT,
                     TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY')               AS DTULTCOMP,
-                    A.CODEPTO,
+                    M.CODEPTO,
                     D.DESCRICAO,
-                    ROUND(SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ), 2)                  AS PESO
+                    ROUND(SUM(M.AVG_PESO_PRODUTO), 2)                  AS PESO
                 FROM PCCLIENT C
-                JOIN PCMOV A
-                    ON A.CODCLI = C.CODCLI
-                   AND A.CODUSUR = :codvendedor
-                   AND A.CODOPER LIKE 'S%'
-                   AND A.DTMOV < TRUNC(SYSDATE, 'MM')
-                JOIN PCDEPTO D ON D.CODEPTO = A.CODEPTO
-                JOIN PCPRODUT X ON A.CODPROD = X.CODPROD
+                JOIN MEDIA_PRODUTOS M ON M.CODCLI = C.CODCLI
+                JOIN PCDEPTO D ON D.CODEPTO = M.CODEPTO
                 WHERE C.CODUSUR1 = :codvendedor
                   AND C.DTULTCOMP >= TRUNC(SYSDATE) - 90
                   AND C.DTULTCOMP <  TRUNC(SYSDATE, 'MM')
-                  AND EXISTS (
-                      SELECT 1 FROM PCEST E
-                      WHERE E.CODPROD = A.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' AND E.QTESTGER > 0
-                  )
                 GROUP BY
                     C.CODCLI, NVL(C.FANTASIA, C.CLIENTE), C.CGCENT,
-                    TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY'), A.CODEPTO, D.DESCRICAO
-                HAVING SUM((A.QT-NVL(A.QTDEVOL,0)) * X.PESOLIQ) > 0
-                ORDER BY C.CODCLI, A.CODEPTO
+                    TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY'), M.CODEPTO, D.DESCRICAO
+                ORDER BY C.CODCLI, M.CODEPTO
             `;
             const resClientes = await conn.execute(sqlClientes, { codvendedor: codvendedorAlvo });
 

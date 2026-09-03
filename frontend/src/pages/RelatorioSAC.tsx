@@ -1,8 +1,8 @@
 import { Printer, Sparkles } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { useState, useRef } from 'react';
-import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Line, ComposedChart } from 'recharts';
+import { useState, useRef, useEffect } from 'react';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, Bar, XAxis, YAxis, CartesianGrid, Line, ComposedChart } from 'recharts';
 import * as htmlToImage from 'html-to-image';
 import ReactMarkdown from 'react-markdown';
 
@@ -13,11 +13,62 @@ export default function RelatorioSAC() {
   const [nomeVendedor, setNomeVendedor] = useState('Todos');
   const [relatorioData, setRelatorioData] = useState<any[]>([]);
   const [evolutivoData, setEvolutivoData] = useState<any[]>([]);
+  const [departamentosEvolutivo, setDepartamentosEvolutivo] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [analiseIA, setAnaliseIA] = useState<string | null>(null);
   const [loadingIA, setLoadingIA] = useState(false);
 
+  const [vendedoresLista, setVendedoresLista] = useState<any[]>([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch('/api/relatorios/vendedores')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setVendedoresLista(data.vendedores || []);
+        }
+      })
+      .catch(err => console.error('Erro ao buscar vendedores:', err));
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const relatorioRef = useRef<HTMLDivElement>(null);
+
+  const selectedVendedores = vendedor ? vendedor.split(',') : [];
+
+  const toggleVendedor = (cod: string) => {
+    let newSelected = [...selectedVendedores];
+    if (cod === '') {
+      newSelected = [];
+    } else {
+      if (newSelected.includes(cod)) {
+        newSelected = newSelected.filter(c => c !== cod);
+      } else {
+        newSelected.push(cod);
+      }
+    }
+    setVendedor(newSelected.join(','));
+  };
+
+  const getButtonText = () => {
+    if (selectedVendedores.length === 0) return 'Todos os Vendedores';
+    if (selectedVendedores.length === 1) {
+      const v = vendedoresLista.find(v => String(v.CODUSUR) === selectedVendedores[0]);
+      return v ? v.NOME : selectedVendedores[0];
+    }
+    return `${selectedVendedores.length} vendedores selecionados`;
+  };
 
   const gerarAnaliseIADireto = async (tickets: any[], cod: string) => {
     setLoadingIA(true);
@@ -46,7 +97,30 @@ export default function RelatorioSAC() {
       const data = await res.json();
       if (data.success) {
         setRelatorioData(data.tickets || []);
-        setEvolutivoData(data.evolutivo || []);
+        
+        // Formatar dados evolutivos para agrupar por MES
+        const rawEvo = data.evolutivo || [];
+        const groupedEvo: any = {};
+        const depts = new Set<string>();
+        
+        rawEvo.forEach((r: any) => {
+          if (!groupedEvo[r.MES]) {
+             groupedEvo[r.MES] = { MES: r.MES, MEDIA_GERAL: 0, count: 0, total_nota: 0 };
+          }
+          groupedEvo[r.MES][r.DEPARTAMENTO] = r.TOTAL_TICKETS;
+          groupedEvo[r.MES].total_nota += (r.MEDIA_AVALIACAO * r.TOTAL_TICKETS);
+          groupedEvo[r.MES].count += r.TOTAL_TICKETS;
+          depts.add(r.DEPARTAMENTO);
+        });
+        
+        const finalEvo = Object.values(groupedEvo).map((g: any) => ({
+          ...g,
+          MEDIA_GERAL: g.count ? parseFloat((g.total_nota / g.count).toFixed(2)) : 0
+        })).sort((a: any, b: any) => a.MES.localeCompare(b.MES));
+
+        setEvolutivoData(finalEvo);
+        setDepartamentosEvolutivo(Array.from(depts));
+        
         setNomeVendedor(data.nomeVendedor || (vendedor || 'Todos'));
         if (data.tickets && data.tickets.length > 0) {
           gerarAnaliseIADireto(data.tickets, vendedor);
@@ -178,9 +252,36 @@ export default function RelatorioSAC() {
             <label className="block text-sm text-slate-500 mb-1">Período Fim</label>
             <input type="date" value={dataFim} onChange={e => setDataFim(e.target.value)} className="p-2 border rounded-lg" />
           </div>
-          <div>
-            <label className="block text-sm text-slate-500 mb-1">Vendedor (Codusur)</label>
-            <input type="text" value={vendedor} onChange={e => setVendedor(e.target.value)} placeholder="Ex: 123" className="p-2 border rounded-lg" />
+          <div className="relative" ref={dropdownRef}>
+            <label className="block text-sm text-slate-500 mb-1">Vendedor(es)</label>
+            <div 
+              className="p-2 border rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 cursor-pointer flex justify-between items-center min-w-[250px]"
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+            >
+              <span className="truncate max-w-[200px]">{getButtonText()}</span>
+              <span className="text-slate-400 text-xs">▼</span>
+            </div>
+            {isDropdownOpen && (
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                <div 
+                  className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-2"
+                  onClick={() => toggleVendedor('')}
+                >
+                  <input type="checkbox" checked={selectedVendedores.length === 0} readOnly className="cursor-pointer" />
+                  <span className="text-sm">Todos os Vendedores</span>
+                </div>
+                {vendedoresLista.map(v => (
+                  <div 
+                    key={v.CODUSUR} 
+                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer flex items-center gap-2"
+                    onClick={() => toggleVendedor(String(v.CODUSUR))}
+                  >
+                    <input type="checkbox" checked={selectedVendedores.includes(String(v.CODUSUR))} readOnly className="cursor-pointer" />
+                    <span className="text-sm truncate">{v.CODUSUR} - {v.NOME}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-end gap-2">
             <button onClick={buscarDados} disabled={loading} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">
@@ -200,6 +301,7 @@ export default function RelatorioSAC() {
             <tr className="border-b">
               <th className="text-left p-3">CodCli</th>
               <th className="text-left p-3">Nome</th>
+              <th className="text-left p-3">Vendedor</th>
               <th className="text-left p-3">Abertura</th>
               <th className="text-left p-3">Fechado</th>
               <th className="text-left p-3">Tempo</th>
@@ -212,6 +314,7 @@ export default function RelatorioSAC() {
               <tr key={i} className="border-b">
                 <td className="p-3">{row.CODCLI}</td>
                 <td className="p-3">{row.NOME_CLIENTE}</td>
+                <td className="p-3">{row.NOME_VENDEDOR}</td>
                 <td className="p-3">{formatarData(row.CRIADO_EM)}</td>
                 <td className="p-3">{formatarData(row.DATA_RESOLUCAO)}</td>
                 <td className="p-3">{row.TEMPO_TOTAL ? formatarTempo(row.TEMPO_TOTAL) : '-'}</td>
@@ -247,14 +350,16 @@ export default function RelatorioSAC() {
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={evolutivoData}>
-                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                  <XAxis dataKey="MES" tick={{fontSize: 10}} />
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                  <XAxis dataKey="MES" />
                   <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" domain={[0, 10]} />
-                  <RechartsTooltip contentStyle={{color: '#000'}} />
+                  <YAxis yAxisId="right" orientation="right" domain={[0, 5]} />
+                  <RechartsTooltip />
                   <Legend />
-                  <Bar isAnimationActive={false} yAxisId="left" dataKey="TOTAL_TICKETS" name="Qtd Tickets" fill="#0ea5e9" />
-                  <Line isAnimationActive={false} yAxisId="right" type="monotone" dataKey="MEDIA_AVALIACAO" name="Média Avaliação" stroke="#f59e0b" strokeWidth={2} />
+                  {departamentosEvolutivo.map((dept, index) => (
+                    <Bar key={dept} yAxisId="left" dataKey={dept} stackId="a" fill={`hsl(${index * 45}, 70%, 50%)`} name={dept} />
+                  ))}
+                  <Line yAxisId="right" type="monotone" dataKey="MEDIA_GERAL" stroke="#f59e0b" name="Nota Média Geral" strokeWidth={3} dot={{ r: 4 }} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
