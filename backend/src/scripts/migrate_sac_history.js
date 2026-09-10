@@ -1,4 +1,4 @@
-require('dotenv').config({ path: __dirname + '/../../.env' });
+require('dotenv').config({ path: '/opt/CANAL_COMUNICACAO_HOMOLOGACAO/.env' });
 const oracledb = require('oracledb');
 
 try {

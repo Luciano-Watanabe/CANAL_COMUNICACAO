@@ -151,7 +151,7 @@ class WebhookPoller {
             if (!info) return;
 
             // Evitar loop infinito do proprio bot
-            if (info.IsFromMe) return;
+            const isFromMe = info.IsFromMe === true;
 
             const remoteJid = info.Chat || info.Sender; // Ex: 5511999999999@s.whatsapp.net
             const instanceName = payload.instanceName || 'padrao';
@@ -199,13 +199,14 @@ class WebhookPoller {
             const msgObj = {
                 id: info.ID,
                 chat_id: telefone,
-                sender: 'cliente',
+                sender: isFromMe ? 'atendente' : 'cliente',
                 text: textMessage,
-                timestamp: info.Timestamp || new Date().toISOString()
+                timestamp: info.Timestamp || new Date().toISOString(),
+                isFromMe: isFromMe
             };
 
             // --- Lógica de Retorno de Visitas ---
-            if (msgObj.text && msgObj.text.toLowerCase().startsWith('#retorno')) {
+            if (!msgObj.isFromMe && msgObj.text && msgObj.text.toLowerCase().startsWith('#retorno')) {
                 const handled = await this.processarRetornoVisita(telefone, msgObj.text, conn, require('../server').io, instanceName);
                 if (handled) return; // Se processou como retorno, não envia para o chat do cliente
             }
@@ -227,6 +228,9 @@ class WebhookPoller {
                 }
             } else {
                 console.log(`[WebhookPoller] Cliente ${telefone} não encontrado na PCCLIENT. Mensagem arquivada.`);
+            }
+            if (msgObj.isFromMe) {
+                return; // Para o fluxo de auto-respostas e bots se fomos nós que enviamos
             }
             
             // Verifica se a instância é a do SAC BOT
@@ -272,7 +276,7 @@ class WebhookPoller {
 
         const messageData = data.message;
         
-        if (data.key.fromMe) return;
+        const isFromMeFallback = data.key.fromMe === true;
 
         const fallbackRemoteJid = data.key.remoteJid;
         const pushName = data.pushName || 'Cliente';
@@ -318,13 +322,14 @@ class WebhookPoller {
         const fallbackMsgObj = {
             id: data.key.id,
             chat_id: fallbackTelefone,
-            sender: 'cliente',
+            sender: isFromMeFallback ? 'atendente' : 'cliente',
             text: fallbackTextMessage,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            isFromMe: isFromMeFallback
         };
 
         // --- Lógica de Retorno de Visitas ---
-        if (fallbackMsgObj.text && fallbackMsgObj.text.toLowerCase().startsWith('#retorno')) {
+        if (!fallbackMsgObj.isFromMe && fallbackMsgObj.text && fallbackMsgObj.text.toLowerCase().startsWith('#retorno')) {
             const handled = await this.processarRetornoVisita(fallbackTelefone, fallbackMsgObj.text, conn, require('../server').io, fallbackInstanceName);
             if (handled) return; // Se processou como retorno, não envia para o chat do cliente
         }
@@ -345,6 +350,9 @@ class WebhookPoller {
             }
         } else {
             console.log(`[WebhookPoller] Cliente ${fallbackTelefone} não encontrado. Mensagem arquivada.`);
+        }
+        if (fallbackMsgObj.isFromMe) {
+            return; // Para o fluxo de auto-respostas e bots se fomos nós que enviamos
         }
         
         // Verifica se a instância é a do SAC BOT
@@ -793,13 +801,15 @@ class WebhookPoller {
             // O ticketId será preenchido se o usuário estiver em qualquer bolha de Ticket que já tenha gerado o ID.
 
             const insertMessage = async (idMsg, textoStr, mUrl, mType, mMime, tipoStr) => {
+                const sentidoMsg = msgObj.isFromMe ? 'OUT' : 'IN';
                 await conn.execute(`
                     INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE, TICKET_ID)
-                    VALUES (:id, :cod, :tel, 'IN', :txt, :mUrl, :mType, :mMime, :tId)
+                    VALUES (:id, :cod, :tel, :sentido, :txt, :mUrl, :mType, :mMime, :tId)
                 `, {
                     id: idMsg,
                     cod: codusur,
                     tel: msgObj.chat_id.replace('@s.whatsapp.net', '').replace('@g.us', '').substring(0, 20),
+                    sentido: sentidoMsg,
                     txt: textoStr,
                     mUrl: mUrl,
                     mType: mType,
@@ -844,13 +854,15 @@ class WebhookPoller {
                     msgObj.text = (baseText + transcricaoTag).substring(0, 4000);
                 }
 
+                const sentidoMsg = msgObj.isFromMe ? 'OUT' : 'IN';
                 await conn.execute(`
                     INSERT INTO CANAL_MENSAGENS (ID_MENSAGEM, CODUSUR, TELEFONE_CLIENTE, SENTIDO, TEXTO, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE, TICKET_ID)
-                    VALUES (:id, :cod, :tel, 'IN', :txt, :mUrl, :mType, :mMime, :tId)
+                    VALUES (:id, :cod, :tel, :sentido, :txt, :mUrl, :mType, :mMime, :tId)
                 `, {
                     id: msgObj.id,
                     cod: codusur,
                     tel: msgObj.chat_id.replace('@s.whatsapp.net', '').replace('@g.us', '').substring(0, 20),
+                    sentido: sentidoMsg,
                     txt: msgObj.text,
                     mUrl: mediaUrl,
                     mType: mediaType,
