@@ -1,5 +1,5 @@
 const oraclePool = require('../services/oraclePool');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 
 const util = require('util');
 const execPromise = util.promisify(require('child_process').exec);
@@ -97,10 +97,11 @@ exports.updateConfig = async (req, res) => {
             console.log(`Iniciando tailscale com hostname ${nomeEmpresa}...`);
             const authKey = process.env.TAILSCALE_AUTH_KEY;
             let upCmd = `tailscale up --hostname=${nomeEmpresa} --accept-routes --timeout=10s`;
+            let upArgs = ['login', `--hostname=${nomeEmpresa}`, '--accept-routes', '--timeout=10s'];
             if (authKey) {
-                upCmd = `tailscale login --hostname=${nomeEmpresa} --accept-routes --auth-key=${authKey} --timeout=10s`;
+                upArgs.push(`--auth-key=${authKey}`);
             }
-            exec(upCmd, (upErr, upStdout, upStderr) => {
+            execFile('tailscale', upArgs, (upErr, upStdout, upStderr) => {
                 if (upErr) console.error(`Erro no tailscale up/login:`, upErr.message);
 
                 console.log(`Gerando certificados para ${nomeEmpresa}...`);
@@ -112,7 +113,7 @@ exports.updateConfig = async (req, res) => {
                     webhookServerManager.startWebhookServer(porta, token);
                     
                     console.log(`Iniciando tailscale funnel na porta ${porta}...`);
-                    exec(`tailscale funnel -bg ${porta}`, (error, stdout, stderr) => {
+                    execFile('tailscale', ['funnel', '-bg', String(porta)], (error, stdout, stderr) => {
                         if (error) console.error(`Erro ao iniciar tailscale funnel:`, error.message);
                         if (stderr) console.error(`tailscale funnel stderr:`, stderr);
                         console.log(`tailscale funnel stdout:`, stdout);
@@ -122,7 +123,7 @@ exports.updateConfig = async (req, res) => {
         } else {
             console.log(`Desativando tailscale funnel...`);
             webhookServerManager.stopWebhookServer();
-            exec(`tailscale funnel off`, (error, stdout, stderr) => {
+            execFile('tailscale', ['funnel', 'off'], (error, stdout, stderr) => {
                 if (error) {
                     console.error(`Erro ao desativar tailscale funnel: ${error.message}`);
                     return;
@@ -160,13 +161,13 @@ exports.tailscaleLogin = async (req, res) => {
         } catch (e) { }
 
         const authKey = process.env.TAILSCALE_AUTH_KEY;
-        let command = `tailscale login --hostname=${nomeEmpresa} --accept-routes --timeout=15s`;
+        let commandArgs = ['login', `--hostname=${nomeEmpresa}`, '--accept-routes', '--timeout=15s'];
         
         if (authKey) {
-            command += ` --auth-key=${authKey}`;
+            commandArgs.push(`--auth-key=${authKey}`);
         }
 
-        exec(command, (error, stdout, stderr) => {
+        execFile('tailscale', commandArgs, (error, stdout, stderr) => {
             if (error) {
                 console.error('Erro no tailscale login:', error.message);
             }

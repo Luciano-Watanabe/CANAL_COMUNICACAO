@@ -1,7 +1,15 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 
-router.post('/login', async (req, res) => {
+// Fase 5: Anti-brute force no login
+const loginLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000, // 5 minutos
+    max: 10, // Limite de 10 tentativas por IP
+    message: { success: false, error: 'Muitas tentativas de login. Tente novamente em 5 minutos.' }
+});
+
+router.post('/login', loginLimiter, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {

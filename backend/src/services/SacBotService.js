@@ -222,7 +222,25 @@ class SacBotService {
         }
 
         console.log(`${TAG} [Menu Principal] Enviando menu para ${telefone} (atendente: ${nomeAtendente}, cliente: ${nomeCliente || 'Desconhecido'})`);
-        const menuOpcoes = botMsgs.getMsg('SAC_MENU_OPCOES');
+        const menuOpcoesRaw = botMsgs.getMsg('SAC_MENU_OPCOES');
+        
+        let menuAtivos = '1,2,3,4,5,6,7,8,9,0';
+        try {
+            const resCfg = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_MENU_ATIVOS'`);
+            if (resCfg.rows.length > 0 && resCfg.rows[0][0]) {
+                menuAtivos = resCfg.rows[0][0];
+            }
+        } catch(e) {}
+        const ativosArray = menuAtivos.split(',').map(s => s.trim());
+
+        const menuOpcoes = menuOpcoesRaw.split('\n').filter(linha => {
+            const match = linha.match(/^\s*(\d)/);
+            if (match) {
+                return ativosArray.includes(match[1]);
+            }
+            return true; // Mantém cabeçalhos e linhas sem número
+        }).join('\n');
+
         const menuText = `${saudacao}\n${menuOpcoes}`;
         await this.webhookPoller.enviarMensagemBot(telefone, menuText, conn, instanceName);
     }
@@ -231,6 +249,21 @@ class SacBotService {
         const opcao = (text || '').trim();
         console.log(`${TAG} [Menu Principal] ${telefone} digitou opção: "${opcao}"`);
         
+        // Verifica configurações de opções ativas
+        let menuAtivos = '1,2,3,4,5,6,7,8,9,0';
+        try {
+            const resCfg = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_MENU_ATIVOS'`);
+            if (resCfg.rows.length > 0 && resCfg.rows[0][0]) {
+                menuAtivos = resCfg.rows[0][0];
+            }
+        } catch(e) {}
+        const ativosArray = menuAtivos.split(',').map(s => s.trim());
+
+        if (opcao !== '' && !ativosArray.includes(opcao)) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Opção indisponível no momento. Por favor, escolha outra opção.", conn, instanceName);
+            return await this.enviarMenuPrincipal(telefone, instanceName, conn);
+        }
+
         const contato = await this.identificarContato(telefone, conn);
         const isCliente = contato.type === 'cliente';
 
@@ -633,18 +666,36 @@ class SacBotService {
                     GROUP BY M.CODPROD
                 )
                 SELECT 
-                    P.CODPROD, 
-                    P.DESCRICAO, 
-                    NVL(PR.PVENDA, 0) AS PVENDA,
-                    P.UNIDADE,
-                    P.CODAUXILIAR
-                FROM PCPRODUT P
-                JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}'
-                JOIN COMPRAS_GERAIS CG ON CG.CODPROD = P.CODPROD
-                LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
-                WHERE NVL(P.OBS2, 'X') NOT IN ('FL')
-                AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
-                ORDER BY P.DESCRICAO
+                    A.CODPROD,
+                    P.DESCRICAO,
+                    NVL(B.PRECOFIXO, C.PTABELA) AS PVENDA,
+                    A.UNIDADE,
+                    A.CODAUXILIAR,
+                    CASE WHEN B.PRECOFIXO IS NOT NULL THEN 'OPORTUNIDADE' ELSE '' END AS TIPO_PRECO
+                FROM PCEMBALAGEM A
+                JOIN COMPRAS_GERAIS CG ON CG.CODPROD = A.CODPROD
+                LEFT JOIN PCPRECOPROM B 
+                       ON A.CODAUXILIAR = B.CODAUXILIAR 
+                      AND B.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                      AND TRUNC(SYSDATE) BETWEEN B.DTINICIOVIGENCIA AND B.DTFIMVIGENCIA
+                      AND B.DTINICIOVIGENCIA IS NOT NULL
+                      AND B.DTFIMVIGENCIA IS NOT NULL
+                LEFT JOIN PCTABPR C 
+                       ON A.CODPROD = C.CODPROD 
+                      AND C.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                JOIN PCPRODUT P 
+                  ON A.CODPROD = P.CODPROD
+                JOIN PCEST E 
+                  ON A.CODPROD = E.CODPROD 
+                 AND A.CODFILIAL = E.CODFILIAL 
+                 AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' 
+                 AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
+                WHERE A.ENVIAFV = 'S'
+                  AND A.DTINATIVO IS NULL
+                  AND NVL(P.OBS2, 'X') NOT IN ('FL')
+                ORDER BY 
+                    CASE WHEN B.PRECOFIXO IS NOT NULL THEN 0 ELSE 1 END,
+                    A.CODPROD
                 FETCH FIRST 50 ROWS ONLY
             `;
             const resProd = await conn.execute(sqlProdutos, { codatv });
@@ -772,6 +823,13 @@ class SacBotService {
                             doc.fillColor('#64748b').fontSize(9).font('Helvetica-Bold').text(`/ ${unidade}`, x + 5, currentY + 164, { width: cellW - 10, align: 'right' });
                         } else {
                             doc.fillColor('#64748b').fontSize(10).font('Helvetica-Bold').text(`Consulte condições`, x + 5, currentY + 160, { width: cellW - 10, align: 'center' });
+                        }
+
+                        // Badge de Oportunidade
+                        const tipoPreco = r[5] || '';
+                        if (tipoPreco === 'OPORTUNIDADE') {
+                            doc.rect(x + cellW - 55, currentY + 10, 50, 15).fill('#ef4444');
+                            doc.fillColor('white').fontSize(8).font('Helvetica-Bold').text('OFERTA', x + cellW - 55, currentY + 14, { width: 50, align: 'center' });
                         }
                         
                         // Reset colors

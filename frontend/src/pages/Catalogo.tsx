@@ -84,11 +84,23 @@ export default function Catalogo() {
   const produtosPorDepartamento = useMemo(() => {
     const agrupado: Record<string, Produto[]> = {};
     produtos.forEach(p => {
-      const dep = p.departamento || 'OUTROS';
+      const dep = p.tipoPreco === 'OPORTUNIDADE' ? '⭐️ OPORTUNIDADES' : (p.departamento || 'OUTROS');
       if (!agrupado[dep]) agrupado[dep] = [];
       agrupado[dep].push(p);
     });
-    return agrupado;
+
+    const chavesOrdenadas = Object.keys(agrupado).sort((a, b) => {
+      if (a === '⭐️ OPORTUNIDADES') return -1;
+      if (b === '⭐️ OPORTUNIDADES') return 1;
+      return a.localeCompare(b);
+    });
+
+    const agrupadoOrdenado: Record<string, Produto[]> = {};
+    chavesOrdenadas.forEach(key => {
+      agrupadoOrdenado[key] = agrupado[key];
+    });
+
+    return agrupadoOrdenado;
   }, [produtos]);
 
   const [isExporting, setIsExporting] = useState(false);
@@ -293,15 +305,20 @@ export default function Catalogo() {
 
           {Object.entries(produtosPorDepartamento).map(([dep, prods]) => (
             <div key={dep} className="catalog-dept-group" style={{ breakInside: 'auto' }}>
-              <h3 className="text-2xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-3" style={{ breakAfter: 'avoid' }}>
-                <span className="w-2 h-8 bg-primary-500 rounded-full print:bg-slate-800"></span>
+              <h3 className={`text-2xl font-bold mb-6 flex items-center gap-3 ${dep === '⭐️ OPORTUNIDADES' ? 'text-red-600 dark:text-red-500' : 'text-slate-800 dark:text-white'}`} style={{ breakAfter: 'avoid' }}>
+                <span className={`w-2 h-8 rounded-full print:bg-slate-800 ${dep === '⭐️ OPORTUNIDADES' ? 'bg-red-600' : 'bg-primary-500'}`}></span>
                 {dep}
               </h3>
               
               <div className="catalog-products-grid grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 print:block print:columns-3 print:gap-4">
                 {prods.map(p => (
                   <div key={p.codprod} className="catalog-product-card bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-200 dark:border-slate-700/50 flex flex-col print:border-slate-300 print:bg-white print:break-inside-avoid print:inline-block print:w-full print:mb-4" style={{ breakInside: 'avoid', pageBreakInside: 'avoid' }}>
-                    <div className="aspect-square bg-white rounded-lg mb-4 flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-700 print:border-slate-200">
+                    <div className="aspect-square bg-white rounded-lg mb-4 flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-700 print:border-slate-200 relative">
+                      {p.tipoPreco === 'OPORTUNIDADE' && (
+                        <div className="absolute top-2 right-2 bg-red-600 text-white text-[10px] font-black px-2 py-1 rounded shadow-md z-10 print:border-2 print:border-red-600 tracking-wider">
+                          OFERTA
+                        </div>
+                      )}
                       <img 
                         src={`/api/produtos/imagem/${p.codprod}`} 
                         alt={p.descricao}

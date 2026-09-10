@@ -164,13 +164,47 @@ class VendedorBotService {
             }
         } catch(e) {}
 
-        const menuText = botMsgs.getMsg('VEND_MENU_PRINCIPAL')
+        const menuTextRaw = botMsgs.getMsg('VEND_MENU_PRINCIPAL')
             .replace(/\{\{nome_empresa\}\}/g, nomeEmpresa);
+            
+        let menuAtivos = '1,2,3,4,5,0';
+        try {
+            const resCfg = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'VEND_MENU_ATIVOS'`);
+            if (resCfg.rows.length > 0 && resCfg.rows[0][0]) {
+                menuAtivos = resCfg.rows[0][0];
+            }
+        } catch(e) {}
+        const ativosArray = menuAtivos.split(',').map(s => s.trim());
+
+        const menuText = menuTextRaw.split('\n').filter(linha => {
+            const match = linha.match(/^\s*(\d)/);
+            if (match) {
+                return ativosArray.includes(match[1]);
+            }
+            return true;
+        }).join('\n');
+
         await this.webhookPoller.enviarMensagemBot(telefone, menuText, conn, instanceName);
     }
 
     async processarMenuPrincipal(telefone, text, instanceName, conn, codvendedor) {
         const opcao = (text || '').trim();
+        
+        // Verifica configurações de opções ativas
+        let menuAtivos = '1,2,3,4,5,0';
+        try {
+            const resCfg = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'VEND_MENU_ATIVOS'`);
+            if (resCfg.rows.length > 0 && resCfg.rows[0][0]) {
+                menuAtivos = resCfg.rows[0][0];
+            }
+        } catch(e) {}
+        const ativosArray = menuAtivos.split(',').map(s => s.trim());
+
+        if (opcao !== '' && !ativosArray.includes(opcao)) {
+            await this.webhookPoller.enviarMensagemBot(telefone, "Opção indisponível no momento. Por favor, escolha outra opção.", conn, instanceName);
+            return await this.enviarMenuPrincipal(telefone, instanceName, conn);
+        }
+
         switch (opcao) {
             case '1':
                 await this.setState(telefone, 'VENDEDOR_ASSISTENTE_COMUNICACAO_BUSCA_CLIENTE', {}, conn);

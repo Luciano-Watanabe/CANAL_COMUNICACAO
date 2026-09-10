@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Search, Info, Smile, Paperclip, Send, AlertCircle, Check, CheckCheck, MessageSquare, Tag, X, ShoppingCart, Download, FileText, Loader2, Mic, Square, Trash2, ClipboardList } from 'lucide-react';
+import { Search, Info, Smile, Paperclip, Send, AlertCircle, Check, CheckCheck, MessageSquare, Tag, X, ShoppingCart, Download, FileText, Loader2, Mic, Square, Trash2, ClipboardList, Flame, Clock } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -137,11 +137,21 @@ export default function Chat() {
   const [rightPanelTab, setRightPanelTab] = useState<'info' | 'mix' | 'cart'>('info');
   const [isOrcamentoModalOpen, setIsOrcamentoModalOpen] = useState(false);
   const [orcamentoSearch, setOrcamentoSearch] = useState<string>('');
+  const [orcamentoSelectedDepto, setOrcamentoSelectedDepto] = useState<string>('');
   const [orcamentoProdutos, setOrcamentoProdutos] = useState<any[]>([]);
   const [orcamentoLoading, setOrcamentoLoading] = useState(false);
   const [orcamentoItems, setOrcamentoItems] = useState<Record<string, { qtd: number, perc: number, selecionado: boolean }>>({});
   const [orcamentoGerando, setOrcamentoGerando] = useState(false);
+  const [isOrcamentoHistoricoModalOpen, setIsOrcamentoHistoricoModalOpen] = useState(false);
+  const [orcamentosHistorico, setOrcamentosHistorico] = useState<any[]>([]);
+  const [orcamentosHistoricoLoading, setOrcamentosHistoricoLoading] = useState(false);
+  const [orcamentosValidadeHoras, setOrcamentosValidadeHoras] = useState(24);
   const { getCartItems, addToCart } = useCart();
+  
+  const [isOportunidadesModalOpen, setIsOportunidadesModalOpen] = useState(false);
+  const [oportunidades, setOportunidades] = useState<any[]>([]);
+  const [oportunidadesLoading, setOportunidadesLoading] = useState(false);
+  const [oportunidadesSelecionadas, setOportunidadesSelecionadas] = useState<Record<string, boolean>>({});
 
   const [templates, setTemplates] = useState<any[]>([]);
   const [showTemplatesPopover, setShowTemplatesPopover] = useState(false);
@@ -534,6 +544,124 @@ export default function Chat() {
     setOrcamentoLoading(false);
   };
 
+  const handleBuscarOportunidades = async () => {
+    setOportunidadesLoading(true);
+    try {
+      const res = await fetch(`/api/produtos/busca?oportunidades=true&limit=500`);
+      const data = await res.json();
+      if (data.success) {
+        const apenasOportunidades = data.produtos;
+        setOportunidades(apenasOportunidades);
+        const selecaoInicial: Record<string, boolean> = {};
+        apenasOportunidades.forEach((p: any) => {
+           selecaoInicial[p.codprod] = false;
+        });
+        setOportunidadesSelecionadas(selecaoInicial);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setOportunidadesLoading(false);
+  };
+
+  const handleEnviarOportunidades = () => {
+    const selecionados = oportunidades.filter(p => oportunidadesSelecionadas[p.codprod]);
+    if (selecionados.length === 0) {
+      alert("Selecione pelo menos uma oportunidade para enviar.");
+      return;
+    }
+    
+    let msg = "🔥 *Ofertas Especiais para Você!* 🔥\n\n";
+    selecionados.forEach(p => {
+      msg += `▪️ *${p.descricao.trim()}*\n`;
+      msg += `   Por apenas: *R$ ${Number(p.preco).toFixed(2).replace('.', ',')}* / ${p.unidade}\n\n`;
+    });
+    msg += "Aproveite enquanto durarem os estoques! Posso incluir no seu pedido?";
+    
+    setMessageInput(prev => (prev + (prev ? '\n\n' : '') + msg));
+    setIsOportunidadesModalOpen(false);
+  };
+
+  const handleBuscarHistorico = async () => {
+    if (!activeChatData || !activeCodusur) return;
+    setOrcamentosHistoricoLoading(true);
+    try {
+      const codcli = activeChatData.id.split('_')[0];
+      const fn = user?.funcao || 'VENDEDOR';
+      const res = await fetch(`/api/produtos/orcamento/historico/${codcli}?codusur=${activeCodusur}&funcao=${fn}`);
+      const data = await res.json();
+      if (data.success) {
+        setOrcamentosHistorico(data.orcamentos);
+        setOrcamentosValidadeHoras(data.validadeHoras);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao buscar histórico de orçamentos.');
+    }
+    setOrcamentosHistoricoLoading(false);
+  };
+
+  const handleCarregarOrcamento = (orc: any) => {
+    const isExpired = (new Date().getTime() - new Date(orc.data).getTime()) > (orcamentosValidadeHoras * 3600000);
+    
+    let needsUpdate = false;
+    let changedItems: string[] = [];
+
+    orc.itens.forEach((i: any) => {
+      if (i.teveMudancaPreco) {
+        needsUpdate = true;
+        changedItems.push(`${i.codprod} - ${i.descricao}`);
+      }
+    });
+
+    let applyNewPrices = isExpired;
+
+    if (!isExpired && needsUpdate) {
+      const resp = window.confirm(`Alguns produtos tiveram seus preços atualizados desde a geração deste orçamento:\n\n${changedItems.slice(0,5).join('\\n')}${changedItems.length > 5 ? '\\n...e outros.' : ''}\n\nDeseja atualizar os valores para a tabela de preços vigente hoje?`);
+      applyNewPrices = resp;
+    }
+
+    const novosProdutos = [...orcamentoProdutos];
+    const novosItems = { ...orcamentoItems };
+
+    orc.itens.forEach((i: any) => {
+      const precoFinalAUsar = applyNewPrices ? i.precoAtual : i.precoSalvo;
+      // We need to figure out the discount percentage if any.
+      // But actually, we can just set preco = precoFinalAUsar and perc = 0,
+      // because in the UI, preco - (preco * perc/100) = precoFinal.
+      // So if we just set the product's base price in `orcamentoProdutos` to precoFinalAUsar, and perc to 0, it works!
+      // Wait, if it has a base price from the table (precoAtual), we can set base = precoAtual, and perc = to match precoSalvo if not updating.
+      const precoBase = i.precoAtual || precoFinalAUsar;
+      let perc = 0;
+      if (precoBase > 0 && precoFinalAUsar !== precoBase) {
+         perc = ((precoBase - precoFinalAUsar) / precoBase) * 100;
+      }
+
+      if (!novosProdutos.find(p => p.codprod === i.codprod)) {
+        novosProdutos.push({
+           codprod: i.codprod,
+           descricao: i.descricao,
+           ean: i.ean,
+           qtunit: i.qtunit,
+           unidade: i.unidade,
+           tipoembalagem: i.tipoembalagem,
+           preco: precoBase,
+           tipoPreco: (applyNewPrices && i.precoAtual !== i.precoSalvo) ? '' : '' // simplistic
+        });
+      }
+
+      novosItems[i.codprod] = {
+        selecionado: true,
+        qtd: i.qtd,
+        perc: Number(perc.toFixed(2))
+      };
+    });
+
+    setOrcamentoProdutos(novosProdutos);
+    setOrcamentoItems(novosItems);
+    setIsOrcamentoHistoricoModalOpen(false);
+  };
+
   const handleGerarOrcamentoPDF = async (downloadOnly = false) => {
     if (!activeChatData) return;
     setOrcamentoGerando(true);
@@ -547,6 +675,37 @@ export default function Chat() {
 
       if (selected.length === 0) {
         alert('Selecione ao menos um produto para o orçamento.');
+        setOrcamentoGerando(false);
+        return;
+      }
+
+      try {
+        const codcli = activeChatData.id.split('_')[0];
+        const gravarRes = await fetch('/api/produtos/orcamento/gravar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            codcli,
+            codusur: activeCodusur,
+            itens: selected.map(p => {
+              const precoFinal = p.preco - (p.preco * (p.perc / 100));
+              return {
+                codprod: p.codprod,
+                qtd: Number(p.qtd),
+                preco: Number(precoFinal.toFixed(2))
+              };
+            })
+          })
+        });
+        const gravarData = await gravarRes.json();
+        if (!gravarData.success) {
+          alert('Não foi possível gravar o orçamento no banco de dados. Motivo: ' + gravarData.error);
+          setOrcamentoGerando(false);
+          return;
+        }
+      } catch (e) {
+        console.error('Erro ao gravar orçamento', e);
+        alert('Erro ao comunicar com o servidor para gravar o orçamento.');
         setOrcamentoGerando(false);
         return;
       }
@@ -1066,6 +1225,16 @@ export default function Chat() {
                   title="Orçamento"
                 >
                   <ClipboardList size={20} />
+                </button>
+                <button 
+                  onClick={() => {
+                    setIsOportunidadesModalOpen(true);
+                    if (oportunidades.length === 0) handleBuscarOportunidades();
+                  }}
+                  className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors hidden sm:block" 
+                  title="Oportunidades (Ofertas)"
+                >
+                  <Flame size={20} />
                 </button>
                 <button 
                   onClick={handleEditTags}
@@ -1758,7 +1927,10 @@ export default function Chat() {
                           <div className="flex justify-between items-start mb-1">
                             <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{prod.codprod}</span>
                           </div>
-                          <p className="text-sm font-medium text-slate-900 dark:text-white leading-tight mb-2 pr-6">
+                          <p className="text-sm font-medium text-slate-900 dark:text-white leading-tight mb-2 pr-6 flex items-center gap-2 flex-wrap">
+                            {prod.tipoPreco === 'OPORTUNIDADE' && (
+                               <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm">OFERTA</span>
+                            )}
                             {maskData(prod.descricao)}
                           </p>
                           <div className="flex items-center gap-3 mt-2">
@@ -1807,7 +1979,74 @@ export default function Chat() {
           </div>
         </div>
       )}
+      {/* Modal de Oportunidades */}
+      {isOportunidadesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-red-50 dark:bg-red-900/20">
+              <h2 className="text-lg font-bold text-red-600 dark:text-red-400 flex items-center gap-2">
+                <Flame size={20} />
+                Ofertas e Oportunidades
+              </h2>
+              <button 
+                onClick={() => setIsOportunidadesModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-slate-50 dark:bg-slate-900/50">
+              {oportunidadesLoading ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 size={24} className="animate-spin text-red-500" />
+                </div>
+              ) : oportunidades.length === 0 ? (
+                <div className="text-center text-slate-500 text-sm mt-10">
+                  Nenhuma oportunidade vigente encontrada hoje.
+                </div>
+              ) : (
+                oportunidades.map(prod => {
+                  const isSelected = oportunidadesSelecionadas[prod.codprod];
+                  return (
+                    <label key={prod.codprod} className={clsx("cursor-pointer shrink-0 p-3 rounded-xl border transition-all relative overflow-hidden flex gap-4 items-center", isSelected ? "border-red-500 bg-red-50 dark:bg-red-900/20 shadow-sm" : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800")}>
+                      <input 
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => setOportunidadesSelecionadas(prev => ({ ...prev, [prod.codprod]: e.target.checked }))}
+                        className="w-5 h-5 text-red-600 rounded border-slate-300 focus:ring-red-500 cursor-pointer shrink-0"
+                      />
+                      <img 
+                        src={`/api/produtos/imagem/${prod.codprod}`} 
+                        alt={prod.descricao} 
+                        className="w-12 h-12 rounded-lg object-cover bg-slate-100 dark:bg-slate-800 shrink-0 border border-slate-200 dark:border-slate-700" 
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-slate-500 font-medium truncate">Cód: {prod.codprod}</div>
+                        <div className="text-sm font-bold text-slate-900 dark:text-white leading-tight truncate">{prod.descricao}</div>
+                        <div className="text-red-600 dark:text-red-400 font-bold text-sm mt-1">
+                          R$ {Number(prod.preco).toFixed(2).replace('.', ',')}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
 
+            <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex justify-end">
+              <button
+                onClick={handleEnviarOportunidades}
+                disabled={oportunidades.filter(p => oportunidadesSelecionadas[p.codprod]).length === 0}
+                className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <Send size={18} />
+                Adicionar à Conversa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Modal de Orçamento */}
       {isOrcamentoModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
@@ -1816,6 +2055,15 @@ export default function Chat() {
               <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <ClipboardList size={20} className="text-primary-500" />
                 Orçamento
+                <button
+                  onClick={() => {
+                     setIsOrcamentoHistoricoModalOpen(true);
+                     handleBuscarHistorico();
+                  }}
+                  className="ml-4 px-3 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-md text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1 transition-colors"
+                >
+                   <Clock size={14} /> Histórico
+                </button>
               </h2>
               <button 
                 onClick={() => setIsOrcamentoModalOpen(false)}
@@ -1848,6 +2096,29 @@ export default function Chat() {
                       Buscar
                     </button>
                   </div>
+                  {orcamentoProdutos.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1 mt-3 scrollbar-hide">
+                      <button 
+                        onClick={() => setOrcamentoSelectedDepto('')}
+                        className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                          orcamentoSelectedDepto === '' ? "bg-slate-800 text-white dark:bg-white dark:text-slate-900" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                        }`}
+                      >
+                        Todos
+                      </button>
+                      {Array.from(new Set(orcamentoProdutos.map(p => p.departamento).filter(Boolean))).map(d => (
+                        <button 
+                          key={d as string}
+                          onClick={() => setOrcamentoSelectedDepto(d as string)}
+                          className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                            orcamentoSelectedDepto === d ? "bg-slate-800 text-white dark:bg-white dark:text-slate-900" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                          }`}
+                        >
+                          {d as string}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-slate-50 dark:bg-slate-900/50">
@@ -1856,7 +2127,7 @@ export default function Chat() {
                       Nenhum produto encontrado.
                     </div>
                   ) : (
-                    orcamentoProdutos.map(prod => {
+                    (orcamentoSelectedDepto ? orcamentoProdutos.filter(p => p.departamento === orcamentoSelectedDepto) : orcamentoProdutos).map(prod => {
                       const itemData = orcamentoItems[prod.codprod] || { selecionado: false, qtd: 1, perc: 0 };
                       const isSelected = itemData.selecionado;
                       const precoFinal = prod.preco - (prod.preco * (itemData.perc / 100));
@@ -1883,7 +2154,12 @@ export default function Chat() {
                              />
                              <div className="flex-1 min-w-0">
                                 <div className="text-xs text-slate-500 font-medium mb-1 truncate">Cód: {prod.codprod} | EAN: {prod.ean}</div>
-                                <div className="text-sm font-bold text-slate-900 dark:text-white leading-tight mb-1 truncate">{maskData(prod.descricao)}</div>
+                                <div className="text-sm font-bold text-slate-900 dark:text-white leading-tight mb-1 truncate flex items-center gap-2">
+                                  {prod.tipoPreco === 'OPORTUNIDADE' && (
+                                    <span className="bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm">OFERTA</span>
+                                  )}
+                                  {maskData(prod.descricao)}
+                                </div>
                                 <div className="flex items-center justify-between text-xs text-slate-500 mb-2">
                                   <span>Emb: {prod.qtunit} {prod.unidade}</span>
                                   <span>Preço Tab: R$ {Number(prod.preco).toFixed(2).replace('.', ',')}</span>
@@ -1903,15 +2179,15 @@ export default function Chat() {
                                       />
                                     </div>
                                     <div className="flex flex-col flex-1">
-                                      <label className="text-xs font-semibold text-slate-500 mb-1">Desc (%)</label>
+                                      <label className="text-xs font-semibold text-slate-500 mb-1">Desc/Acres (%)</label>
                                       <input 
-                                        type="number" min="0" max="5" step="0.1"
+                                        type="number" max="5" step="0.1"
                                         className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-md p-2 bg-transparent"
                                         value={itemData.perc}
                                         onChange={e => {
                                           let val = Number(e.target.value);
                                           if (val > 5) val = 5;
-                                          if (val < 0) val = 0;
+                                          // Removed: if (val < 0) val = 0; allowing negative numbers (markup)
                                           setOrcamentoItems(prev => ({
                                            ...prev,
                                            [prod.codprod]: { ...itemData, perc: val }
@@ -1963,6 +2239,82 @@ export default function Chat() {
                     Gerar e Enviar PDF
                   </button>
                 </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Histórico de Orçamentos */}
+      {isOrcamentoHistoricoModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl max-h-[80vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-slide-up">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50 dark:bg-slate-800">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Clock size={20} className="text-primary-500" />
+                Histórico de Orçamentos
+              </h2>
+              <button 
+                onClick={() => setIsOrcamentoHistoricoModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-slate-50 dark:bg-slate-900/50">
+              {orcamentosHistoricoLoading ? (
+                <div className="flex justify-center items-center py-10">
+                  <Loader2 size={24} className="text-primary-500 animate-spin" />
+                </div>
+              ) : orcamentosHistorico.length === 0 ? (
+                <div className="text-center text-slate-500 text-sm mt-10">
+                  Nenhum orçamento encontrado para este cliente.
+                </div>
+              ) : (
+                orcamentosHistorico.map(orc => {
+                  const isExpired = (new Date().getTime() - new Date(orc.data).getTime()) > (orcamentosValidadeHoras * 3600000);
+                  
+                  return (
+                    <div key={orc.numpedrca} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-semibold text-slate-900 dark:text-white">Orçamento #{orc.numpedrca}</h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                            {new Date(orc.data).toLocaleString('pt-BR')} • Gerado por: {orc.nomeVendedor}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                           {isExpired && (
+                             <span className="text-[10px] font-bold px-2 py-1 rounded bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400">
+                               VENCIDO (Preços serão atualizados)
+                             </span>
+                           )}
+                           <button
+                             onClick={() => handleCarregarOrcamento(orc)}
+                             className="px-3 py-1.5 bg-primary-100 hover:bg-primary-200 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 dark:hover:bg-primary-900/50 rounded-lg text-sm font-medium transition-colors"
+                           >
+                             Carregar
+                           </button>
+                        </div>
+                      </div>
+                      
+                      <div className="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-2 rounded max-h-32 overflow-y-auto">
+                        <ul className="list-disc pl-5">
+                          {orc.itens.map((item: any, i: number) => (
+                            <li key={i} className="mb-1">
+                              {item.qtd}x {item.descricao} 
+                              <span className="text-xs text-slate-400 ml-2">
+                                (Salvo: R$ {Number(item.precoSalvo).toFixed(2).replace('.', ',')} 
+                                {item.precoAtual && Number(item.precoAtual) !== Number(item.precoSalvo) && ` → Hoje: R$ ${Number(item.precoAtual).toFixed(2).replace('.', ',')}`}
+                                )
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

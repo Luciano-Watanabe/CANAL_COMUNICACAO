@@ -146,14 +146,15 @@ class CacheService {
                         P.DESCRICAO,
                         P.CODEPTO,
                         D.DESCRICAO AS DEPARTAMENTO,
-                        NVL(PR.PVENDA, 0) AS PVENDA,
+                        NVL(PROM.PRECOFIXO, NVL(PR.PVENDA, 0)) AS PVENDA,
                         CG.QTD_TOTAL,
                         CG.QTD_CLIENTES_COMPRARAM,
                         PE.EAN,
                         PE.QTUNIT,
                         PE.FATOPRECO,
                         PE.UNIDADE_EMB,
-                        PE.TIPOEMBALAGEM
+                        PE.TIPOEMBALAGEM,
+                        CASE WHEN PROM.PRECOFIXO IS NOT NULL THEN 'OPORTUNIDADE' ELSE '' END AS TIPO_PRECO
                     FROM COMPRAS_GERAIS CG
                     JOIN PCPRODUT P ON P.CODPROD = CG.CODPROD
                     LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
@@ -167,6 +168,12 @@ class CacheService {
                         ORDER BY PE2.QTUNIT DESC
                         FETCH FIRST 1 ROWS ONLY
                     ) PE
+                    LEFT JOIN PCPRECOPROM PROM 
+                           ON PROM.CODAUXILIAR = PE.EAN 
+                          AND PROM.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                          AND TRUNC(SYSDATE) BETWEEN PROM.DTINICIOVIGENCIA AND PROM.DTFIMVIGENCIA
+                          AND PROM.DTINICIOVIGENCIA IS NOT NULL
+                          AND PROM.DTFIMVIGENCIA IS NOT NULL
                     ORDER BY CG.QTD_CLIENTES_COMPRARAM DESC
                     FETCH FIRST 100 ROWS ONLY
                 `;
@@ -185,7 +192,8 @@ class CacheService {
                         QTUNIT: m[8],
                         FATOPRECO: m[9],
                         UNIDADE_EMB: m[10],
-                        TIPOEMBALAGEM: m[11]
+                        TIPOEMBALAGEM: m[11],
+                        TIPO_PRECO: m[12]
                     }));
                 } catch(e) {
                     console.error(`[CACHE] Erro ao carregar MIX para Atividade ${codatv1}:`, e.message);
@@ -212,12 +220,13 @@ class CacheService {
                     PA.DESCRICAO,
                     PA.CODEPTO,
                     PA.DEPARTAMENTO,
-                    PA.PVENDA,
+                    NVL(PROM.PRECOFIXO, PA.PVENDA) AS PVENDA,
                     PE.EAN,
                     PE.QTUNIT,
                     PE.FATOPRECO,
                     PE.UNIDADE_EMB,
-                    PE.TIPOEMBALAGEM
+                    PE.TIPOEMBALAGEM,
+                    CASE WHEN PROM.PRECOFIXO IS NOT NULL THEN 'OPORTUNIDADE' ELSE '' END AS TIPO_PRECO
                 FROM PRODUTOS_ATIVOS PA
                 OUTER APPLY (
                     SELECT CODAUXILIAR AS EAN, QTUNIT, NVL(FATORPRECO, 1) AS FATOPRECO, UNMEDIDA AS UNIDADE_EMB, TIPOEMBALAGEM
@@ -228,6 +237,12 @@ class CacheService {
                     ORDER BY PE2.QTUNIT DESC
                     FETCH FIRST 1 ROWS ONLY
                 ) PE
+                LEFT JOIN PCPRECOPROM PROM 
+                       ON PROM.CODAUXILIAR = PE.EAN 
+                      AND PROM.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                      AND TRUNC(SYSDATE) BETWEEN PROM.DTINICIOVIGENCIA AND PROM.DTFIMVIGENCIA
+                      AND PROM.DTINICIOVIGENCIA IS NOT NULL
+                      AND PROM.DTFIMVIGENCIA IS NOT NULL
                 WHERE ROWNUM <= 200
             `;
             try {
@@ -243,6 +258,7 @@ class CacheService {
                     FATOPRECO: m[7],
                     UNIDADE_EMB: m[8],
                     TIPOEMBALAGEM: m[9],
+                    TIPO_PRECO: m[10],
                     QTD_TOTAL: 1, // mock para media
                     QTD_CLIENTES_COMPRARAM: 1 // mock para media
                 }));

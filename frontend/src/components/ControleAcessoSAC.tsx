@@ -7,9 +7,11 @@ export function ControleAcessoSAC() {
   const [funcionarios, setFuncionarios] = useState<any[]>([]);
   const [vendedores, setVendedores] = useState<any[]>([]);
   const [departamentos, setDepartamentos] = useState<any[]>([]);
-  const [acessos, setAcessos] = useState<Record<number, number[]>>({});
+  // Chave composta "MATRICULA:TABELA" (ex: "1:PCEMPR" ou "1:PCUSUARI")
+  // Evita colisão entre Atendente e Vendedor com o mesmo ID numérico
+  const [acessos, setAcessos] = useState<Record<string, number[]>>({});
   const [tipoUsuario, setTipoUsuario] = useState<'atendente' | 'vendedor'>('atendente');
-  const [selectedMatricula, setSelectedMatricula] = useState<number | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null); // chave composta selecionada
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,6 +20,10 @@ export function ControleAcessoSAC() {
   const [waForm, setWaForm] = useState<Record<number, { instance_name: string; api_token: string; linked: boolean }>>({});
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  /** Monta a chave composta a partir de ID e tipo de usuário */
+  const getAcessoKey = (id: number, tipo: 'atendente' | 'vendedor'): string =>
+    `${id}:${tipo === 'vendedor' ? 'PCUSUARI' : 'PCEMPR'}`;
 
   useEffect(() => {
     Promise.all([
@@ -64,13 +70,13 @@ export function ControleAcessoSAC() {
   }, []);
 
   const handleToggleDepartamento = (deptId: number) => {
-    if (!selectedMatricula) return;
+    if (!selectedKey) return;
     setAcessos(prev => {
-      const current = prev[selectedMatricula] || [];
+      const current = prev[selectedKey] || [];
       const isSelected = current.includes(deptId);
       return {
         ...prev,
-        [selectedMatricula]: isSelected 
+        [selectedKey]: isSelected 
           ? current.filter(id => id !== deptId)
           : [...current, deptId]
       };
@@ -78,16 +84,19 @@ export function ControleAcessoSAC() {
   };
 
   const handleSave = async () => {
-    if (!selectedMatricula) return;
+    if (!selectedKey) return;
+    // Extrai o ID numérico e a tabela da chave composta
+    const [idStr, tabela] = selectedKey.split(':');
+    const matricula = Number(idStr);
     setSaving(true);
     try {
       const res = await fetch('/api/config/acessos-sac', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          matricula: selectedMatricula,
-          departamentos: acessos[selectedMatricula] || [],
-          tabela: tipoUsuario === 'atendente' ? 'PCEMPR' : 'PCUSUARI'
+          matricula,
+          departamentos: acessos[selectedKey] || [],
+          tabela
         })
       });
       if (res.ok) {
@@ -140,17 +149,21 @@ export function ControleAcessoSAC() {
   if (loading) return <div className="p-4 text-slate-500">Carregando permissões...</div>;
   if (errorMsg) return <div className="p-4 text-rose-500 font-medium">{errorMsg}</div>;
 
-  const currentAcessos = selectedMatricula ? (acessos[selectedMatricula] || []) : [];
+  const currentAcessos = selectedKey ? (acessos[selectedKey] || []) : [];
 
   const usuariosComAcesso = Object.keys(acessos)
-    .filter(k => acessos[Number(k)] && acessos[Number(k)].length > 0)
+    .filter(k => acessos[k] && acessos[k].length > 0)
     .map(k => {
-      const id = Number(k);
-      const func = funcionarios.find(f => f.MATRICULA === id);
-      if (func) return { id, nome: func.NOME, tipo: 'Atendente' };
-      const vend = vendedores.find(v => v.codusur === id);
-      if (vend) return { id, nome: vend.nome, tipo: 'Vendedor' };
-      return { id, nome: `ID Desconhecido (${id})`, tipo: 'Desconhecido' };
+      // Chave composta: "MATRICULA:TABELA"
+      const [idStr, tabela] = k.split(':');
+      const id = Number(idStr);
+      if (tabela === 'PCEMPR') {
+        const func = funcionarios.find(f => f.MATRICULA === id);
+        return { key: k, id, nome: func ? func.NOME : `Atendente (${id})`, tipo: 'Atendente' as const };
+      } else {
+        const vend = vendedores.find(v => Number(v.codusur) === id);
+        return { key: k, id, nome: vend ? vend.nome : `Vendedor (${id})`, tipo: 'Vendedor' as const };
+      }
     });
 
   return (
@@ -186,11 +199,11 @@ export function ControleAcessoSAC() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {usuariosComAcesso.map(u => (
-                  <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 align-top">
+                  <tr key={u.key} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 align-top">
                     <td className="py-2 px-4 text-slate-600 dark:text-slate-400">{u.tipo}</td>
                     <td className="py-2 px-4 font-medium text-slate-800 dark:text-slate-200">{u.nome} (Cód: {u.id})</td>
                     <td className="py-2 px-4 text-slate-600 dark:text-slate-400">
-                      {acessos[u.id].map(deptId => departamentos.find(d => d.id === deptId)?.nome || `Dep ${deptId}`).join(', ')}
+                      {acessos[u.key].map(deptId => departamentos.find(d => d.id === deptId)?.nome || `Dep ${deptId}`).join(', ')}
                     </td>
                     {u.tipo === 'Atendente' ? (
                       <>
@@ -239,7 +252,7 @@ export function ControleAcessoSAC() {
                       <button 
                         onClick={() => {
                           setTipoUsuario(u.tipo === 'Vendedor' ? 'vendedor' : 'atendente');
-                          setSelectedMatricula(u.id);
+                          setSelectedKey(u.key);
                         }}
                         className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-medium"
                       >
@@ -258,13 +271,13 @@ export function ControleAcessoSAC() {
             <h3 className="font-semibold text-slate-800 dark:text-slate-200 mb-3">Configurar ou Editar Acessos</h3>
             <div className="flex gap-2 mb-4 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg">
               <button 
-                onClick={() => { setTipoUsuario('atendente'); setSelectedMatricula(null); }}
+                onClick={() => { setTipoUsuario('atendente'); setSelectedKey(null); }}
                 className={clsx("flex-1 text-sm py-1.5 rounded-md font-medium transition-colors", tipoUsuario === 'atendente' ? "bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}
               >
                 Atendentes
               </button>
               <button 
-                onClick={() => { setTipoUsuario('vendedor'); setSelectedMatricula(null); }}
+                onClick={() => { setTipoUsuario('vendedor'); setSelectedKey(null); }}
                 className={clsx("flex-1 text-sm py-1.5 rounded-md font-medium transition-colors", tipoUsuario === 'vendedor' ? "bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300")}
               >
                 Vendedores
@@ -276,8 +289,8 @@ export function ControleAcessoSAC() {
             </label>
             <select
               className="w-full bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
-              value={selectedMatricula || ''}
-              onChange={(e) => setSelectedMatricula(e.target.value ? Number(e.target.value) : null)}
+              value={selectedKey ? selectedKey.split(':')[0] : ''}
+              onChange={(e) => setSelectedKey(e.target.value ? getAcessoKey(Number(e.target.value), tipoUsuario) : null)}
             >
               <option value="">-- Selecione --</option>
               {tipoUsuario === 'atendente' 
@@ -301,7 +314,7 @@ export function ControleAcessoSAC() {
           </div>
 
         <div className="flex-1">
-          {selectedMatricula ? (
+          {selectedKey ? (
             <div>
               <div className="flex items-center justify-between mb-3">
                 <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">

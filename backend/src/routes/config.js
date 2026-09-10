@@ -5,6 +5,55 @@ const cacheService = require('../services/cacheService');
 const oraclePool = require('../services/oraclePool');
 const { determinarCargo, buscarTodosCargos } = require('../utils/cargoHelper');
 
+// GET /api/config/geral - Busca configurações gerais
+router.get('/geral', async (req, res) => {
+    let connection;
+    try {
+        connection = await oraclePool.getConnection();
+        const result = await connection.execute(`SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES`);
+        const config = {};
+        result.rows.forEach(r => config[r[0]] = r[1]);
+        res.json({ success: true, config });
+    } catch (err) {
+        console.error('Erro ao buscar config geral:', err);
+        res.status(500).json({ success: false });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// POST /api/config/geral - Atualiza configurações gerais
+router.post('/geral', async (req, res) => {
+    const { configs } = req.body;
+    let connection;
+    try {
+        connection = await oraclePool.getConnection();
+        for (const [chave, valor] of Object.entries(configs)) {
+            await connection.execute(`
+                MERGE INTO CANAL_CONFIGURACOES T
+                USING (SELECT :chave AS CHAVE FROM DUAL) S
+                ON (T.CHAVE = S.CHAVE)
+                WHEN MATCHED THEN UPDATE SET T.VALOR = :valor
+                WHEN NOT MATCHED THEN INSERT (CHAVE, VALOR) VALUES (:chave, :valor)
+            `, { chave, valor: String(valor) }, { autoCommit: false });
+        }
+        await connection.commit();
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Erro ao salvar config geral:', err);
+        if (connection) {
+            try { await connection.rollback(); } catch(e){}
+        }
+        res.status(500).json({ success: false });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
 // Listar todos os vendedores e seus tokens (Para uso do Gerente)
 router.get('/vendedores', async (req, res) => {
     let connection;
@@ -272,22 +321,26 @@ router.get('/funcionarios', async (req, res) => {
     }
 });
 
-// GET /api/config/acessos-sac - Atualizado para trabalhar com CARGO = 'ATENDENTE'
+// GET /api/config/acessos-sac
+// Retorna acessos com chave composta "MATRICULA:TABELA" para distinguir
+// Atendentes (PCEMPR) de Vendedores (PCUSUARI) com mesmo ID numérico.
 router.get('/acessos-sac', async (req, res) => {
     let connection;
     try {
         connection = await oraclePool.getConnection();
 
-        const sql = `SELECT MATRICULA, DEPARTAMENTO_ID FROM CANAL_SAC_ACESSOS`;
+        const sql = `SELECT MATRICULA, DEPARTAMENTO_ID, NVL(TABELA, 'PCEMPR') AS TABELA FROM CANAL_SAC_ACESSOS`;
         const result = await connection.execute(sql, [], { outFormat: 4002 });
         
-        // Group by matricula
+        // Agrupa por chave composta "MATRICULA:TABELA"
+        // Ex: { "1:PCEMPR": [21, 25], "1:PCUSUARI": [23] }
         const acessos = {};
         result.rows.forEach(row => {
-            if (!acessos[row.MATRICULA]) {
-                acessos[row.MATRICULA] = [];
+            const key = `${row.MATRICULA}:${row.TABELA}`;
+            if (!acessos[key]) {
+                acessos[key] = [];
             }
-            acessos[row.MATRICULA].push(row.DEPARTAMENTO_ID);
+            acessos[key].push(row.DEPARTAMENTO_ID);
         });
 
         res.json(acessos);
@@ -301,23 +354,33 @@ router.get('/acessos-sac', async (req, res) => {
     }
 });
 
-// POST /api/config/acessos-sac - Atualizado para trabalhar com CARGO = 'ATENDENTE'
+// POST /api/config/acessos-sac
+// Salva acessos usando TABELA para distinguir Atendente (PCEMPR) de Vendedor (PCUSUARI).
+// O DELETE filtra por MATRICULA + TABELA para não apagar acessos do outro tipo.
 router.post('/acessos-sac', async (req, res) => {
-    const { matricula, departamentos } = req.body;
-    if (!matricula) return res.status(400).json({ error: 'MatrÃ­cula obrigatÃ³ria.' });
+    const { matricula, departamentos, tabela } = req.body;
+    if (!matricula) return res.status(400).json({ error: 'Matrícula obrigatória.' });
+
+    // Normalizar e validar o tipo de tabela (só aceita os dois valores conhecidos)
+    const tabelaNorm = (tabela === 'PCUSUARI') ? 'PCUSUARI' : 'PCEMPR';
 
     let connection;
     try {
         connection = await oraclePool.getConnection();
 
-        // 1. Deletar acessos existentes para a matricula
-        await connection.execute(`DELETE FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :m`, [matricula], { autoCommit: false });
+        // 1. Deletar acessos existentes apenas para a combinação MATRICULA + TABELA
+        //    Isso preserva acessos do outro tipo (ex: Vendedor não apaga Atendente com mesmo ID)
+        await connection.execute(
+            `DELETE FROM CANAL_SAC_ACESSOS WHERE MATRICULA = :m AND TABELA = :t`,
+            { m: matricula, t: tabelaNorm },
+            { autoCommit: false }
+        );
 
-        // 2. Inserir novos acessos
+        // 2. Inserir novos acessos com a coluna TABELA preenchida
         if (Array.isArray(departamentos) && departamentos.length > 0) {
-            const sql = `INSERT INTO CANAL_SAC_ACESSOS (MATRICULA, DEPARTAMENTO_ID) VALUES (:m, :d)`;
+            const sql = `INSERT INTO CANAL_SAC_ACESSOS (MATRICULA, DEPARTAMENTO_ID, TABELA) VALUES (:m, :d, :t)`;
             for (let deptId of departamentos) {
-                await connection.execute(sql, { m: matricula, d: deptId }, { autoCommit: false });
+                await connection.execute(sql, { m: matricula, d: deptId, t: tabelaNorm }, { autoCommit: false });
             }
         }
 

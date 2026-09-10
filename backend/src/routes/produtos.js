@@ -106,6 +106,7 @@ router.get('/mix/:codcli', async (req, res) => {
                 fatopreco: m.FATOPRECO,
                 unidade: m.UNIDADE_EMB || '',
                 tipoembalagem: m.TIPOEMBALAGEM || 'U',
+                tipoPreco: m.TIPO_PRECO || '',
                 sinais: {
                     jaComprou: qtdCliente > 0,
                     compraMuito: qtdCliente >= mediaAtividade,
@@ -251,7 +252,7 @@ router.post('/eans', async (req, res) => {
 
 // Busca produtos com paginação/busca para o Orçamento
 router.get('/busca', async (req, res) => {
-    const { termo = '', page = 1, limit = 100 } = req.query;
+    const { termo = '', page = 1, limit = 100, oportunidades = 'false' } = req.query;
     let conn;
     try {
         conn = await oracledb.getConnection({
@@ -271,6 +272,10 @@ router.get('/busca', async (req, res) => {
             binds.termo = termo.trim();
         }
 
+        if (oportunidades === 'true') {
+            whereClause += ` AND PROM.PRECOFIXO IS NOT NULL`;
+        }
+
         binds.offset = offset;
         binds.maxRows = maxRows;
 
@@ -279,11 +284,12 @@ router.get('/busca', async (req, res) => {
                 P.CODPROD, 
                 P.DESCRICAO, 
                 NVL(D.DESCRICAO, 'OUTROS') AS DEPARTAMENTO, 
-                NVL(PR.PVENDA, 0) AS PRECO,
+                NVL(PROM.PRECOFIXO, NVL(PR.PVENDA, 0)) AS PRECO,
                 PE.CODAUXILIAR AS EAN, 
                 PE.QTUNIT, 
                 PE.UNMEDIDA AS UNIDADE_EMB,
-                PE.TIPOEMBALAGEM
+                PE.TIPOEMBALAGEM,
+                CASE WHEN PROM.PRECOFIXO IS NOT NULL THEN 'OPORTUNIDADE' ELSE '' END AS TIPO_PRECO
             FROM PCPRODUT P
             JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}'
             LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
@@ -297,8 +303,16 @@ router.get('/busca', async (req, res) => {
                 ORDER BY PE2.QTUNIT DESC
                 FETCH FIRST 1 ROWS ONLY
             ) PE
+            LEFT JOIN PCPRECOPROM PROM 
+                   ON PE.CODAUXILIAR = PROM.CODAUXILIAR 
+                  AND PROM.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                  AND TRUNC(SYSDATE) BETWEEN PROM.DTINICIOVIGENCIA AND PROM.DTFIMVIGENCIA
+                  AND PROM.DTINICIOVIGENCIA IS NOT NULL
+                  AND PROM.DTFIMVIGENCIA IS NOT NULL
             ${whereClause}
-            ORDER BY P.DESCRICAO
+            ORDER BY 
+                CASE WHEN PROM.PRECOFIXO IS NOT NULL THEN 0 ELSE 1 END,
+                P.DESCRICAO
             OFFSET :offset ROWS FETCH NEXT :maxRows ROWS ONLY
         `;
 
@@ -312,13 +326,271 @@ router.get('/busca', async (req, res) => {
             ean: row[4] || '',
             qtunit: row[5] || 1,
             unidade: row[6] || 'UN',
-            tipoembalagem: row[7] || 'U'
+            tipoembalagem: row[7] || 'U',
+            tipoPreco: row[8] || ''
         }));
 
         res.json({ success: true, produtos });
     } catch (err) {
         console.error('Erro ao buscar produtos:', err);
         res.status(500).json({ success: false, error: 'Erro interno ao buscar produtos' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+});
+
+router.post('/orcamento/gravar', async (req, res) => {
+    const { codcli, codusur, itens } = req.body;
+    if (!codcli || !codusur || !itens || itens.length === 0) {
+        return res.status(400).json({ success: false, error: 'Dados incompletos para gravar orçamento.' });
+    }
+
+    let conn;
+    try {
+        conn = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        // Fetch client details
+        const sqlClient = `SELECT CGCENT, CODCOB, CODPLPAG FROM PCCLIENT WHERE CODCLI = :codcli`;
+        const resClient = await conn.execute(sqlClient, { codcli });
+        if (resClient.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Cliente não encontrado.' });
+        }
+        const cgccli = resClient.rows[0][0] || '';
+        const codcob = resClient.rows[0][1] || 'D';
+        const codplpag = resClient.rows[0][2] || 1;
+        const condvenda = 1;
+        const codfilial = process.env.ESTOQUE_CODFILIAL || '1';
+
+        // Get PROXNUMPEDWEB with FOR UPDATE
+        const sqlNumPed = `SELECT PROXNUMPEDWEB FROM PCUSUARI WHERE CODUSUR = :codusur FOR UPDATE`;
+        const resNumPed = await conn.execute(sqlNumPed, { codusur });
+        if (resNumPed.rows.length === 0) {
+            await conn.rollback();
+            return res.status(400).json({ success: false, error: 'Vendedor não encontrado ou inválido.' });
+        }
+        
+        // Em casos que PROXNUMPEDWEB for nulo, iniciar um base
+        const numpedrca = resNumPed.rows[0][0] || (parseInt(codusur) * 100000000 + 1);
+
+        // Update PROXNUMPEDWEB
+        const sqlUpdateNum = `UPDATE PCUSUARI SET PROXNUMPEDWEB = :nextnum WHERE CODUSUR = :codusur`;
+        await conn.execute(sqlUpdateNum, { nextnum: numpedrca + 1, codusur });
+
+        // Insert header
+        // Importante: DTABERTURAPEDPALM precisa ser identica entre o cabecalho e os itens. 
+        // Vamos fixar um sysdate no banco:
+        const dtaberturaSql = `SELECT SYSDATE FROM DUAL`;
+        const resDt = await conn.execute(dtaberturaSql);
+        const dtAbertura = resDt.rows[0][0];
+
+        const sqlInsertCab = `
+            INSERT INTO CANAL_ORCAC (
+                NUMPEDRCA, CODUSUR, CODCLI, CGCCLI, DTABERTURAPEDPALM, CODFILIAL, CODCOB, CODPLPAG, CONDVENDA
+            ) VALUES (
+                :numpedrca, :codusur, :codcli, :cgccli, :dtabertura, :codfilial, :codcob, :codplpag, :condvenda
+            )
+        `;
+        await conn.execute(sqlInsertCab, {
+            numpedrca, codusur, codcli, cgccli, dtabertura: dtAbertura, codfilial, codcob, codplpag, condvenda
+        });
+
+        // Insert Items
+        let seq = 1;
+        for (const item of itens) {
+            const sqlInsertItem = `
+                INSERT INTO CANAL_ORCAI (
+                    NUMPEDRCA, NUMSEQ, CODUSUR, CGCCLI, DTABERTURAPEDPALM, CODPROD, QT, PVENDA
+                ) VALUES (
+                    :numpedrca, :seq, :codusur, :cgccli, :dtabertura, :codprod, :qt, :pvenda
+                )
+            `;
+            await conn.execute(sqlInsertItem, {
+                numpedrca,
+                seq,
+                codusur,
+                cgccli,
+                dtabertura: dtAbertura,
+                codprod: item.codprod,
+                qt: item.qtd,
+                pvenda: item.preco
+            });
+            seq++;
+        }
+
+        await conn.commit();
+        res.json({ success: true, numpedrca });
+
+    } catch (err) {
+        console.error('Erro ao gravar orçamento:', err);
+        if (conn) {
+            try { await conn.rollback(); } catch (e) {}
+        }
+        res.status(500).json({ success: false, error: 'Erro interno ao gravar orçamento' });
+    } finally {
+        if (conn) {
+            try { await conn.close(); } catch (e) {}
+        }
+    }
+});
+
+router.get('/orcamento/historico/:codcli', async (req, res) => {
+    const { codcli } = req.params;
+    const { codusur, funcao } = req.query;
+
+    if (!codcli) {
+        return res.status(400).json({ success: false, error: 'codcli é obrigatório.' });
+    }
+
+    let conn;
+    try {
+        conn = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        // 1. Validar hierarquia
+        let whereUser = '';
+        const params = { codcli };
+        const f = String(funcao).toUpperCase();
+
+        if (f === 'VENDEDOR') {
+            whereUser = `AND O.CODUSUR = :codusur`;
+            params.codusur = codusur;
+        } else if (f === 'SUPERVISOR') {
+            whereUser = `AND O.CODUSUR IN (SELECT CODUSUR FROM PCUSUARI WHERE CODSUPERVISOR = :codusur)`;
+            params.codusur = codusur;
+        } else if (f === 'GERENTE') {
+            whereUser = `AND O.CODUSUR IN (
+                SELECT U.CODUSUR FROM PCUSUARI U 
+                JOIN PCSUPERV S ON U.CODSUPERVISOR = S.CODSUPERVISOR 
+                WHERE S.CODGERENTE = :codusur
+            )`;
+            params.codusur = codusur;
+        } // BOT_GESTOR, DIRETOR, etc. não tem filtro de usuário (vê tudo do cliente)
+
+        // 2. Buscar orçamentos do cliente
+        const sqlOrcamentos = `
+            SELECT 
+                O.NUMPEDRCA,
+                O.CODUSUR,
+                O.DTABERTURAPEDPALM,
+                O.STATUS_INTEGRACAO,
+                U.NOME AS NOME_VENDEDOR
+            FROM CANAL_ORCAC O
+            LEFT JOIN PCUSUARI U ON O.CODUSUR = U.CODUSUR
+            WHERE O.CODCLI = :codcli
+            ${whereUser}
+            ORDER BY O.DTABERTURAPEDPALM DESC
+            FETCH FIRST 20 ROWS ONLY
+        `;
+        
+        const resOrcamentos = await conn.execute(sqlOrcamentos, params);
+
+        if (resOrcamentos.rows.length === 0) {
+            return res.json({ success: true, orcamentos: [] });
+        }
+
+        const orcamentosMap = {};
+        const nums = [];
+        for (const r of resOrcamentos.rows) {
+            const num = r[0];
+            nums.push(num);
+            orcamentosMap[num] = {
+                numpedrca: num,
+                codusur: r[1],
+                data: r[2],
+                status: r[3],
+                nomeVendedor: r[4] || 'Desconhecido',
+                itens: []
+            };
+        }
+
+        // 3. Buscar os itens desses orçamentos com os preços ATUAIS (PCTABPR / PCPRECOPROM) e SALVOS (CANAL_ORCAI.PVENDA)
+        // Usamos IN para filtrar, mas como Node oracledb não gosta muito de array binds direto de tamanho variavel grande facilmente,
+        // vamos montar a string IN. Como limitamos a 20 orçamentos, é seguro.
+        const inClause = nums.join(',');
+        
+        const sqlItens = `
+            SELECT 
+                I.NUMPEDRCA,
+                I.CODPROD,
+                I.QT,
+                I.PVENDA AS PRECO_SALVO,
+                P.DESCRICAO,
+                NVL(PE.CODAUXILIAR, '') AS EAN,
+                NVL(PE.QTUNIT, 1) AS QTUNIT,
+                NVL(PE.UNMEDIDA, 'UN') AS UNIDADE,
+                NVL(PE.TIPOEMBALAGEM, 'U') AS TIPOEMBALAGEM,
+                -- Lógica de preço atual (similar a produtos/busca)
+                NVL(PROM.PRECOFIXO, TAB.PTABELA) AS PRECO_ATUAL
+            FROM CANAL_ORCAI I
+            JOIN PCPRODUT P ON I.CODPROD = P.CODPROD
+            LEFT JOIN PCTABPR TAB 
+                   ON I.CODPROD = TAB.CODPROD 
+                  AND TAB.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+            OUTER APPLY (
+                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA, TIPOEMBALAGEM
+                FROM PCEMBALAGEM PE2
+                WHERE PE2.CODPROD = I.CODPROD
+                AND NVL(PE2.ENVIAFV, 'N') = 'S' 
+                AND PE2.DTINATIVO IS NULL
+                ORDER BY PE2.QTUNIT DESC
+                FETCH FIRST 1 ROWS ONLY
+            ) PE
+            LEFT JOIN PCPRECOPROM PROM 
+                   ON PE.CODAUXILIAR = PROM.CODAUXILIAR 
+                  AND PROM.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                  AND TRUNC(SYSDATE) BETWEEN PROM.DTINICIOVIGENCIA AND PROM.DTFIMVIGENCIA
+                  AND PROM.DTINICIOVIGENCIA IS NOT NULL
+                  AND PROM.DTFIMVIGENCIA IS NOT NULL
+            WHERE I.NUMPEDRCA IN (${inClause})
+            ORDER BY I.NUMPEDRCA, I.NUMSEQ
+        `;
+
+        const resItens = await conn.execute(sqlItens);
+
+        for (const r of resItens.rows) {
+            const num = r[0];
+            const precoSalvo = r[3];
+            const precoAtual = r[9] || precoSalvo;
+
+            orcamentosMap[num].itens.push({
+                codprod: r[1],
+                qtd: r[2],
+                precoSalvo,
+                descricao: r[4],
+                ean: r[5],
+                qtunit: r[6],
+                unidade: r[7],
+                tipoembalagem: r[8],
+                precoAtual,
+                teveMudancaPreco: Number(precoSalvo).toFixed(2) !== Number(precoAtual).toFixed(2)
+            });
+        }
+
+        // 4. Buscar a validade do orçamento na config (padrão é 24 horas, mas pode ser 48, etc)
+        const sqlConfig = `SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'VALIDADE_ORCAMENTO'`;
+        const resConfig = await conn.execute(sqlConfig);
+        let validadeHoras = 24;
+        if (resConfig.rows.length > 0 && resConfig.rows[0][0]) {
+            const numRegex = resConfig.rows[0][0].match(/\\d+/);
+            if (numRegex) validadeHoras = parseInt(numRegex[0]);
+        }
+
+        const orcamentos = Object.values(orcamentosMap).sort((a, b) => b.numpedrca - a.numpedrca);
+
+        res.json({ success: true, orcamentos, validadeHoras });
+
+    } catch (err) {
+        console.error('Erro ao buscar histórico de orçamentos:', err);
+        res.status(500).json({ success: false, error: 'Erro interno' });
     } finally {
         if (conn) {
             try { await conn.close(); } catch (e) {}

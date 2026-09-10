@@ -98,64 +98,11 @@ router.get('/produtos', async (req, res) => {
             binds.codatv1 = codatv1;
         }
 
-        let outerApplyEmbalagem = `
-            OUTER APPLY (
-                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA, TIPOEMBALAGEM
-                FROM PCEMBALAGEM PE2
-                WHERE PE2.CODPROD = P.CODPROD
-                AND NVL(PE2.ENVIAFV, 'N') = 'S' 
-                AND PE2.DTINATIVO IS NULL
-                ORDER BY PE2.QTUNIT DESC
-                FETCH FIRST 1 ROWS ONLY
-            ) PE
-        `;
 
-        let precoColumn = `NVL(PR.PVENDA, 0) AS PVENDA,`;
-
-        let dtfimvigenciaColumn = `NULL AS DTFIMVIGENCIA,`;
 
         if (campanha && campanha.trim() !== '') {
-            outerApplyEmbalagem = `
-            OUTER APPLY (
-                SELECT CODAUXILIAR, QTUNIT, UNMEDIDA, TIPOEMBALAGEM
-                FROM PCEMBALAGEM PE2
-                WHERE PE2.CODPROD = P.CODPROD
-                AND NVL(PE2.ENVIAFV, 'N') = 'S' 
-                AND PE2.DTINATIVO IS NULL
-                AND UPPER(PE2.EMBALAGEM) LIKE UPPER('%' || :campanha || '%')
-                ORDER BY PE2.QTUNIT DESC
-                FETCH FIRST 1 ROWS ONLY
-            ) PE
-            `;
-
-            precoColumn = `
-                NVL((
-                    SELECT PROM.PVENDA
-                    FROM PCPRECOPROM PROM
-                    WHERE PROM.CODAUXILIAR = PE.CODAUXILIAR
-                      AND TRUNC(SYSDATE) BETWEEN PROM.DTINICIOVIGENCIA AND PROM.DTFIMVIGENCIA
-                      AND ROWNUM = 1
-                ), NVL(PR.PVENDA, 0)) AS PVENDA,
-            `;
-
-            dtfimvigenciaColumn = `
-                (
-                    SELECT PROM.DTFIMVIGENCIA
-                    FROM PCPRECOPROM PROM
-                    WHERE PROM.CODAUXILIAR = PE.CODAUXILIAR
-                      AND TRUNC(SYSDATE) BETWEEN PROM.DTINICIOVIGENCIA AND PROM.DTFIMVIGENCIA
-                      AND ROWNUM = 1
-                ) AS DTFIMVIGENCIA,
-            `;
-
             whereClause += `
-                AND EXISTS (
-                    SELECT 1 FROM PCEMBALAGEM P_EMB 
-                    WHERE P_EMB.CODPROD = P.CODPROD 
-                      AND NVL(P_EMB.ENVIAFV, 'N') = 'S'
-                      AND P_EMB.DTINATIVO IS NULL
-                      AND UPPER(P_EMB.EMBALAGEM) LIKE UPPER('%' || :campanha || '%')
-                )
+                AND UPPER(A.EMBALAGEM) LIKE UPPER('%' || :campanha || '%')
             `;
             binds.campanha = campanha.trim();
         }
@@ -163,26 +110,44 @@ router.get('/produtos', async (req, res) => {
         const sql = `
             ${withClause}
             SELECT 
-                P.CODPROD, 
+                A.CODPROD, 
                 P.DESCRICAO, 
                 P.CODEPTO, 
                 NVL(D.DESCRICAO, 'OUTROS') AS DEPARTAMENTO, 
-                ${precoColumn}
-                ${dtfimvigenciaColumn}
-                PE.CODAUXILIAR AS EAN, 
-                PE.QTUNIT, 
-                PE.UNMEDIDA AS UNIDADE_EMB,
-                PE.TIPOEMBALAGEM
-            FROM PCPRODUT P
-            JOIN PCEST E ON E.CODPROD = P.CODPROD AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}'
-            LEFT JOIN PCDEPTO D ON D.CODEPTO = P.CODEPTO
-            LEFT JOIN PCTABPR PR ON PR.CODPROD = P.CODPROD AND PR.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                NVL(B.PRECOFIXO, C.PTABELA) AS PVENDA,
+                B.DTFIMVIGENCIA,
+                A.CODAUXILIAR AS EAN, 
+                A.QTUNIT, 
+                A.UNIDADE AS UNIDADE_EMB,
+                A.TIPOEMBALAGEM,
+                CASE WHEN B.PRECOFIXO IS NOT NULL THEN 'OPORTUNIDADE' ELSE '' END AS TIPO_PRECO
+            FROM PCEMBALAGEM A
+            LEFT JOIN PCPRECOPROM B 
+                   ON A.CODAUXILIAR = B.CODAUXILIAR 
+                  AND B.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                  AND TRUNC(SYSDATE) BETWEEN B.DTINICIOVIGENCIA AND B.DTFIMVIGENCIA
+                  AND B.DTINICIOVIGENCIA IS NOT NULL
+                  AND B.DTFIMVIGENCIA IS NOT NULL
+            LEFT JOIN PCTABPR C 
+                   ON A.CODPROD = C.CODPROD 
+                  AND C.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+            JOIN PCPRODUT P 
+              ON A.CODPROD = P.CODPROD
+            JOIN PCEST E 
+              ON A.CODPROD = E.CODPROD 
+             AND A.CODFILIAL = E.CODFILIAL 
+             AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}'
+            LEFT JOIN PCDEPTO D 
+              ON D.CODEPTO = P.CODEPTO
             ${joinClause}
-            ${outerApplyEmbalagem}
-            WHERE NVL(P.OBS2, 'X') NOT IN ('FL')
-            AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
+            WHERE A.ENVIAFV = 'S'
+              AND A.DTINATIVO IS NULL
+              AND NVL(P.OBS2, 'X') NOT IN ('FL')
+              AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
             ${whereClause}
-            ORDER BY NVL(D.DESCRICAO, 'OUTROS'), P.DESCRICAO
+            ORDER BY 
+                CASE WHEN B.PRECOFIXO IS NOT NULL THEN 0 ELSE 1 END,
+                NVL(D.DESCRICAO, 'OUTROS'), P.DESCRICAO
         `;
 
         const result = await conn.execute(sql, binds);
@@ -206,7 +171,8 @@ router.get('/produtos', async (req, res) => {
                 dtFimVigencia: row[5],
                 ean: row[6] || '',
                 qtunit: row[7] || 1,
-                unidade: unidadeCalculada
+                unidade: unidadeCalculada,
+                tipoPreco: row[10] || ''
             };
         });
 

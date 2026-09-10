@@ -10,6 +10,7 @@ try {
     console.error('Erro ao inicializar Oracle Client (Thick mode):', err.message);
 }
 require('dotenv').config();
+const { exec, execFile } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
@@ -20,8 +21,20 @@ const io = new Server(server, {
   }
 });
 
+const rateLimit = require('express-rate-limit');
+
 app.use(cors());
 app.use(express.json());
+
+// Fase 5: Rate Limiting Global (Bypass webhooks)
+const globalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 1500, // Limite generoso global
+    skip: (req) => req.path.startsWith('/api/webhook'),
+    message: { error: 'Muitas requisições, tente novamente mais tarde.' }
+});
+app.use(globalLimiter);
+
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use('/SAC/UPLOAD', express.static(path.join(__dirname, '../SAC/UPLOAD')));
 global.io = io; // Disponibiliza o io globalmente para os controllers
@@ -185,7 +198,6 @@ const initializeOracleDatabase = require('./scripts/init_oracle');
 const cacheService = require('./services/cacheService');
 const oraclePool = require('./services/oraclePool');
 const webhookServerManager = require('./services/webhookServerManager');
-const { exec } = require('child_process');
 
 // Inicia o pool Oracle antes de qualquer coisa
 oraclePool.initPool()
@@ -216,29 +228,35 @@ oraclePool.initPool()
 
                     console.log(`[STARTUP] Iniciando webhook nativo na porta ${porta} com hostname ${nomeEmpresa}`);
                     
-                    exec(`tailscale up --hostname=${nomeEmpresa} --accept-routes`, (upErr) => {
+                    execFile('tailscale', ['up', `--hostname=${nomeEmpresa}`, '--accept-routes'], (upErr) => {
                         if (upErr) console.error('[STARTUP] Erro no tailscale up:', upErr.message);
                         
-                        exec(`tailscale status --json`, (statusErr, stdout) => {
+                        execFile('tailscale', ['status', '--json'], (statusErr, stdout) => {
                             let domain = '';
                             if (!statusErr && stdout) {
                                 try {
                                     const statusObj = JSON.parse(stdout);
                                     if (statusObj.Self && statusObj.Self.DNSName) {
-                                        domain = statusObj.Self.DNSName.replace(/\\.$/, '');
+                                        domain = statusObj.Self.DNSName.replace(/\.$/, '');
                                     }
                                 } catch(e){}
                             }
                             
-                            const certCmd = domain ? `mkdir -p ../certs && tailscale cert --cert-file ../certs/webhook.crt --key-file ../certs/webhook.key ${domain}` : `mkdir -p ../certs`;
-
-                            exec(certCmd, { cwd: __dirname }, (certErr) => {
-                                if (certErr) console.error('[STARTUP] Erro no tailscale cert:', certErr.message);
-
-                                webhookServerManager.startWebhookServer(porta, token);
+                            // Cria pasta e roda tailscale cert
+                            exec(`mkdir -p ../certs`, { cwd: __dirname }, (mkdirErr) => {
+                                if (mkdirErr) console.error('[STARTUP] Erro mkdir certs:', mkdirErr.message);
                                 
-                                exec(`tailscale funnel -bg ${porta}`, (err) => {
-                                    if(err) console.error('[STARTUP] Erro no tailscale funnel:', err.message);
+                                let certArgs = ['cert', '--cert-file', '../certs/webhook.crt', '--key-file', '../certs/webhook.key'];
+                                if (domain) certArgs.push(domain);
+                                
+                                execFile('tailscale', certArgs, { cwd: __dirname }, (certErr) => {
+                                    if (certErr) console.error('[STARTUP] Erro no tailscale cert:', certErr.message);
+    
+                                    webhookServerManager.startWebhookServer(porta, token);
+                                    
+                                    execFile('tailscale', ['funnel', '-bg', String(porta)], (err) => {
+                                        if(err) console.error('[STARTUP] Erro no tailscale funnel:', err.message);
+                                    });
                                 });
                             });
                         });

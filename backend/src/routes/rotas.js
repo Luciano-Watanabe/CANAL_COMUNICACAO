@@ -385,8 +385,8 @@ router.post('/:codusur/disparar', async (req, res) => {
 
         const mapTelefones = {};
         if (clientsToFetch.length > 0) {
-            const uniqueCodclis = [...new Set(clientsToFetch)].slice(0, 999);
-            const sqlTels = `SELECT CODCLI, NVL(TELCELENT, NVL(TELENT, TELCOB)) FROM PCCLIENT WHERE CODCLI IN (${uniqueCodclis.join(',')})`;
+            const safeCodclis = [...new Set(clientsToFetch)].slice(0, 999).map(Number).filter(n => !isNaN(n));
+            const sqlTels = `SELECT CODCLI, NVL(TELCELENT, NVL(TELENT, TELCOB)) FROM PCCLIENT WHERE CODCLI IN (${safeCodclis.join(',')})`;
             const resTels = await connection.execute(sqlTels);
             resTels.rows.forEach(r => {
                 mapTelefones[r[0]] = r[1];

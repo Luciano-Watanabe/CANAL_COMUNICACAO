@@ -274,7 +274,13 @@ function MensagemCard({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function ConfigMensagens() {
-  const [activeTab, setActiveTab] = useState<'bot' | 'automacoes'>('bot');
+  const [activeTab, setActiveTab] = useState<'bot' | 'automacoes' | 'menu'>('bot');
+
+  // ── Estado do Menu Principal ──
+  const [sacMenuAtivos, setSacMenuAtivos] = useState<string[]>(['1','2','3','4','5','6','7','8','9','0']);
+  const [vendMenuAtivos, setVendMenuAtivos] = useState<string[]>(['1','2','3','4','5','0']);
+  const [loadingMenu, setLoadingMenu] = useState(false);
+  const [savingMenu, setSavingMenu] = useState(false);
 
   // ── Estado das Mensagens do Bot ──
   const [mensagens, setMensagens] = useState<BotMensagem[]>([]);
@@ -309,7 +315,54 @@ export default function ConfigMensagens() {
   useEffect(() => {
     fetchMensagens();
     fetchAutomacoes();
+    fetchMenuConfigs();
   }, []);
+
+  const fetchMenuConfigs = async () => {
+    setLoadingMenu(true);
+    try {
+      const res = await fetch('/api/config/geral');
+      const data = await res.json();
+      if (data.success && data.config) {
+        if (data.config.SAC_MENU_ATIVOS) {
+          setSacMenuAtivos(data.config.SAC_MENU_ATIVOS.split(',').map((s: string) => s.trim()));
+        }
+        if (data.config.VEND_MENU_ATIVOS) {
+          setVendMenuAtivos(data.config.VEND_MENU_ATIVOS.split(',').map((s: string) => s.trim()));
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingMenu(false);
+    }
+  };
+
+  const handleSaveMenuConfigs = async () => {
+    setSavingMenu(true);
+    try {
+      const res = await fetch('/api/config/geral', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          configs: {
+            SAC_MENU_ATIVOS: sacMenuAtivos.join(','),
+            VEND_MENU_ATIVOS: vendMenuAtivos.join(',')
+          }
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert('Configurações de menu salvas com sucesso!');
+      } else {
+        alert('Erro ao salvar menu.');
+      }
+    } catch (err) {
+      alert('Erro ao salvar menu.');
+    } finally {
+      setSavingMenu(false);
+    }
+  };
 
   // ── API: Mensagens do Bot ──
   const fetchMensagens = async () => {
@@ -525,6 +578,18 @@ export default function ConfigMensagens() {
               {automacoes.length}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => setActiveTab('menu')}
+          className={clsx(
+            'flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors',
+            activeTab === 'menu'
+              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          )}
+        >
+          <Bot size={16} />
+          Opções do Menu
         </button>
       </div>
 
@@ -882,6 +947,109 @@ export default function ConfigMensagens() {
                 })
               )}
             </div>
+          </div>
+        </div>
+      )}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ABA: MENU PRINCIPAL                                                 */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'menu' && (
+        <div className="max-w-2xl space-y-6">
+          <div className="glass-card rounded-2xl p-6">
+            <h2 className="text-lg font-bold mb-4 text-slate-900 dark:text-white flex items-center gap-2">
+              <Bot size={18} /> Configurar Opções do SAC Bot
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+              Marque as opções que deseja deixar disponíveis para seus clientes no menu principal do SAC. O bot não enviará nem aceitará as opções desmarcadas.
+            </p>
+            
+            {loadingMenu ? (
+              <div className="flex justify-center p-8"><RefreshCw className="animate-spin text-slate-400" /></div>
+            ) : (
+              <div className="space-y-3">
+                {[
+                  { id: '1', label: '1 - Status de Pedido / Entrega' },
+                  { id: '2', label: '2 - 2ª Via de Boleto e Notas Fiscais' },
+                  { id: '3', label: '3 - Pegar Catálogo' },
+                  { id: '4', label: '4 - Trocas e Devoluções' },
+                  { id: '5', label: '5 - Quero me Cadastrar (Novos Clientes)' },
+                  { id: '6', label: '6 - Falar com meu Vendedor' },
+                  { id: '7', label: '7 - Abrir Chamado (Atendimento Humano)' },
+                  { id: '8', label: '8 - Consultar ticket' },
+                  { id: '9', label: '9 - Fornecedor' },
+                  { id: '0', label: '0 - Finalizar Atendimento' },
+                ].map(opt => (
+                  <div key={opt.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <input
+                      type="checkbox"
+                      id={`sac-opt-${opt.id}`}
+                      checked={sacMenuAtivos.includes(opt.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSacMenuAtivos(prev => [...prev, opt.id]);
+                        } else {
+                          setSacMenuAtivos(prev => prev.filter(x => x !== opt.id));
+                        }
+                      }}
+                      className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                    />
+                    <label htmlFor={`sac-opt-${opt.id}`} className="flex-1 font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                      {opt.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <div className="glass-card rounded-2xl p-6">
+            <h2 className="text-lg font-bold mb-4 text-slate-900 dark:text-white flex items-center gap-2">
+              <Bot size={18} /> Configurar Opções do Vendedor Bot
+            </h2>
+            {loadingMenu ? (
+              <div className="flex justify-center p-8"><RefreshCw className="animate-spin text-slate-400" /></div>
+            ) : (
+              <div className="space-y-3">
+                {[
+                  { id: '1', label: '1 - Assistente de Comunicação' },
+                  { id: '2', label: '2 - Meus Objetivos' },
+                  { id: '3', label: '3 - Consultar Tickets da Carteira' },
+                  { id: '4', label: '4 - Abrir ticket para cliente' },
+                  { id: '5', label: '5 - Consultar CNPJ/CPF' },
+                  { id: '0', label: '0 - Finalizar' },
+                ].map(opt => (
+                  <div key={opt.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <input
+                      type="checkbox"
+                      id={`vend-opt-${opt.id}`}
+                      checked={vendMenuAtivos.includes(opt.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setVendMenuAtivos(prev => [...prev, opt.id]);
+                        } else {
+                          setVendMenuAtivos(prev => prev.filter(x => x !== opt.id));
+                        }
+                      }}
+                      className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                    />
+                    <label htmlFor={`vend-opt-${opt.id}`} className="flex-1 font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                      {opt.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end pt-4">
+            <button
+              onClick={handleSaveMenuConfigs}
+              disabled={savingMenu}
+              className="flex items-center gap-2 px-6 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-medium rounded-xl transition-colors shadow-sm"
+            >
+              {savingMenu ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />}
+              {savingMenu ? 'Salvando...' : 'Salvar Alterações do Menu'}
+            </button>
           </div>
         </div>
       )}
