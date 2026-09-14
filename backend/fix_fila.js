@@ -10,8 +10,8 @@ async function run() {
             password: process.env.ORACLE_PASS,
             connectString: process.env.ORACLE_CONN_STR
         });
-        const res = await conn.execute(`SELECT ID, STATUS, LOG_ERRO FROM CANAL_REATIVACAO_FILA WHERE ID = 342`);
-        console.log(res.rows);
+        await conn.execute(`UPDATE CANAL_REATIVACAO_FILA SET STATUS = 'PENDENTE' WHERE STATUS IN ('ERRO', 'PROCESSANDO') AND ID IN (343, 344, 345)`, [], { autoCommit: true });
+        console.log("Fila atualizada para PENDENTE.");
     } catch (e) {
         console.error(e);
     } finally {

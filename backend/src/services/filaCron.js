@@ -97,21 +97,26 @@ cron.schedule('* * * * *', async () => {
 
                 const telCliente = cacheService.getDestinoFinal(formatPhone(telClienteRaw));
 
-                const detailsRes = await connection.execute(`
-                    SELECT NVL(C.FANTASIA, C.CLIENTE), U.NOME, NVL(U.TELEFONE1, U.TELEFONE2)
-                    FROM PCCLIENT C
-                    LEFT JOIN PCUSUARI U ON U.CODUSUR = C.CODUSUR1
-                    WHERE C.CODCLI = :codcli
-                `, { codcli });
+                let nomeCliente = 'Cliente';
+                let nomeVendedor = 'Atendimento';
+                let telVendedorRaw = '';
 
-                if (detailsRes.rows.length === 0) {
-                    throw new Error('Cliente não encontrado');
+                if (codcli) {
+                    const detailsRes = await connection.execute(`
+                        SELECT NVL(C.FANTASIA, C.CLIENTE), U.NOME, NVL(U.TELEFONE1, U.TELEFONE2)
+                        FROM PCCLIENT C
+                        LEFT JOIN PCUSUARI U ON U.CODUSUR = C.CODUSUR1
+                        WHERE C.CODCLI = :codcli
+                    `, { codcli });
+
+                    if (detailsRes.rows.length > 0) {
+                        nomeCliente = detailsRes.rows[0][0];
+                        nomeVendedor = detailsRes.rows[0][1];
+                        telVendedorRaw = detailsRes.rows[0][2];
+                    }
                 }
-
-                const nomeCliente = detailsRes.rows[0][0];
-                const nomeVendedor = detailsRes.rows[0][1];
-                const telVendedorRaw = detailsRes.rows[0][2];
-                const telVendedor = cacheService.getDestinoFinal(formatPhone(telVendedorRaw));
+                
+                let telVendedor = cacheService.getDestinoFinal(formatPhone(telVendedorRaw));
 
                 let textoBase = txtProdutos;
                 if (textoBase && typeof textoBase === 'object') {
@@ -232,6 +237,10 @@ cron.schedule('* * * * *', async () => {
                 
                 console.log(`[FILA CRON] ID=${filaId} CODCLI=${codcli} textoBase=${String(textoBase).substring(0, 100)}`);
                 
+                let isOportunidade = false;
+                let oportunidadeMediaPath = '';
+                let oportunidadeVendedor = '';
+                let oportunidadeCatalogo = 'NONE';
                 let isCatalogoPdf = false;
                 let catalogoPdfPath = '';
                 let catalogoRamo = '';
@@ -249,6 +258,32 @@ cron.schedule('* * * * *', async () => {
                         finalClientText = `Olá ${(nomeCliente || '').trim()}, confira nosso novo catálogo de produtos da categoria: ${catalogoRamo}!`;
                     }
                     console.log(`[FILA CRON] ✅ Modo Catálogo PDF | Path="${catalogoPdfPath}" | Ramo="${catalogoRamo}" | Msg="${finalClientText.substring(0, 60)}"`);
+                } else if (typeof textoBase === 'string' && textoBase.startsWith('[OPORTUNIDADE]')) {
+                    isOportunidade = true;
+                    // ex: [OPORTUNIDADE]/caminho/arquivo.ext|IDVENDEDOR|CATALOGO(GERAL ou ramoId)|Legenda
+                    const parts = textoBase.replace('[OPORTUNIDADE]', '').split('|');
+                    oportunidadeMediaPath = parts[0] || '';
+                    oportunidadeVendedor = parts[1] || '';
+                    oportunidadeCatalogo = parts[2] || 'NONE';
+                    if (parts[3]) {
+                        finalClientText = parts[3];
+                    } else {
+                        finalClientText = `Olá ${(nomeCliente || '').trim()}, confira essa oportunidade incrível!`;
+                    }
+                    console.log(`[FILA CRON] ✅ Modo Oportunidade | Path="${oportunidadeMediaPath}" | Vendedor="${oportunidadeVendedor}"`);
+                    
+                    // Fetch Vendedor Responsável specific to this Oportunidade
+                    if (oportunidadeVendedor && oportunidadeVendedor !== '9999') {
+                        const vRes = await connection.execute(`
+                            SELECT NOME, NVL(TELEFONE1, TELEFONE2)
+                            FROM PCUSUARI
+                            WHERE CODUSUR = :codusur
+                        `, { codusur: oportunidadeVendedor });
+                        if (vRes.rows.length > 0) {
+                            nomeVendedor = vRes.rows[0][0];
+                            telVendedor = cacheService.getDestinoFinal(formatPhone(vRes.rows[0][1]));
+                        }
+                    }
                 } else {
                     finalClientText = String(finalClientText).replace(/¿/g, '\u2705');
                 }
@@ -326,7 +361,7 @@ Regras:
                                     'Authorization': `Bearer ${grokApiKey}`,
                                     'Content-Type': 'application/json'
                                 },
-                                timeout: 15000
+                                timeout: 60000
                             });
                             
                             if (grokRes.data && grokRes.data.choices && grokRes.data.choices[0] && grokRes.data.choices[0].message) {
@@ -349,7 +384,7 @@ Regras:
                 };
                 const msgClienteVcard = {
                     number: telCliente,
-                    contactName: instanceName,
+                    contactName: nomeVendedor,
                     contactNumber: telVendedor
                 };
                 const horaAtual = new Date().getHours();
@@ -410,7 +445,7 @@ Regras:
 
                     try {
                         let res = await axios.post(`${evoUrl}${endpoint}`, payload, {
-                            headers, timeout: 15000, validateStatus: () => true
+                            headers, timeout: 60000, validateStatus: () => true
                         });
                         
                         // Fallback para Evolution V2 (contactMessage array)
@@ -427,7 +462,7 @@ Regras:
                                 ]
                             };
                             res = await axios.post(`${evoUrl}${endpoint}`, payloadV2, {
-                                headers, timeout: 15000, validateStatus: () => true
+                                headers, timeout: 60000, validateStatus: () => true
                             });
                         }
 
@@ -443,7 +478,7 @@ Regras:
                             }
                             console.log(`[FILA CRON] Endpoint ${endpoint} não encontrado, tentando fallback V2/GO: ${fallbackEndpoint}`);
                             res = await axios.post(`${evoUrl}${fallbackEndpoint}`, payloadFallback, {
-                                headers, timeout: 15000, validateStatus: () => true
+                                headers, timeout: 60000, validateStatus: () => true
                             });
                         }
                         
@@ -454,12 +489,12 @@ Regras:
                              res = await axios.post(`${evoUrl}/message/sendText/${instanceName}`, {
                                  number: payload.number,
                                  text: fallbackText
-                             }, { headers, timeout: 15000, validateStatus: () => true });
+                             }, { headers, timeout: 60000, validateStatus: () => true });
                              if (res.status === 404) {
                                 res = await axios.post(`${evoUrl}/send/text`, {
                                     number: payload.number,
                                     text: fallbackText
-                                }, { headers, timeout: 15000, validateStatus: () => true });
+                                }, { headers, timeout: 60000, validateStatus: () => true });
                              }
                         }
 
@@ -522,6 +557,59 @@ Regras:
                         // Falhou ler PDF, manda só o texto ao cliente
                         await sendEvo('text', msgClienteTxt);
                     }
+                } else if (isOportunidade) {
+                    // MODO OPORTUNIDADE
+                    let mediaSent = false;
+                    
+                    if (oportunidadeMediaPath) {
+                        const fs = require('fs');
+                        const path = require('path');
+                        let resolvedPath = oportunidadeMediaPath;
+                        
+                        if (fs.existsSync(resolvedPath)) {
+                            const b64Media = fs.readFileSync(resolvedPath, { encoding: 'base64' });
+                            const ext = path.extname(resolvedPath).toLowerCase();
+                            
+                            let mediatype = 'document';
+                            let mimetype = 'application/pdf';
+                            if (ext === '.jpg' || ext === '.jpeg' || ext === '.png' || ext === '.webp') {
+                                mediatype = 'image';
+                                mimetype = 'image/jpeg';
+                            } else if (ext === '.mp4' || ext === '.webm') {
+                                mediatype = 'video';
+                                mimetype = 'video/mp4';
+                            }
+
+                            await sendEvo('media', {
+                                number: telCliente,
+                                mediatype: mediatype,
+                                mimetype: mimetype,
+                                fileName: path.basename(resolvedPath),
+                                media: b64Media,
+                                caption: finalClientText
+                            });
+                            mediaSent = true;
+                        }
+                    }
+
+                    if (!mediaSent) {
+                        await sendEvo('text', {
+                            number: telCliente,
+                            text: finalClientText
+                        });
+                    }
+                    
+                    // Se o usuário selecionou enviar Catálogo junto com a oportunidade
+                    if (oportunidadeCatalogo !== 'NONE' && base64Data) {
+                        await sendEvo('media', {
+                            number: telCliente,
+                            mediatype: 'image',
+                            mimetype: 'image/jpeg',
+                            fileName: `Ofertas_${codcli}.jpg`,
+                            media: base64Data,
+                            caption: 'Confira também essas ofertas!'
+                        });
+                    }
                 } else if (base64Data) {
                     // Envia a mensagem de texto (gerada pela IA) primeiro
                     await sendEvo('text', msgClienteTxt);
@@ -570,7 +658,7 @@ Regras:
                         await sendEvo('text', msgVendedorTxt);
                         await new Promise(r => setTimeout(r, 1000));
                         
-                        if (base64Data) {
+                        if (base64Data && !isOportunidade) {
                             await sendEvo('media', {
                                 number: telVendedor,
                                 mediatype: 'image',

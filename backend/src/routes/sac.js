@@ -94,11 +94,11 @@ router.get('/stats', async (req, res) => {
         conn = await oraclePool.getConnection();
         
         // 1. Total abertos
-        const resAbertos = await conn.execute(`SELECT COUNT(*) FROM CANAL_SAC_TICKETS WHERE STATUS = 'ABERTO'`);
+        const resAbertos = await conn.execute(`SELECT COUNT(*) FROM CANAL_SAC_TICKETS WHERE STATUS IN ('ABERTO', 'ABERTOS')`);
         const totalAbertos = resAbertos.rows[0][0];
 
         // 2. Total fechados ou finalizados hoje
-        const resResolvidos = await conn.execute(`SELECT COUNT(*) FROM CANAL_SAC_TICKETS WHERE STATUS IN ('FECHADO', 'FINALIZADO') AND TRUNC(ATUALIZADO_EM) = TRUNC(SYSDATE)`);
+        const resResolvidos = await conn.execute(`SELECT COUNT(*) FROM CANAL_SAC_TICKETS WHERE STATUS IN ('FECHADO', 'FECHADOS (AGUARDANDO AVALIAÇÃO)', 'FINALIZADO', 'FINALIZADOS') AND TRUNC(ATUALIZADO_EM) = TRUNC(SYSDATE)`);
         const resolvidosHoje = resResolvidos.rows[0][0];
 
         // 3. Média de Avaliação (todas ou do mês)
@@ -106,7 +106,7 @@ router.get('/stats', async (req, res) => {
         const mediaAvaliacao = Number(resMedia.rows[0][0]).toFixed(1);
 
         // 4. SLA Médio em Horas
-        const sqlSla = `SELECT NVL(AVG((CAST(DATA_RESOLUCAO AS DATE) - CAST(CRIADO_EM AS DATE)) * 24), 0) FROM CANAL_SAC_TICKETS WHERE STATUS IN ('FECHADO', 'FINALIZADO', 'RESOLVIDO') AND DATA_RESOLUCAO IS NOT NULL`;
+        const sqlSla = `SELECT NVL(AVG((CAST(DATA_RESOLUCAO AS DATE) - CAST(CRIADO_EM AS DATE)) * 24), 0) FROM CANAL_SAC_TICKETS WHERE STATUS IN ('FECHADO', 'FECHADOS (AGUARDANDO AVALIAÇÃO)', 'FINALIZADO', 'FINALIZADOS', 'RESOLVIDO') AND DATA_RESOLUCAO IS NOT NULL`;
         const resSla = await conn.execute(sqlSla);
         const slaHoras = Number(resSla.rows[0][0]).toFixed(1);
 
@@ -217,7 +217,8 @@ router.get('/tickets', async (req, res) => {
                    t.DATA_AGENDAMENTO, t.AGENDAMENTO_CODPROD, t.AGENDAMENTO_QTDE, t.AGENDAMENTO_MOTORISTA_NOME, t.AGENDAMENTO_MOTORISTA_TEL,                    t.AGENDAMENTO_ENVIADO,
                    prod.DESCRICAO as PRODUTO_NOME,
                    t.MENTIONED_MATRICULA,
-                   t.MENTIONED_NOME
+                   t.MENTIONED_NOME,
+                   t.ID_ANTIGO
             FROM CANAL_SAC_TICKETS t
             LEFT JOIN CANAL_SAC_DEPARTAMENTOS d ON t.DEPARTAMENTO_ID = d.ID
             LEFT JOIN CANAL_SAC_DEPARTAMENTOS p ON d.DEPARTAMENTO_PAI_ID = p.ID
@@ -237,8 +238,12 @@ router.get('/tickets', async (req, res) => {
         }
 
         if (status && status !== 'TODOS') {
-            sql += ` AND t.STATUS = :st`;
-            binds.st = status;
+            if (status === 'ABERTOS') {
+                sql += ` AND t.STATUS IN ('ABERTO', 'ABERTOS')`;
+            } else {
+                sql += ` AND t.STATUS = :st`;
+                binds.st = status;
+            }
         }
         
         // Chave composta MATRICULA:CARGO para diferenciar VENDEDOR (PCUSUARI) de ATENDENTE (PCEMPR)
@@ -307,7 +312,8 @@ router.get('/tickets', async (req, res) => {
                 agendamentoEnviado: row[19],
                 agendamentoProdutoNome: row[20],
                 mencionadoParaMim: !!matricula && String(row[21]) === String(matriculaKey),
-                mencionadoParaNome: row[22] || null
+                mencionadoParaNome: row[22] || null,
+                idAntigo: row[23] || null
             };
         });
         

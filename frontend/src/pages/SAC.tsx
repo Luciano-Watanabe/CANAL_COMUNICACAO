@@ -429,10 +429,10 @@ export default function SAC() {
               className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 focus:ring-2 focus:ring-primary-500 outline-none"
             >
               <option value="TODOS">Todos os Chamados</option>
-              <option value="ABERTO">Abertos</option>
+              <option value="ABERTOS">Abertos</option>
               <option value="EM ATENDIMENTO">Em Atendimento</option>
-              <option value="FECHADO">Fechados (Aguardando Avaliação)</option>
-              <option value="FINALIZADO">Finalizados</option>
+              <option value="FECHADOS (AGUARDANDO AVALIAÇÃO)">Fechados (Aguardando Avaliação)</option>
+              <option value="FINALIZADOS">Finalizados</option>
             </select>
             <button onClick={fetchTickets} className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
               Atualizar
@@ -463,9 +463,14 @@ export default function SAC() {
                     )}
                   >
                     <div className="flex justify-between items-start mb-2">
-                      <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm flex items-center gap-1.5">
+                      <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm flex items-center gap-1.5 flex-wrap">
                         <User size={14} className="text-slate-400" />
                         {ticket.telefone}
+                        {ticket.idAntigo && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 font-medium">
+                            {ticket.idAntigo}
+                          </span>
+                        )}
                         {ticket.mencionadoParaMim && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500 text-white font-bold uppercase tracking-wide">
                             Mencionado
@@ -518,8 +523,14 @@ export default function SAC() {
               {/* Header do Chat */}
               <div className="h-16 px-6 border-b border-slate-100 dark:border-slate-700/50 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
                  <div>
-                   <h2 className="font-semibold text-slate-800 dark:text-slate-100">
-                     Ticket #{selectedTicket.id} - {selectedTicket.nomeCliente || selectedTicket.telefone}
+                   <h2 className="font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                     Ticket #{selectedTicket.id}
+                     {selectedTicket.idAntigo && (
+                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 uppercase">
+                         {selectedTicket.idAntigo}
+                       </span>
+                     )}
+                     - {selectedTicket.nomeCliente || selectedTicket.telefone}
                    </h2>
                    <p className="text-xs text-slate-500">
                      {selectedTicket.nomeCliente && <span className="mr-2">Tel: {selectedTicket.telefone}</span>}

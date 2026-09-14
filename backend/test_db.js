@@ -1,21 +1,22 @@
-require('dotenv').config();
 const oracledb = require('oracledb');
-async function test() {
-  let connection;
-  try {
-    connection = await oracledb.getConnection({
-      user: process.env.ORACLE_USER,
-      password: process.env.ORACLE_PASS,
-      connectString: process.env.ORACLE_CONN_STR
-    });
-    const cfg = await connection.execute("SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'CODFILIAL'");
-    console.log('CODFILIAL em CANAL_CONFIGURACOES:', cfg.rows);
-    const filiais = await connection.execute("SELECT CODIGO, RAZAOSOCIAL FROM PCFILIAL");
-    console.log('PCFILIAL:', filiais.rows);
-  } catch(e) {
-    console.error(e);
-  } finally {
-    if(connection) await connection.close();
-  }
+oracledb.fetchAsString = [oracledb.CLOB];
+require('dotenv').config({ path: '../.env' });
+try { oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' }); } catch(e) {}
+
+async function run() {
+    let conn;
+    try {
+        conn = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+        const res = await conn.execute(`SELECT TRIGGER_NAME, TRIGGER_BODY FROM ALL_TRIGGERS WHERE TABLE_NAME = 'CANAL_REATIVACAO_FILA'`);
+        console.log(res.rows);
+    } catch (e) {
+        console.error(e);
+    } finally {
+        if (conn) await conn.close();
+    }
 }
-test();
+run();

@@ -8,6 +8,7 @@ import RelatorioSAC from './pages/RelatorioSAC';
 import Login from './pages/Login';
 import Configuracoes from './pages/Configuracoes';
 import Campanhas from './pages/Campanhas';
+import CampanhasOportunidades from './pages/CampanhasOportunidades';
 import Vendedores from './pages/Vendedores';
 import ConfigMensagens from './pages/ConfigMensagens';
 import GestaoVisitas from './pages/GestaoVisitas';
@@ -49,6 +50,7 @@ function App() {
             <Route path="/chat" element={<Chat />} />
             <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="/campanhas" element={<Campanhas />} />
+            <Route path="/campanhas-oportunidades" element={<CampanhasOportunidades />} />
             <Route path="/vendedores" element={<Vendedores />} />
             <Route path="/mensagens" element={<ConfigMensagens />} />
             <Route path="/visitas" element={<GestaoVisitas />} />

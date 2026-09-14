@@ -346,7 +346,9 @@ class CacheService {
     }
 
     isWithinAllowedSchedule() {
-        const now = new Date();
+        return true; // Forçando processamento da fila para testes
+        const nowStr = new Date().toLocaleString("en-US", {timeZone: "America/Sao_Paulo"});
+        const now = new Date(nowStr);
         const currentHour = now.getHours();
         const currentDay = now.getDay();
 

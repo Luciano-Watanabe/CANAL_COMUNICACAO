@@ -10,8 +10,16 @@ async function run() {
             password: process.env.ORACLE_PASS,
             connectString: process.env.ORACLE_CONN_STR
         });
-        const res = await conn.execute(`SELECT ID, STATUS, LOG_ERRO FROM CANAL_REATIVACAO_FILA WHERE ID = 342`);
-        console.log(res.rows);
+        
+        const res1 = await conn.execute(`SELECT ID, LOG_ERRO FROM CANAL_REATIVACAO_FILA WHERE ID IN (345, 344, 343) ORDER BY ID DESC`);
+        for (let row of res1.rows) {
+            console.log("ID:", row[0]);
+            if (row[1]) {
+                const log = await row[1].getData();
+                console.log("LOG:", log);
+            }
+        }
+
     } catch (e) {
         console.error(e);
     } finally {

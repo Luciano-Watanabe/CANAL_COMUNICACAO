@@ -24,7 +24,8 @@ const io = new Server(server, {
 const rateLimit = require('express-rate-limit');
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Fase 5: Rate Limiting Global (Bypass webhooks)
 const globalLimiter = rateLimit({
@@ -51,6 +52,7 @@ const vendedoresRoutes = require('./routes/vendedores');
 const produtosRoutes = require('./routes/produtos');
 const importExportRoutes = require('./routes/importExport');
 const campanhasRoutes = require('./routes/campanhas');
+const oportunidadesRoutes = require('./routes/oportunidades');
 const analiseCnpjRoutes = require('./routes/analiseCnpj');
 const analiseIeRoutes = require('./routes/analiseIe');
 const whatsappRoutes = require('./routes/whatsapp');
@@ -91,6 +93,7 @@ app.use('/api/prospeccao', prospeccaoRoutes);
 app.use('/api', avisosRoutes);
 app.use('/api', dashboardRoutes);
 app.use('/api', campanhasRoutes);
+app.use('/api/oportunidades', oportunidadesRoutes);
 app.use('/api/analise-cnpj', analiseCnpjRoutes);
 app.use('/api/analise-ie', analiseIeRoutes);
 app.use('/api', metricasRoutes);

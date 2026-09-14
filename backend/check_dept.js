@@ -1,6 +1,6 @@
-const oracledb = require('oracledb');
 require('dotenv').config({ path: '../.env' });
-try { oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' }); } catch(e) {}
+const oracledb = require('oracledb');
+try { oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' }); } catch(e){}
 
 async function run() {
     let conn;
@@ -10,12 +10,12 @@ async function run() {
             password: process.env.ORACLE_PASS,
             connectString: process.env.ORACLE_CONN_STR
         });
-        const res = await conn.execute(`SELECT ID, STATUS, LOG_ERRO FROM CANAL_REATIVACAO_FILA WHERE ID = 342`);
-        console.log(res.rows);
-    } catch (e) {
+        const res = await conn.execute(`SELECT ID, NOME, DEPARTAMENTO_PAI_ID FROM CANAL_SAC_DEPARTAMENTOS`);
+        console.log("Depts:", res.rows);
+    } catch(e) {
         console.error(e);
     } finally {
-        if (conn) await conn.close();
+        if(conn) await conn.close();
     }
 }
 run();

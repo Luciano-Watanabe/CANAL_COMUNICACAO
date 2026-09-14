@@ -99,7 +99,7 @@ async function run() {
                     criadoEm: createdAt,
                     atualizadoEm: createdAt,
                     codusur: codusur,
-                    titulo: t.title || 'Sem título',
+                    titulo: t.title ? `[TK-${t.id}] ${t.title}` : `[TK-${t.id}] Sem título`,
                     categoria: t.category || null,
                     prioridade: t.priority || null,
                     avaliacao: t.rating || null,

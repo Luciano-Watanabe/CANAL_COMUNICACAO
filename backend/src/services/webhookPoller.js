@@ -193,7 +193,15 @@ class WebhookPoller {
             if (!remoteJid) return;
             const telefone = remoteJid.split('@')[0]; // Remove o @s.whatsapp.net
 
-            const codusur = await this.findCodusurPorTelefone(telefone, conn);
+            let codusur = await this.findCodusurPorTelefone(telefone, conn);
+
+            if (!codusur) {
+                const resInst = await conn.execute(`SELECT CODUSUR FROM CANAL_TOKENS_EVOLUTION WHERE INSTANCE_NAME = :inst`, { inst: instanceName });
+                if (resInst.rows.length > 0) {
+                    codusur = resInst.rows[0][0];
+                    console.log(`[WebhookPoller] Cliente ${telefone} não encontrado na PCCLIENT (Avulso). Usando RCA ${codusur} da instância.`);
+                }
+            }
 
             // Grava no banco e emite o socket
             const msgObj = {
@@ -317,7 +325,15 @@ class WebhookPoller {
         if (!fallbackRemoteJid) return;
         const fallbackTelefone = fallbackRemoteJid.split('@')[0];
 
-        const fallbackCodusur = await this.findCodusurPorTelefone(fallbackTelefone, conn);
+        let fallbackCodusur = await this.findCodusurPorTelefone(fallbackTelefone, conn);
+
+        if (!fallbackCodusur) {
+            const resInst = await conn.execute(`SELECT CODUSUR FROM CANAL_TOKENS_EVOLUTION WHERE INSTANCE_NAME = :inst`, { inst: fallbackInstanceName });
+            if (resInst.rows.length > 0) {
+                fallbackCodusur = resInst.rows[0][0];
+                console.log(`[WebhookPoller] Cliente ${fallbackTelefone} não encontrado na PCCLIENT (Avulso). Usando RCA ${fallbackCodusur} da instância.`);
+            }
+        }
 
         const fallbackMsgObj = {
             id: data.key.id,
