@@ -12,7 +12,8 @@ const startWebhookServer = (porta, token) => {
     }
 
     const app = express();
-    app.use(bodyParser.json());
+    app.use(bodyParser.json({ limit: '50mb' }));
+    app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
     // Rota para receber mensagens/eventos do webhook em qualquer path
     app.use(async (req, res) => {

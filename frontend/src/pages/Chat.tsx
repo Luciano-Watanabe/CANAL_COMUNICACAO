@@ -88,6 +88,19 @@ export default function Chat() {
       return matchSearch && (c.tags || []).includes(selectedTagFilter);
     }
     return matchSearch;
+  }).sort((a, b) => {
+    // 1. Prioridade para não lidos
+    if ((b.unread || 0) !== (a.unread || 0)) {
+      return (b.unread || 0) - (a.unread || 0);
+    }
+    // 2. Ordem por mensagem mais recente
+    if (a.lastMessageTime !== b.lastMessageTime) {
+      if (!a.lastMessageTime) return 1;
+      if (!b.lastMessageTime) return -1;
+      return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime();
+    }
+    // 3. Ordem alfabética
+    return (a.name || '').localeCompare(b.name || '');
   });
   
   const allTags = Array.from(new Set(chats.flatMap(c => c.tags || [])));
@@ -183,6 +196,13 @@ export default function Chat() {
     
     // Atualiza a flag de unread ao selecionar o chat
     setChats(prev => prev.map(c => c.id === activeChat ? { ...c, unread: 0 } : c));
+    if (activeChatData && activeChatData.preview) {
+        fetch('/api/chat/marcar-lida', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codusur: activeCodusur, telefone: String(activeChatData.preview).replace(/[^0-9]/g, '') })
+        }).catch(console.error);
+    }
 
     let isFetching = false;
     const fetchHistory = async (isPolling = false) => {
@@ -280,6 +300,7 @@ export default function Chat() {
           return {
             ...c,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            lastMessageTime: new Date().toISOString(),
             unread: isCurrentChat ? 0 : (c.unread || 0) + 1
           };
         }
@@ -308,18 +329,39 @@ export default function Chat() {
       try {
         if (!activeCodusur) return;
 
+        let unreadMap: Record<string, number> = {};
+        let lastMessageMap: Record<string, string> = {};
+        try {
+          const resConversas = await fetch(`/api/chat/status-conversas?codusur=${activeCodusur}`);
+          const dataConversas = await resConversas.json();
+          if (dataConversas.success && dataConversas.conversas) {
+             dataConversas.conversas.forEach((c: any) => {
+                const cleanPhone = String(c.telefone).replace(/[^0-9]/g, '');
+                unreadMap[cleanPhone] = c.qtNaoLidas || 0;
+                lastMessageMap[cleanPhone] = c.ultimaMensagem || null;
+             });
+          }
+        } catch(e) {
+          console.error("Erro ao carregar status de leitura das conversas", e);
+        }
+
         if (contactType === 'vendedores') {
-           const chatsArray = vendedores.map(v => ({
-                id: `V${v.codusur || v.CODUSUR}_${v.telefone1 || v.TELEFONE1 || v.telefone2 || v.TELEFONE2}`,
-                name: `[VENDEDOR] ${v.nome || v.NOME}`,
-                contactName: 'VENDEDOR',
-                hasMultipleContacts: false,
-                time: '',
-                preview: v.telefone1 || v.TELEFONE1 || v.telefone2 || v.TELEFONE2,
-                unread: 0,
-                active: false,
-                tags: []
-           })).filter(c => c.preview); // must have phone
+           const chatsArray = vendedores.map(v => {
+                const cleanPhone = String(v.telefone1 || v.TELEFONE1 || v.telefone2 || v.TELEFONE2).replace(/[^0-9]/g, '');
+                const lmt = lastMessageMap[cleanPhone];
+                return {
+                  id: `V${v.codusur || v.CODUSUR}_${v.telefone1 || v.TELEFONE1 || v.telefone2 || v.TELEFONE2}`,
+                  name: `[VENDEDOR] ${v.nome || v.NOME}`,
+                  contactName: 'VENDEDOR',
+                  hasMultipleContacts: false,
+                  time: lmt ? new Date(lmt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                  lastMessageTime: lmt || null,
+                  preview: v.telefone1 || v.TELEFONE1 || v.telefone2 || v.TELEFONE2,
+                  unread: unreadMap[cleanPhone] || 0,
+                  active: false,
+                  tags: []
+                };
+           }).filter(c => c.preview); // must have phone
            setChats(chatsArray);
            return;
         }
@@ -346,14 +388,17 @@ export default function Chat() {
           data.clientes.forEach((c: any) => {
             const extras = contatosExtras.filter((ext: any) => ext.codcli === c.codcli);
             extras.forEach((ext: any) => {
+              const cleanPhone = String(ext.telefone).replace(/[^0-9]/g, '');
+              const lmt = lastMessageMap[cleanPhone];
               chatsArray.push({
                 id: `${c.codcli}_${ext.telefone}`,
                 name: c.cliente,
                 contactName: ext.nome_contato,
                 hasMultipleContacts: extras.length > 1,
-                time: '',
+                time: lmt ? new Date(lmt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+                lastMessageTime: lmt || null,
                 preview: ext.telefone,
-                unread: 0,
+                unread: unreadMap[cleanPhone] || 0,
                 active: false,
                 tags: ext.tags ? ext.tags.split(',').map((t: string) => t.trim()) : []
               });
@@ -660,6 +705,38 @@ export default function Chat() {
     setOrcamentoProdutos(novosProdutos);
     setOrcamentoItems(novosItems);
     setIsOrcamentoHistoricoModalOpen(false);
+  };
+
+  const handleAdicionarOrcamentoAoCarrinho = () => {
+    if (!activeChatData) return;
+    const codcli = activeChatData.id.split('_')[0];
+
+    const selected = Object.entries(orcamentoItems)
+      .filter(([_, data]) => data.selecionado)
+      .map(([codprod, data]) => {
+         const p = orcamentoProdutos.find(prod => String(prod.codprod) === codprod);
+         return { ...p, qtd: data.qtd, perc: data.perc };
+      }).filter(p => p.codprod);
+
+    if (selected.length === 0) {
+      alert('Selecione ao menos um produto para o orçamento.');
+      return;
+    }
+
+    selected.forEach(item => {
+      const precoFinal = item.preco - (item.preco * (item.perc || 0) / 100);
+      addToCart({
+        codprod: Number(item.codprod),
+        descricao: item.descricao,
+        qt: Number(item.qtd),
+        pvenda: Number(precoFinal.toFixed(2)),
+        codcli: String(codcli),
+        ean: item.ean
+      });
+    });
+
+    setIsOrcamentoModalOpen(false);
+    setRightPanelTab('cart');
   };
 
   const handleGerarOrcamentoPDF = async (downloadOnly = false) => {
@@ -1151,11 +1228,13 @@ export default function Chat() {
                     "p-4 cursor-pointer transition-all border-l-4",
                     activeChat === chat.id 
                       ? "bg-slate-50 dark:bg-slate-800/50 border-primary-500" 
-                      : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/30"
+                      : (chat.unread > 0 
+                          ? "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-500 hover:bg-emerald-100 dark:hover:bg-emerald-900/20" 
+                          : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/30")
                   )}
                 >
                   <div className="flex justify-between items-start mb-1">
-                    <h4 className={clsx("font-semibold truncate pr-2", activeChat === chat.id ? "text-primary-600 dark:text-primary-400" : "text-slate-900 dark:text-white")} title={chat.name}>
+                    <h4 className={clsx("font-semibold truncate pr-2", activeChat === chat.id ? "text-primary-600 dark:text-primary-400" : (chat.unread > 0 ? "text-emerald-700 dark:text-emerald-400 font-bold" : "text-slate-900 dark:text-white"))} title={chat.name}>
                       {maskData(chat.name)}
                     </h4>
                     <span className="text-xs text-slate-400 whitespace-nowrap">{chat.time}</span>
@@ -2237,6 +2316,13 @@ export default function Chat() {
                   >
                     {orcamentoGerando ? <Loader2 size={18} className="animate-spin" /> : <FileText size={18} />}
                     Gerar e Enviar PDF
+                  </button>
+                  <button
+                    onClick={handleAdicionarOrcamentoAoCarrinho}
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                  >
+                    <ShoppingCart size={18} />
+                    Enviar p/ Carrinho
                   </button>
                 </div>
             </div>

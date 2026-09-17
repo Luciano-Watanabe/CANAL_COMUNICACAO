@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const oracledb = require('oracledb');
+const cacheService = require('../services/cacheService');
 
 function formatPhone(phone) {
     if (!phone) return null;
@@ -144,7 +145,8 @@ router.get('/todas-conversas', async (req, res) => {
                 COUNT(*) AS QT_MENSAGENS,
                 (SELECT m2.TEXTO FROM CANAL_MENSAGENS m2 WHERE m2.TELEFONE_CLIENTE = m.TELEFONE_CLIENTE AND m2.CODUSUR = m.CODUSUR ORDER BY m2.DATA_HORA DESC FETCH FIRST 1 ROWS ONLY) AS PREVIEW,
                 (SELECT m2.MEDIA_TYPE FROM CANAL_MENSAGENS m2 WHERE m2.TELEFONE_CLIENTE = m.TELEFONE_CLIENTE AND m2.CODUSUR = m.CODUSUR ORDER BY m2.DATA_HORA DESC FETCH FIRST 1 ROWS ONLY) AS ULTIMO_MEDIA_TYPE,
-                (SELECT MAX(JSON_VALUE(CONTEUDO, '$.pushName')) FROM CANAL_WEBHOOK WHERE CONTEUDO LIKE '%' || m.TELEFONE_CLIENTE || '%') AS NOME_WHATSAPP
+                (SELECT MAX(JSON_VALUE(CONTEUDO, '$.pushName')) FROM CANAL_WEBHOOK WHERE CONTEUDO LIKE '%' || m.TELEFONE_CLIENTE || '%') AS NOME_WHATSAPP,
+                SUM(CASE WHEN m.SENTIDO = 'IN' AND NVL(m.LIDA, 'N') = 'N' THEN 1 ELSE 0 END) AS QT_NAO_LIDAS
             FROM CANAL_MENSAGENS m
             LEFT JOIN CANAL_TOKENS_EVOLUTION t ON t.CODUSUR = m.CODUSUR
             LEFT JOIN PCUSUARI u ON u.CODUSUR = m.CODUSUR
@@ -207,7 +209,8 @@ router.get('/todas-conversas', async (req, res) => {
                 ultimaMensagem: row[4],
                 qtMensagens: row[5] || 0,
                 preview,
-                mediaType: mediaType || null
+                mediaType: mediaType || null,
+                qtNaoLidas: row[9] || 0
             };
         });
 
@@ -260,6 +263,118 @@ router.get('/todas-mensagens', async (req, res) => {
         res.json({ success: true, mensagens });
     } catch (err) {
         console.error('Erro ao buscar mensagens de todas as conversas:', err);
+        res.status(500).json({ success: false, error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// Retornar a quantidade total de mensagens não lidas para o usuário logado
+router.get('/unread-count', async (req, res) => {
+    const { codusur } = req.query;
+    if (!codusur) {
+        return res.status(400).json({ success: false, error: 'codusur é obrigatório' });
+    }
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const sql = `
+            SELECT SUM(CASE WHEN SENTIDO = 'IN' AND NVL(LIDA, 'N') = 'N' THEN 1 ELSE 0 END) AS TOTAL_NAO_LIDAS
+            FROM CANAL_MENSAGENS
+            WHERE CODUSUR = :codusur
+        `;
+        const result = await connection.execute(sql, { codusur });
+        const unreadCount = result.rows && result.rows[0] ? (result.rows[0][0] || 0) : 0;
+
+        res.json({ success: true, unreadCount });
+    } catch (err) {
+        console.error('Erro ao buscar unread-count:', err);
+        res.status(500).json({ success: false, error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// Retorna os dados resumidos (status) de conversas para a lista do Chat
+router.get('/status-conversas', async (req, res) => {
+    const { codusur } = req.query;
+    if (!codusur) return res.status(400).json({ success: false, error: 'codusur é obrigatório' });
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const sql = `
+            SELECT TELEFONE_CLIENTE, 
+                   MAX(DATA_HORA) as ULTIMA_MENSAGEM, 
+                   SUM(CASE WHEN SENTIDO = 'IN' AND NVL(LIDA, 'N') = 'N' THEN 1 ELSE 0 END) as QT_NAO_LIDAS 
+            FROM CANAL_MENSAGENS 
+            WHERE CODUSUR = :codusur
+            GROUP BY TELEFONE_CLIENTE
+        `;
+        const result = await connection.execute(sql, { codusur });
+        
+        const conversas = result.rows.map(r => ({
+            telefone: r[0],
+            ultimaMensagem: r[1],
+            qtNaoLidas: r[2] || 0
+        }));
+
+        res.json({ success: true, conversas });
+    } catch (err) {
+        console.error('Erro ao buscar status-conversas:', err);
+        res.status(500).json({ success: false, error: 'Erro interno.' });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
+// Marcar mensagens de uma conversa como lidas
+router.post('/marcar-lida', async (req, res) => {
+    const { codusur, telefone } = req.body;
+
+    if (!codusur || !telefone) {
+        return res.status(400).json({ success: false, error: 'codusur e telefone são obrigatórios' });
+    }
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        const sql = `
+            UPDATE CANAL_MENSAGENS
+            SET LIDA = 'S'
+            WHERE CODUSUR = :codusur
+              AND TELEFONE_CLIENTE = :telefone
+              AND SENTIDO = 'IN'
+              AND NVL(LIDA, 'N') = 'N'
+        `;
+        
+        const result = await connection.execute(sql, { codusur, telefone }, { autoCommit: true });
+
+        res.json({ success: true, rowsAffected: result.rowsAffected });
+    } catch (err) {
+        console.error('Erro ao marcar mensagens como lidas:', err);
         res.status(500).json({ success: false, error: 'Erro interno.' });
     } finally {
         if (connection) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, MessageSquare, Phone, User, ChevronDown, Volume2 } from 'lucide-react';
+import { Search, MessageSquare } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 interface Conversa {
@@ -12,6 +12,7 @@ interface Conversa {
   qtMensagens: number;
   preview: string;
   mediaType: string | null;
+  qtNaoLidas: number;
 }
 
 interface Mensagem {
@@ -81,6 +82,21 @@ export default function MonitorConversas() {
       console.error(e);
     } finally {
       setLoadingMensagens(false);
+    }
+  };
+
+  const marcarLida = async (codusur: string, telefone: string) => {
+    try {
+      await fetch('/api/chat/marcar-lida', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codusur, telefone })
+      });
+      setConversas(prev => prev.map(c => 
+        (c.codusur === codusur && c.telefone === telefone) ? { ...c, qtNaoLidas: 0 } : c
+      ));
+    } catch(e) {
+      console.error(e);
     }
   };
 
@@ -225,7 +241,10 @@ export default function MonitorConversas() {
               filteredConversas.map((c, idx) => (
                 <div
                   key={`${c.codusur}_${c.telefone}_${idx}`}
-                  onClick={() => setSelectedChat(c)}
+                  onClick={() => {
+                    setSelectedChat(c);
+                    if (c.qtNaoLidas > 0) marcarLida(c.codusur, c.telefone);
+                  }}
                   className={`flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors ${
                     selectedChat?.telefone === c.telefone && selectedChat?.codusur === c.codusur
                       ? 'bg-green-50 dark:bg-green-900/20 border-l-2 border-l-green-500'
@@ -242,8 +261,17 @@ export default function MonitorConversas() {
                       </p>
                       <span className="text-[10px] text-slate-400 shrink-0 ml-2">{formatTime(c.ultimaMensagem)}</span>
                     </div>
-                    <p className="text-xs text-green-600 dark:text-green-400 font-medium truncate">{c.nomeConta}</p>
-                    <p className="text-xs text-slate-500 truncate">{c.preview || '...'}</p>
+                    <div className="flex justify-between items-end">
+                      <div className="flex-1 min-w-0 pr-2">
+                        <p className="text-xs text-green-600 dark:text-green-400 font-medium truncate">{c.nomeConta}</p>
+                        <p className="text-xs text-slate-500 truncate">{c.preview || '...'}</p>
+                      </div>
+                      {c.qtNaoLidas > 0 && (
+                        <div className="w-5 h-5 rounded-full bg-green-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0 mb-1">
+                          {c.qtNaoLidas}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))

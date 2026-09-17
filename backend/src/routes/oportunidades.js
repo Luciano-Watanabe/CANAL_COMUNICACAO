@@ -73,6 +73,7 @@ router.get('/clientes', async (req, res) => {
 
         let sql = '';
         if (roleUpper === 'BOT_GESTOR') {
+            delete queryParams.cod;
             sql = `
                 SELECT C.CODCLI, C.FANTASIA, C.CLIENTE AS RAZAO_SOCIAL, U.NOME AS VENDEDOR, 
                        TO_CHAR(C.DTULTCOMP, 'DD/MM/YYYY') AS DTULTCOMP,
@@ -228,7 +229,7 @@ Torne o texto persuasivo, comercial, simpático e atrativo. Use emojis adequados
 O texto final deve ser curto e direto (máximo 400 caracteres). Retorne apenas a legenda gerada, sem aspas ou marcações markdown.`;
 
         const iaRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-            model: 'llama3-8b-8192',
+            model: 'groq/compound',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.7
         }, {

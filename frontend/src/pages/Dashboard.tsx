@@ -61,6 +61,23 @@ export default function Dashboard() {
   const { socket } = useSocket();
   const [activeKpiModal, setActiveKpiModal] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<any>(DEFAULT_PERMISSIONS);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  useEffect(() => {
+    if (!userMatricula) return;
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch(`/api/chat/unread-count?codusur=${userMatricula}`);
+        const data = await res.json();
+        if (data.success) {
+          setUnreadChatCount(data.unreadCount);
+        }
+      } catch (e) {}
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 15000);
+    return () => clearInterval(interval);
+  }, [userMatricula]);
 
   useEffect(() => {
     const fetchPermissoes = async () => {
@@ -328,6 +345,26 @@ export default function Dashboard() {
         </div>
         {userMatricula && <WhatsAppMonitor codusur={userMatricula} />}
       </div>
+
+      {unreadChatCount > 0 && (
+        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in shadow-sm shadow-emerald-500/10">
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-500 text-white p-2 rounded-full">
+              <MessageSquare size={20} />
+            </div>
+            <div>
+              <p className="font-bold text-emerald-600 dark:text-emerald-400">Você tem {unreadChatCount} {unreadChatCount === 1 ? 'mensagem não lida' : 'mensagens não lidas'} no Chat!</p>
+              <p className="text-sm text-emerald-600/80 dark:text-emerald-400/80">Responda seus clientes para manter um bom atendimento.</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => window.location.href = '/chat'}
+            className="w-full sm:w-auto bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold transition-colors whitespace-nowrap shadow-md shadow-emerald-500/20"
+          >
+            Acessar Chat
+          </button>
+        </div>
+      )}
 
       {hasDashboardPermission('Métricas SAC') && sacStats && (
         <>
