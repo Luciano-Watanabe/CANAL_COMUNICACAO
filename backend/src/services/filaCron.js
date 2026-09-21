@@ -353,7 +353,7 @@ Regras:
                                     { role: "system", content: systemPrompt },
                                     { role: "user", content: prompt }
                                 ],
-                                model: "groq/compound",
+                                model: "openai/gpt-oss-120b",
                                 stream: false,
                                 temperature: 0.7
                             }, {
@@ -445,7 +445,7 @@ Regras:
 
                     try {
                         let res = await axios.post(`${evoUrl}${endpoint}`, payload, {
-                            headers, timeout: 60000, validateStatus: () => true
+                            headers, timeout: 180000, maxBodyLength: Infinity, maxContentLength: Infinity, validateStatus: () => true
                         });
                         
                         // Fallback para Evolution V2 (contactMessage array)
@@ -462,7 +462,7 @@ Regras:
                                 ]
                             };
                             res = await axios.post(`${evoUrl}${endpoint}`, payloadV2, {
-                                headers, timeout: 60000, validateStatus: () => true
+                                headers, timeout: 180000, maxBodyLength: Infinity, maxContentLength: Infinity, validateStatus: () => true
                             });
                         }
 
@@ -478,7 +478,7 @@ Regras:
                             }
                             console.log(`[FILA CRON] Endpoint ${endpoint} não encontrado, tentando fallback V2/GO: ${fallbackEndpoint}`);
                             res = await axios.post(`${evoUrl}${fallbackEndpoint}`, payloadFallback, {
-                                headers, timeout: 60000, validateStatus: () => true
+                                headers, timeout: 180000, maxBodyLength: Infinity, maxContentLength: Infinity, validateStatus: () => true
                             });
                         }
                         
@@ -489,12 +489,12 @@ Regras:
                              res = await axios.post(`${evoUrl}/message/sendText/${instanceName}`, {
                                  number: payload.number,
                                  text: fallbackText
-                             }, { headers, timeout: 60000, validateStatus: () => true });
+                             }, { headers, timeout: 180000, maxBodyLength: Infinity, maxContentLength: Infinity, validateStatus: () => true });
                              if (res.status === 404) {
                                 res = await axios.post(`${evoUrl}/send/text`, {
                                     number: payload.number,
                                     text: fallbackText
-                                }, { headers, timeout: 60000, validateStatus: () => true });
+                                }, { headers, timeout: 180000, maxBodyLength: Infinity, maxContentLength: Infinity, validateStatus: () => true });
                              }
                         }
 
@@ -544,15 +544,18 @@ Regras:
                         });
                         
                         // Depois manda o PDF ao cliente
-                        await sendEvo('media', {
-                            number: telCliente,
-                            mediatype: 'document',
-                            mimetype: 'application/pdf',
-                            fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
-                            media: b64Pdf,
-                            mediaUrl: pdfPublicUrl,
-                            caption: ''
-                        });
+                        try {
+                            await sendEvo('media', {
+                                number: telCliente,
+                                mediatype: 'document',
+                                mimetype: 'application/pdf',
+                                fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
+                                media: b64Pdf,
+                                caption: ''
+                            });
+                        } catch (mediaErr) {
+                            console.error(`[FILA CRON] Erro ao enviar PDF do catálogo:`, mediaErr.message);
+                        }
                     } else {
                         // Falhou ler PDF, manda só o texto ao cliente
                         await sendEvo('text', msgClienteTxt);
@@ -580,15 +583,20 @@ Regras:
                                 mimetype = 'video/mp4';
                             }
 
-                            await sendEvo('media', {
-                                number: telCliente,
-                                mediatype: mediatype,
-                                mimetype: mimetype,
-                                fileName: path.basename(resolvedPath),
-                                media: b64Media,
-                                caption: finalClientText
-                            });
-                            mediaSent = true;
+                            try {
+                                await sendEvo('media', {
+                                    number: telCliente,
+                                    mediatype: mediatype,
+                                    mimetype: mimetype,
+                                    fileName: path.basename(resolvedPath),
+                                    media: b64Media,
+                                    caption: finalClientText
+                                });
+                                mediaSent = true;
+                            } catch (mediaErr) {
+                                console.error(`[FILA CRON] Erro ao enviar mídia da oportunidade, fallback para texto. Erro: ${mediaErr.message}`);
+                                mediaSent = false;
+                            }
                         }
                     }
 
@@ -601,14 +609,18 @@ Regras:
                     
                     // Se o usuário selecionou enviar Catálogo junto com a oportunidade
                     if (oportunidadeCatalogo !== 'NONE' && base64Data) {
-                        await sendEvo('media', {
-                            number: telCliente,
-                            mediatype: 'image',
-                            mimetype: 'image/jpeg',
-                            fileName: `Ofertas_${codcli}.jpg`,
-                            media: base64Data,
-                            caption: 'Confira também essas ofertas!'
-                        });
+                        try {
+                            await sendEvo('media', {
+                                number: telCliente,
+                                mediatype: 'image',
+                                mimetype: 'image/jpeg',
+                                fileName: `Ofertas_${codcli}.jpg`,
+                                media: base64Data,
+                                caption: 'Confira também essas ofertas!'
+                            });
+                        } catch (mediaErr) {
+                            console.error(`[FILA CRON] Erro ao enviar ofertas adicionais da oportunidade:`, mediaErr.message);
+                        }
                     }
                 } else if (base64Data) {
                     // Envia a mensagem de texto (gerada pela IA) primeiro
@@ -641,15 +653,18 @@ Regras:
                         });
                         if (b64Pdf) {
                             await new Promise(r => setTimeout(r, 1000));
-                            await sendEvo('media', {
-                                number: telVendedor,
-                                mediatype: 'document',
-                                mimetype: 'application/pdf',
-                                fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
-                                media: b64Pdf,
-                                mediaUrl: pdfPublicUrl,
-                                caption: `Cópia do catálogo de ${catalogoRamo.trim()}`
-                            });
+                            try {
+                                await sendEvo('media', {
+                                    number: telVendedor,
+                                    mediatype: 'document',
+                                    mimetype: 'application/pdf',
+                                    fileName: `Catalogo_${catalogoRamo.trim()}.pdf`,
+                                    media: b64Pdf,
+                                    caption: `Cópia do catálogo de ${catalogoRamo.trim()}`
+                                });
+                            } catch (errVendMedia) {
+                                console.error(`[FILA CRON] Erro ao enviar cópia do PDF ao vendedor:`, errVendMedia.message);
+                            }
                         }
                         await sendEvo('contact', msgVendedorVcard);
                     }

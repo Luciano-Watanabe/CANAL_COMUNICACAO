@@ -603,7 +603,7 @@ router.get('/tickets/:id/suggest-reply', async (req, res) => {
         
         const iaRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
             messages: [{role: "user", content: prompt}],
-            model: "qwen/qwen3.6-27b",
+            model: "openai/gpt-oss-120b",
             temperature: 0.7
         }, {
             headers: { 'Authorization': `Bearer ${groqKey}` }

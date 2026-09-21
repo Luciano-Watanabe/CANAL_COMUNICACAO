@@ -406,6 +406,11 @@ async function initializeOracleDatabase() {
                 }
             }
             await conn.execute(`
+                UPDATE CANAL_SAC_TICKETS 
+                SET STATUS = 'ABERTO' 
+                WHERE STATUS NOT IN ('ABERTO', 'EM ATENDIMENTO', 'FECHADO', 'FINALIZADO')
+            `);
+            await conn.execute(`
                 ALTER TABLE CANAL_SAC_TICKETS 
                 ADD CONSTRAINT CK_CANAL_SAC_TICKETS_STATUS 
                 CHECK (STATUS IN ('ABERTO', 'EM ATENDIMENTO', 'FECHADO', 'FINALIZADO'))

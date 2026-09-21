@@ -229,7 +229,7 @@ Torne o texto persuasivo, comercial, simpático e atrativo. Use emojis adequados
 O texto final deve ser curto e direto (máximo 400 caracteres). Retorne apenas a legenda gerada, sem aspas ou marcações markdown.`;
 
         const iaRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-            model: 'groq/compound',
+            model: 'openai/gpt-oss-120b',
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.7
         }, {

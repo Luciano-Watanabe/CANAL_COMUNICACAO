@@ -146,7 +146,7 @@ router.post('/analise-performance', async (req, res) => {
         const prompt = `Analise o desempenho do vendedor ${codusur} com base nestes tickets SAC (amostra/resumo): ${JSON.stringify(dadosResumidos)}. Foque em agilidade de atendimento (t=dias), qualidade (n=notas) e pontos de melhoria no pós-venda por departamento (d). Apresente o resultado em Markdown, estruturando o texto com Títulos (##), listas ( - ) e palavras em negrito para facilitar a leitura. Seja direto e evite saudações iniciais.`;
 
         const completion = await openai.chat.completions.create({
-            model: "groq/compound",
+            model: "openai/gpt-oss-120b",
             messages: [{ role: "user", content: prompt }]
         });
 

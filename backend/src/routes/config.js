@@ -75,31 +75,12 @@ router.get('/vendedores', async (req, res) => {
             LEFT JOIN CANAL_TOKENS_EVOLUTION T 
                 ON U.CODUSUR = T.CODUSUR 
                 AND UPPER(TRIM(U.CARGO)) = UPPER(TRIM(T.CARGO))
+            WHERE UPPER(TRIM(U.NOME)) NOT IN ('PCADMIN', 'WINTHOR', 'SYSDBA')
             ORDER BY U.NOME, U.CARGO
         `;
-        
-        // Query 2: Buscar atendentes da PCEMPR
-        const sqlAtendentes = `
-            SELECT 
-                TO_CHAR(E.MATRICULA) AS CODUSUR,
-                E.NOME,
-                'ATENDENTE' AS TIPO,
-                T.API_TOKEN,
-                T.INSTANCE_NAME,
-                T.API_URL,
-                T.NOME_ATENDENTE,
-                NVL(T.CARGO, 'ATENDENTE') AS TOKEN_CARGO
-            FROM PCEMPR E
-            LEFT JOIN CANAL_TOKENS_EVOLUTION T 
-                ON TO_CHAR(E.MATRICULA) = T.CODUSUR 
-                AND T.CARGO = 'ATENDENTE'
-            WHERE E.SITUACAO = 'A'
-            ORDER BY E.NOME
-        `;
 
-        // Executar ambas as queries
+        // Executar a query
         const resultVendedores = await connection.execute(sqlVendedores);
-        const resultAtendentes = await connection.execute(sqlAtendentes);
 
         // Mapear vendedores
         const vendedores = resultVendedores.rows.map(row => ({
@@ -114,25 +95,7 @@ router.get('/vendedores', async (req, res) => {
             token_cargo: row[7] || row[2]
         }));
 
-        // Mapear atendentes
-        const atendentes = resultAtendentes.rows.map(row => ({
-            codusur: row[0],
-            nome: row[1],
-            tipo: row[2],
-            cargo: row[2],
-            api_token: row[3] || '',
-            instance_name: row[4] || '',
-            api_url: row[5] || '',
-            nome_atendente: row[6] || '',
-            token_cargo: row[7] || 'ATENDENTE'
-        }));
-
-        // Combinar e ordenar por nome
-        const todosUsuarios = [...vendedores, ...atendentes].sort((a, b) => 
-            a.nome.localeCompare(b.nome)
-        );
-
-        res.json({ success: true, vendedores: todosUsuarios });
+        res.json({ success: true, vendedores });
     } catch (err) {
         console.error('Erro ao buscar lista de vendedores para configuraÃ§Ã£o:', err);
         res.status(500).json({ success: false, message: 'Erro interno ao buscar vendedores.' });

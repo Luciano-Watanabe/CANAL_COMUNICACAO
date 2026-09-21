@@ -39,6 +39,7 @@ router.get('/history', async (req, res) => {
             SELECT ID_MENSAGEM, SENTIDO, TEXTO, DATA_HORA, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE
             FROM CANAL_MENSAGENS
             WHERE CODUSUR = :codusur AND TELEFONE_CLIENTE = :telefone
+              AND DATA_HORA >= SYSDATE - 3
             ORDER BY DATA_HORA ASC
         `;
         
@@ -150,6 +151,7 @@ router.get('/todas-conversas', async (req, res) => {
             FROM CANAL_MENSAGENS m
             LEFT JOIN CANAL_TOKENS_EVOLUTION t ON t.CODUSUR = m.CODUSUR
             LEFT JOIN PCUSUARI u ON u.CODUSUR = m.CODUSUR
+            WHERE m.DATA_HORA >= SYSDATE - 3
             GROUP BY m.TELEFONE_CLIENTE, m.CODUSUR, NVL(t.NOME_ATENDENTE, u.NOME), NVL(t.INSTANCE_NAME, 'SEM-INSTANCIA')
             ORDER BY MAX(m.DATA_HORA) DESC
         `;
@@ -245,6 +247,7 @@ router.get('/todas-mensagens', async (req, res) => {
             SELECT ID_MENSAGEM, SENTIDO, TEXTO, DATA_HORA, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE
             FROM CANAL_MENSAGENS
             WHERE CODUSUR = :codusur AND TELEFONE_CLIENTE = :telefone
+              AND DATA_HORA >= SYSDATE - 3
             ORDER BY DATA_HORA ASC
         `;
         
@@ -323,7 +326,7 @@ router.get('/status-conversas', async (req, res) => {
                    MAX(DATA_HORA) as ULTIMA_MENSAGEM, 
                    SUM(CASE WHEN SENTIDO = 'IN' AND NVL(LIDA, 'N') = 'N' THEN 1 ELSE 0 END) as QT_NAO_LIDAS 
             FROM CANAL_MENSAGENS 
-            WHERE CODUSUR = :codusur
+            WHERE CODUSUR = :codusur AND DATA_HORA >= SYSDATE - 3
             GROUP BY TELEFONE_CLIENTE
         `;
         const result = await connection.execute(sql, { codusur });
