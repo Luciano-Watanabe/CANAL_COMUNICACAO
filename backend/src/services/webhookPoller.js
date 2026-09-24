@@ -16,6 +16,8 @@ class WebhookPoller {
         this.pollIntervalMs = 5000; // Poll every 5 seconds
         this.sacBotService = new SacBotService(this);
         this.vendedorBotService = new VendedorBotService(this);
+        const PesquisaBotService = require('./PesquisaBotService');
+        this.pesquisaBotService = new PesquisaBotService(this);
     }
 
     start() {
@@ -219,7 +221,12 @@ class WebhookPoller {
                 if (handled) return; // Se processou como retorno, não envia para o chat do cliente
             }
 
-            await this.saveMessage(msgObj, instanceName, conn, originalMessage, audioBase64);
+            const saveResult = await this.saveMessage(msgObj, instanceName, conn, originalMessage, audioBase64);
+            let savedMediaUrl = null;
+            if (saveResult) {
+                if (saveResult.audioBase64) audioBase64 = saveResult.audioBase64;
+                if (saveResult.mediaUrl) savedMediaUrl = saveResult.mediaUrl;
+            }
 
             if (codusur) {
                 const roomName = `user_${codusur}`;
@@ -241,23 +248,32 @@ class WebhookPoller {
                 return; // Para o fluxo de auto-respostas e bots se fomos nós que enviamos
             }
             
-            // Verifica se a instância é a do SAC BOT
+            // Verifica se a instância é a do SAC BOT ou PESQUISA BOT
             let isSacBot = false;
+            let isPesquisaBot = false;
             try {
-                // Checa SAC BOT
-                const sacBotRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
-                if (sacBotRes.rows.length > 0 && sacBotRes.rows[0][0]) {
-                    const sacCodusur = sacBotRes.rows[0][0];
-                    const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
-                    if (instRes.rows.length > 0) {
-                        const dbInstanceName = instRes.rows[0][0];
-                        if (dbInstanceName === instanceName) {
+                const configRes = await conn.execute(`SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE IN ('SAC_BOT_CODUSUR', 'PESQUISA_BOT_CODUSUR')`);
+                for (const row of configRes.rows) {
+                    if (row[0] === 'SAC_BOT_CODUSUR' && row[1]) {
+                        const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: row[1] });
+                        if (instRes.rows.length > 0 && instRes.rows[0][0] === instanceName) {
                             isSacBot = true;
+                        }
+                    }
+                    if (row[0] === 'PESQUISA_BOT_CODUSUR' && row[1]) {
+                        const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: row[1] });
+                        if (instRes.rows.length > 0 && instRes.rows[0][0] === instanceName) {
+                            isPesquisaBot = true;
                         }
                     }
                 }
             } catch (e) {
-                console.error("[WebhookPoller] Erro ao checar SAC_BOT_CODUSUR", e);
+                console.error("[WebhookPoller] Erro ao checar SAC/PESQUISA BOT_CODUSUR", e);
+            }
+
+            if (isPesquisaBot) {
+                await this.pesquisaBotService.handleMessage(telefone, textMessage, instanceName, conn, isAudio, audioBase64, originalMessage, codusur, savedMediaUrl);
+                return;
             }
 
             if (isSacBot) {
@@ -371,23 +387,32 @@ class WebhookPoller {
             return; // Para o fluxo de auto-respostas e bots se fomos nós que enviamos
         }
         
-        // Verifica se a instância é a do SAC BOT
+        // Verifica se a instância é a do SAC BOT ou PESQUISA BOT
         let fallbackIsSacBot = false;
+        let fallbackIsPesquisaBot = false;
         try {
-            // Checa SAC BOT
-            const sacBotRes = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'SAC_BOT_CODUSUR'`);
-            if (sacBotRes.rows.length > 0 && sacBotRes.rows[0][0]) {
-                const sacCodusur = sacBotRes.rows[0][0];
-                const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: sacCodusur });
-                if (instRes.rows.length > 0) {
-                    const dbInstanceName = instRes.rows[0][0];
-                    if (dbInstanceName === fallbackInstanceName) {
+            const configRes = await conn.execute(`SELECT CHAVE, VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE IN ('SAC_BOT_CODUSUR', 'PESQUISA_BOT_CODUSUR')`);
+            for (const row of configRes.rows) {
+                if (row[0] === 'SAC_BOT_CODUSUR' && row[1]) {
+                    const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: row[1] });
+                    if (instRes.rows.length > 0 && instRes.rows[0][0] === fallbackInstanceName) {
                         fallbackIsSacBot = true;
+                    }
+                }
+                if (row[0] === 'PESQUISA_BOT_CODUSUR' && row[1]) {
+                    const instRes = await conn.execute(`SELECT INSTANCE_NAME FROM CANAL_TOKENS_EVOLUTION WHERE CODUSUR = :cod`, { cod: row[1] });
+                    if (instRes.rows.length > 0 && instRes.rows[0][0] === fallbackInstanceName) {
+                        fallbackIsPesquisaBot = true;
                     }
                 }
             }
         } catch (e) {
-            console.error("[WebhookPoller] Erro ao checar SAC_BOT_CODUSUR no fallback", e);
+            console.error("[WebhookPoller] Erro ao checar SAC/PESQUISA BOT_CODUSUR no fallback", e);
+        }
+
+        if (fallbackIsPesquisaBot) {
+            await this.pesquisaBotService.handleMessage(fallbackTelefone, fallbackTextMessage, fallbackInstanceName, conn, fallbackIsAudio, fallbackAudioBase64, data, fallbackCodusur);
+            return;
         }
 
         if (fallbackIsSacBot) {
@@ -399,6 +424,7 @@ class WebhookPoller {
             await this.sacBotService.handleMessage(fallbackTelefone, fallbackTextMessage, fallbackInstanceName, conn, fallbackIsAudio, fallbackAudioBase64, data);
             return;
         }
+
 
         await this.handleBotAutoReply(fallbackTelefone, fallbackInstanceName, conn);
     }
@@ -635,6 +661,10 @@ class WebhookPoller {
     }
 
     async saveMessage(msgObj, instanceName, conn, originalMessage, audioBase64) {
+        let mediaUrl = null;
+        let mediaType = null;
+        let mediaMime = null;
+        let filePath = null;
         try {
             const resultTokens = await conn.execute(`
                 SELECT CODUSUR, API_TOKEN, COALESCE(API_URL, (SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'EVOLUTION_API_URL')) AS URL_BASE 
@@ -653,10 +683,6 @@ class WebhookPoller {
                 return;
             }
                     // --- Lógica de Download de Mídia (Áudio, Imagem, Vídeo, Documento) ---
-            let mediaUrl = null;
-            let mediaType = null;
-            let mediaMime = null;
-            let filePath = null;
 
             if (originalMessage && originalMessage.Message) {
                 const msg = originalMessage.Message;
@@ -889,9 +915,11 @@ class WebhookPoller {
             
             console.log(`[WebhookPoller] Mensagem de ${msgObj.chat_id} salva para RCA ${codusur}`);
         } catch (dbErr) {
-            if (dbErr.message.includes('ORA-00001')) return; // PK Duplicada (já salvo)
+            if (dbErr.message.includes('ORA-00001')) return { audioBase64, mediaUrl }; // PK Duplicada (já salvo)
             console.error(`[WebhookPoller] Erro ao salvar mensagem:`, dbErr);
         }
+        
+        return { audioBase64, mediaUrl };
     }
 }
 

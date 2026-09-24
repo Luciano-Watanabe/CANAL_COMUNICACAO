@@ -12,6 +12,7 @@ interface Produto {
   ean: string;
   qtunit: number;
   unidade: string;
+  tipoPreco?: string;
 }
 
 interface Atividade {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Calendar, Image, Video, Music, FileText, CheckCircle2, XCircle, Clock, Send, Trash2, ChevronDown, User, Smartphone } from 'lucide-react';
+import { Calendar, Image, Video, Music, FileText, CheckCircle2, XCircle, Clock, Trash2, ChevronDown, User, Smartphone } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 const TIPOS_MIDIA = [

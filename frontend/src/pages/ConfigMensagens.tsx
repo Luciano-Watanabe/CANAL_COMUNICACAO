@@ -24,17 +24,13 @@ type BotMensagem = {
   chave: string;
   descricao: string;
   grupo: string;
-  bot_tipo: 'SAC' | 'VENDEDOR';
+  bot_tipo: 'SAC' | 'VENDEDOR' | 'PESQUISA';
   template_padrao: string;
   template_atual: string;
   personalizada: boolean;
   atualizado_em: string | null;
 };
 
-type EditState = {
-  chave: string;
-  valor: string;
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VARIÁVEIS DE TEMPLATE DISPONÍVEIS
@@ -49,6 +45,11 @@ const VARIAVEIS_VEND = [
   { tag: '{{nome_vendedor}}', desc: 'Nome do vendedor' },
   { tag: '{{nome_cliente}}', desc: 'Nome do cliente' },
   { tag: '{{nome_empresa}}', desc: 'Nome da empresa' },
+];
+const VARIAVEIS_PESQUISA = [
+  { tag: '{{local}}', desc: 'Nome do local (supermercado, farmácia, etc)' },
+  { tag: '{{produto}}', desc: 'Nome do produto' },
+  { tag: '{{dados_extras}}', desc: 'EAN, preço encontrado e dados do WinThor' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,14 +71,17 @@ function MensagemCard({
   const [saving, setSaving] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
-  const variaveis = msg.bot_tipo === 'SAC' ? VARIAVEIS_SAC : VARIAVEIS_VEND;
+  const variaveis = msg.bot_tipo === 'SAC' ? VARIAVEIS_SAC : (msg.bot_tipo === 'VENDEDOR' ? VARIAVEIS_VEND : VARIAVEIS_PESQUISA);
 
   const previewText = draft
     .replace(/\{\{nome_cliente\}\}/g, 'João da Silva')
     .replace(/\{\{nome_atendente\}\}/g, 'Central SAC')
     .replace(/\{\{ticket_id\}\}/g, '12345')
     .replace(/\{\{nome_vendedor\}\}/g, 'Carlos Vendas')
-    .replace(/\{\{nome_empresa\}\}/g, 'Distribuidora Exemplo');
+    .replace(/\{\{nome_empresa\}\}/g, 'Distribuidora Exemplo')
+    .replace(/\{\{local\}\}/g, 'Supermercado X')
+    .replace(/\{\{produto\}\}/g, 'Arroz 5kg')
+    .replace(/\{\{dados_extras\}\}/g, '🏷️ EAN: 123456789\n💲 Preço: R$ 10,50');
 
   const handleSave = async () => {
     setSaving(true);
@@ -286,7 +290,7 @@ export default function ConfigMensagens() {
   const [mensagens, setMensagens] = useState<BotMensagem[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(true);
   const [buscaMsgs, setBuscaMsgs] = useState('');
-  const [filtroBot, setFiltroBot] = useState<'TODOS' | 'SAC' | 'VENDEDOR'>('TODOS');
+  const [filtroBot, setFiltroBot] = useState<'TODOS' | 'SAC' | 'VENDEDOR' | 'PESQUISA'>('TODOS');
   const [gruposExpandidos, setGruposExpandidos] = useState<Record<string, boolean>>({});
   const [reloadingCache, setReloadingCache] = useState(false);
 
@@ -614,7 +618,7 @@ export default function ConfigMensagens() {
             {/* Filtro Bot */}
             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
               <Filter size={14} className="ml-2 text-slate-400" />
-              {(['TODOS', 'SAC', 'VENDEDOR'] as const).map(opt => (
+              {(['TODOS', 'SAC', 'VENDEDOR', 'PESQUISA'] as const).map(opt => (
                 <button
                   key={opt}
                   onClick={() => setFiltroBot(opt)}
@@ -678,7 +682,9 @@ export default function ConfigMensagens() {
                         'text-xs font-bold px-2.5 py-1 rounded-full',
                         botTipo === 'SAC'
                           ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                          : 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
+                          : botTipo === 'VENDEDOR'
+                            ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
+                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
                       )}>
                         {botTipo}
                       </span>

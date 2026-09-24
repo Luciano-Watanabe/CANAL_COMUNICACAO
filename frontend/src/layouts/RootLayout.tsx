@@ -2,20 +2,20 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import clsx from 'clsx';
-import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, Target, Headset, ShieldAlert, Smartphone } from 'lucide-react';
+import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, Target, Headset, ShieldAlert, Smartphone, Search } from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 const DEFAULT_PERMISSIONS: any = {
   GERENTE: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Campanhas (Oportunidades)', 'Monitor Conversas', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Pesquisa/Concorrência', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Campanhas (Oportunidades)', 'Monitor Conversas', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
     dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   SUPERVISOR: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Campanhas (Oportunidades)', 'Monitor Conversas', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Pesquisa/Concorrência', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Campanhas (Oportunidades)', 'Monitor Conversas', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
     dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   VENDEDOR: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo'],
+    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Pesquisa/Concorrência'],
     dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Radar Positivação', 'Meus Clientes Recentes']
   },
   ATENDENTE: {
@@ -42,20 +42,26 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
   const userCode = user?.matricula || '';
 
   const [permissions, setPermissions] = useState<any>(DEFAULT_PERMISSIONS);
+  const [moduloPesquisaAtivo, setModuloPesquisaAtivo] = useState(false);
 
   useEffect(() => {
     const fetchPermissoes = async () => {
       try {
         const res = await fetch('/api/config/global');
         const data = await res.json();
-        if (data.success && data.configs['MENU_PERMISSIONS']) {
-          try {
-            const serverPerms = JSON.parse(data.configs['MENU_PERMISSIONS']);
-            setPermissions((prev: any) => ({ ...prev, ...serverPerms }));
-          } catch (e) {
-            console.error('Erro ao fazer parse de MENU_PERMISSIONS', e);
+          if (data.success) {
+            if (data.configs['MENU_PERMISSIONS']) {
+              try {
+                const serverPerms = JSON.parse(data.configs['MENU_PERMISSIONS']);
+                setPermissions((prev: any) => ({ ...prev, ...serverPerms }));
+              } catch (e) {
+                console.error('Erro ao fazer parse de MENU_PERMISSIONS', e);
+              }
+            }
+            if (data.configs['MODULO_PESQUISA_ATIVO'] === 'S') {
+              setModuloPesquisaAtivo(true);
+            }
           }
-        }
       } catch (e) {
         console.error('Erro ao buscar permissões', e);
       }
@@ -70,6 +76,10 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     { name: 'SAC', path: '/sac', icon: Headset },
     { name: 'Catálogo', path: '/catalogo', icon: BookOpen },
   ];
+
+  if (moduloPesquisaAtivo) {
+    links.push({ name: 'Pesquisa/Concorrência', path: '/pesquisa-precos', icon: Search });
+  }
 
   if (userRole === 'GERENTE' || userRole === 'BOT_GESTOR' || userRole === 'SUPERVISOR') {
     links.push({ name: 'Logs Identificação', path: '/logs-identificacao', icon: ShieldAlert });
@@ -112,7 +122,14 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
   let filteredLinks = links;
   if (userRole !== 'BOT_GESTOR') {
     const rolePerms = permissions[userRole] || permissions['VENDEDOR'];
-    const allowedMenus = rolePerms.menus || [];
+    let allowedMenus = rolePerms.menus ? [...rolePerms.menus] : [];
+    
+    // Auto-allow when the module is toggled ON to prevent it from disappearing 
+    // for users who had their permissions saved previously.
+    if (moduloPesquisaAtivo && !allowedMenus.includes('Pesquisa/Concorrência')) {
+      allowedMenus.push('Pesquisa/Concorrência');
+    }
+    
     filteredLinks = links.filter(link => allowedMenus.includes(link.name));
   }
 
@@ -120,13 +137,16 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
     // Route blocking logic
     if (userRole !== 'BOT_GESTOR') {
       const rolePerms = permissions[userRole] || permissions['VENDEDOR'];
-      const allowedMenus = rolePerms.menus || [];
+      let allowedMenus = rolePerms.menus ? [...rolePerms.menus] : [];
+      if (moduloPesquisaAtivo && !allowedMenus.includes('Pesquisa/Concorrência')) {
+        allowedMenus.push('Pesquisa/Concorrência');
+      }
       const currentLink = links.find(l => l.path !== '/' ? location.pathname.startsWith(l.path) : location.pathname === '/');
       if (currentLink && !allowedMenus.includes(currentLink.name) && location.pathname !== '/') {
         navigate('/');
       }
     }
-  }, [location.pathname, permissions, userRole, navigate, links]);
+  }, [location.pathname, permissions, userRole, navigate, links, moduloPesquisaAtivo]);
 
   return (
     <>

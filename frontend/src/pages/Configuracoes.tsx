@@ -25,6 +25,8 @@ export default function Configuracoes() {
   const [estoqueCodfilial, setEstoqueCodfilial] = useState('1');
   const [tabprNumregiao, setTabprNumregiao] = useState('1');
   const [validadeOrcamento, setValidadeOrcamento] = useState('24 horas');
+  const [moduloPesquisaAtivo, setModuloPesquisaAtivo] = useState(false);
+  const [pesquisaBotCodusur, setPesquisaBotCodusur] = useState('');
   const { isPrivacyMode, setPrivacyMode, maskData } = usePrivacy();
 
   const userStr = localStorage.getItem('user');
@@ -131,6 +133,12 @@ export default function Configuracoes() {
           }
           if (dataGlob.configs['VALIDADE_ORCAMENTO']) {
             setValidadeOrcamento(dataGlob.configs['VALIDADE_ORCAMENTO']);
+          }
+          if (dataGlob.configs['MODULO_PESQUISA_ATIVO']) {
+            setModuloPesquisaAtivo(dataGlob.configs['MODULO_PESQUISA_ATIVO'] === 'S');
+          }
+          if (dataGlob.configs['PESQUISA_BOT_CODUSUR']) {
+            setPesquisaBotCodusur(dataGlob.configs['PESQUISA_BOT_CODUSUR']);
           }
         }
         
@@ -244,7 +252,9 @@ export default function Configuracoes() {
             SAC_BOT_CODUSUR: sacBotCodusur,
             ESTOQUE_CODFILIAL: estoqueCodfilial,
             TABPR_NUMREGIAO: tabprNumregiao,
-            VALIDADE_ORCAMENTO: validadeOrcamento
+            VALIDADE_ORCAMENTO: validadeOrcamento,
+            MODULO_PESQUISA_ATIVO: moduloPesquisaAtivo ? 'S' : 'N',
+            PESQUISA_BOT_CODUSUR: pesquisaBotCodusur
           }
         })
       });
@@ -281,6 +291,28 @@ export default function Configuracoes() {
     } catch(err) {
       console.error(err);
       alert('Erro de conexão ao salvar BOT do SAC.');
+    }
+  };
+
+  const handleSelectPesquisaBot = async (codusur: string | number) => {
+    const codStr = String(codusur);
+    setPesquisaBotCodusur(codStr);
+    try {
+      const response = await fetch('/api/config/global', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          configs: { PESQUISA_BOT_CODUSUR: codStr }
+        })
+      });
+      if (response.ok) {
+        alert('Configuração do BOT de Pesquisa salva com sucesso!');
+      } else {
+        alert('Erro ao gravar no banco de dados.');
+      }
+    } catch(err) {
+      console.error(err);
+      alert('Erro de conexão ao salvar BOT de Pesquisa.');
     }
   };
 
@@ -849,6 +881,28 @@ export default function Configuracoes() {
               className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary-500"
             />
           </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Módulo de Pesquisa/Concorrência
+            </label>
+            <p className="text-xs text-slate-500 mb-3">Ativa o novo menu de relatórios de preços e a leitura de etiquetas por IA.</p>
+            <div className="flex items-center h-[42px]">
+              <button
+                onClick={() => setModuloPesquisaAtivo(!moduloPesquisaAtivo)}
+                className={clsx(
+                  "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2",
+                  moduloPesquisaAtivo ? "bg-primary-600" : "bg-slate-300 dark:bg-slate-600"
+                )}
+              >
+                <span
+                  className={clsx(
+                    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                    moduloPesquisaAtivo ? "translate-x-6" : "translate-x-1"
+                  )}
+                />
+              </button>
+            </div>
+          </div>
         </div>
         <button 
           onClick={saveGlobalConfig}
@@ -939,14 +993,15 @@ export default function Configuracoes() {
                 <th className="py-3 px-6 font-semibold text-slate-500 text-xs">API Token (Evolution)</th>
                 <th className="py-3 px-6 font-semibold text-slate-500 text-xs">Status do WhatsApp</th>
                 <th className="py-3 px-6 font-semibold text-slate-500 text-xs text-center" title="Quem será o robô de triagem">Bot Oficial?</th>
+                <th className="py-3 px-6 font-semibold text-slate-500 text-xs text-center" title="Quem fará pesquisa de preços">Bot Pesquisa?</th>
                 <th className="py-3 px-6 font-semibold text-slate-500 text-xs text-right">Ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
               {loading ? (
-                <tr><td colSpan={8} className="py-10 text-center text-slate-500">Carregando vendedores...</td></tr>
+                <tr><td colSpan={9} className="py-10 text-center text-slate-500">Carregando vendedores...</td></tr>
               ) : vendedores.length === 0 ? (
-                <tr><td colSpan={6} className="py-10 text-center text-slate-500">Nenhum vendedor encontrado.</td></tr>
+                <tr><td colSpan={7} className="py-10 text-center text-slate-500">Nenhum vendedor encontrado.</td></tr>
               ) : (
                 vendedores.map(v => (
                   <tr key={v.codusur} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
@@ -1008,6 +1063,16 @@ export default function Configuracoes() {
                         onChange={() => handleSelectSacBot(v.codusur)}
                         className="w-4 h-4 text-primary-600 bg-slate-100 border-slate-300 focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
                         title="Marcar este usuário como BOT SAC"
+                      />
+                    </td>
+                    <td className="py-4 px-6 text-center">
+                      <input 
+                        type="radio" 
+                        name="pesquisaBot"
+                        checked={String(pesquisaBotCodusur) === String(v.codusur)}
+                        onChange={() => handleSelectPesquisaBot(v.codusur)}
+                        className="w-4 h-4 text-emerald-600 bg-slate-100 border-slate-300 focus:ring-emerald-500 dark:focus:ring-emerald-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
+                        title="Marcar este usuário como BOT de Pesquisa de Concorrência"
                       />
                     </td>
                     <td className="py-4 px-6 text-right">

@@ -72,7 +72,9 @@ const botMensagensRoutes = require('./routes/botMensagens');
 const statusWhatsRoutes = require('./routes/statusWhats');
 const relatoriosRoutes = require('./routes/relatorios');
 const botMensagensService = require('./services/botMensagensService');
+const pesquisaRoutes = require('./routes/pesquisa');
 
+app.use('/api/pesquisa', pesquisaRoutes);
 app.use('/api/relatorios', relatoriosRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/clientes', clientesRoutes);

@@ -22,6 +22,7 @@ import Prospeccao from './pages/Prospeccao';
 import SAC from './pages/SAC';
 import LogIdentificacao from './pages/LogIdentificacao';
 import Objetivos from './pages/Objetivos';
+import PesquisaPrecos from './pages/PesquisaPrecos';
 import ProtectedRoute from './components/ProtectedRoute';
 import { SocketProvider } from './contexts/SocketContext';
 
@@ -66,6 +67,7 @@ function App() {
             <Route path="/objetivos" element={<Objetivos />} />
             <Route path="/monitor-conversas" element={<MonitorConversas />} />
             <Route path="/relatorio-sac" element={<RelatorioSAC />} />
+            <Route path="/pesquisa-precos" element={<PesquisaPrecos />} />
           </Route>
         </Route>
       </Routes>

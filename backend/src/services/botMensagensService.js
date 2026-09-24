@@ -168,6 +168,105 @@ const DEFAULTS = {
         grupo: 'Consulta CNPJ Vendedor',
         bot_tipo: 'VENDEDOR',
         template: '🔍 *Consulta de Cadastro*\n\nDigite o *CNPJ* ou *CPF* que deseja consultar (apenas números).\n\nDigite VOLTAR para retornar ao menu.'
+    },
+
+    // ── PESQUISA BOT ─────────────────────────────────────────────────────────
+
+    PESQUISA_INICIO: {
+        descricao: 'Saudação inicial do bot de pesquisa',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Olá! Sou o assistente de Pesquisa de Concorrência.\n\nPara começar, por favor, digite o *NOME DO LOCAL* (ex: Supermercado X, Farmácia Y) que você está visitando.'
+    },
+    PESQUISA_ENCERRAR: {
+        descricao: 'Encerramento do atendimento',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Atendimento de pesquisa de concorrência encerrado. Obrigado!'
+    },
+    PESQUISA_TROCAR_LOCAL: {
+        descricao: 'Mensagem ao pedir para trocar de local',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Certo. Qual é o nome do NOVO local (concorrente, supermercado, etc.) que você está visitando?'
+    },
+    PESQUISA_LOCAL_INVALIDO: {
+        descricao: 'Aviso de local inválido',
+        grupo: 'Erros Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Por favor, digite um nome de local válido.'
+    },
+    PESQUISA_CONFIRMA_LOCAL: {
+        descricao: 'Confirmação do local digitado',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Local registrado: *{{local}}*.\n\n_(Para trocar de local depois, digite "trocar local")_'
+    },
+    PESQUISA_PEDIR_FOTO_EAN: {
+        descricao: 'Pede foto ou código EAN',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Envie a *Foto* (do produto/etiqueta) ou digite o código *EAN*.\n\n_(Se o produto não tiver código de barras, digite "SEM EAN")_'
+    },
+    PESQUISA_ERRO_EAN_INVALIDO: {
+        descricao: 'Aviso quando o EAN não é numérico e nem SEM EAN',
+        grupo: 'Erros Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Por favor, digite apenas os números do EAN ou escreva exatamente "SEM EAN".'
+    },
+    PESQUISA_PEDIR_NOME: {
+        descricao: 'Pede nome do produto e marca',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Qual o nome do produto e marca?'
+    },
+    PESQUISA_PEDIR_PRECO: {
+        descricao: 'Pede preço do produto',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Qual o preço? (Ex: 10,50)'
+    },
+    PESQUISA_ERRO_PRECO_INVALIDO: {
+        descricao: 'Erro ao extrair valor monetário',
+        grupo: 'Erros Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Não consegui identificar o valor. Por favor, digite apenas números e vírgula/ponto (Ex: 10,50).'
+    },
+    PESQUISA_ANALISE_IMAGEM: {
+        descricao: 'Aviso de análise de imagem pela IA',
+        grupo: 'IA Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: '⏳ Analisando a imagem, aguarde um momento...'
+    },
+    PESQUISA_ANALISE_TEXTO: {
+        descricao: 'Aviso de extração de texto pela IA',
+        grupo: 'IA Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: '⏳ Extraindo informações do texto...'
+    },
+    PESQUISA_ERRO_ENTENDER: {
+        descricao: 'Erro ao entender mensagem (não é foto nem texto válido)',
+        grupo: 'Erros Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Não consegui entender. Envie uma foto de produto/etiqueta ou digite os dados (Nome, Preço, EAN).'
+    },
+    PESQUISA_ERRO_EXTRAIR: {
+        descricao: 'Erro ao extrair dados (IA não conseguiu parsear a foto/texto)',
+        grupo: 'Erros Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Não consegui extrair os dados (Nome, Preço ou EAN). Tente enviar uma foto mais nítida ou digite os dados manualmente.'
+    },
+    PESQUISA_FALTA_INFO: {
+        descricao: 'Faltam informações obrigatórias na extração',
+        grupo: 'Erros Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Faltaram informações importantes. Tente enviar novamente com Nome do Produto e Preço.'
+    },
+    PESQUISA_SUCESSO: {
+        descricao: 'Confirmação de pesquisa salva',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: '✅ *Pesquisa Salva!*\n\n📍 Local: {{local}}\n📦 Produto: {{produto}}\n{{dados_extras}}\n\nPode enviar o próximo produto/foto. Se quiser mudar o local, digite "trocar local".'
     }
 };
 
