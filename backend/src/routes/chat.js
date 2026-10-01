@@ -137,23 +137,55 @@ router.get('/todas-conversas', async (req, res) => {
         });
 
         const sql = `
+            WITH RawMsgs AS (
+                SELECT
+                  C.DATA_RECEBIMENTO,
+                  JSON_VALUE(C.CONTEUDO, '$.instanceId') AS INSTANCEID,
+                  JSON_VALUE(C.CONTEUDO, '$.instanceName') AS INSTANCENAME,
+                  COALESCE(
+                      JSON_VALUE(C.CONTEUDO, '$.data.Message.conversation'),
+                      JSON_VALUE(C.CONTEUDO, '$.data.Message.extendedTextMessage.text'),
+                      JSON_VALUE(C.CONTEUDO, '$.data.Message.imageMessage.caption'),
+                      JSON_VALUE(C.CONTEUDO, '$.data.Message.videoMessage.caption'),
+                      '[Mídia/Documento]'
+                  ) AS TEXTO_MENSAGEM,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.PushName') AS PUSHNAME,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.IsFromMe' RETURNING VARCHAR2(5)) AS IS_FROM_ME,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.Chat') AS CHAT_JID,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.Sender') AS SENDER_JID,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.RecipientAlt') AS RECIPIENT_ALT
+                FROM CANAL_WEBHOOK C
+                WHERE C.DATA_RECEBIMENTO >= SYSDATE - 7
+                  AND JSON_VALUE(C.CONTEUDO, '$.data.Info.Chat') IS NOT NULL
+            ),
+            ProcessedMsgs AS (
+                SELECT 
+                    DATA_RECEBIMENTO,
+                    INSTANCEID,
+                    INSTANCENAME,
+                    TEXTO_MENSAGEM,
+                    PUSHNAME,
+                    IS_FROM_ME,
+                    CASE 
+                        WHEN IS_FROM_ME = 'true' THEN COALESCE(RECIPIENT_ALT, CHAT_JID)
+                        ELSE CHAT_JID
+                    END AS QUEM_RECEBEU
+                FROM RawMsgs
+            )
             SELECT 
-                m.TELEFONE_CLIENTE,
-                m.CODUSUR,
-                NVL(t.NOME_ATENDENTE, u.NOME) AS NOME_CONTA,
-                NVL(t.INSTANCE_NAME, 'SEM-INSTANCIA') AS INSTANCE_NAME,
-                MAX(m.DATA_HORA) AS ULTIMA_MENSAGEM,
+                REPLACE(QUEM_RECEBEU, '@s.whatsapp.net', '') AS TELEFONE_CLIENTE,
+                INSTANCENAME AS CODUSUR,
+                INSTANCENAME AS NOME_CONTA,
+                INSTANCENAME AS INSTANCE_NAME,
+                MAX(DATA_RECEBIMENTO) AS ULTIMA_MENSAGEM,
                 COUNT(*) AS QT_MENSAGENS,
-                (SELECT m2.TEXTO FROM CANAL_MENSAGENS m2 WHERE m2.TELEFONE_CLIENTE = m.TELEFONE_CLIENTE AND m2.CODUSUR = m.CODUSUR ORDER BY m2.DATA_HORA DESC FETCH FIRST 1 ROWS ONLY) AS PREVIEW,
-                (SELECT m2.MEDIA_TYPE FROM CANAL_MENSAGENS m2 WHERE m2.TELEFONE_CLIENTE = m.TELEFONE_CLIENTE AND m2.CODUSUR = m.CODUSUR ORDER BY m2.DATA_HORA DESC FETCH FIRST 1 ROWS ONLY) AS ULTIMO_MEDIA_TYPE,
-                (SELECT MAX(JSON_VALUE(CONTEUDO, '$.pushName')) FROM CANAL_WEBHOOK WHERE CONTEUDO LIKE '%' || m.TELEFONE_CLIENTE || '%') AS NOME_WHATSAPP,
-                SUM(CASE WHEN m.SENTIDO = 'IN' AND NVL(m.LIDA, 'N') = 'N' THEN 1 ELSE 0 END) AS QT_NAO_LIDAS
-            FROM CANAL_MENSAGENS m
-            LEFT JOIN CANAL_TOKENS_EVOLUTION t ON t.CODUSUR = m.CODUSUR
-            LEFT JOIN PCUSUARI u ON u.CODUSUR = m.CODUSUR
-            WHERE m.DATA_HORA >= SYSDATE - 3
-            GROUP BY m.TELEFONE_CLIENTE, m.CODUSUR, NVL(t.NOME_ATENDENTE, u.NOME), NVL(t.INSTANCE_NAME, 'SEM-INSTANCIA')
-            ORDER BY MAX(m.DATA_HORA) DESC
+                MAX(TEXTO_MENSAGEM) KEEP (DENSE_RANK LAST ORDER BY DATA_RECEBIMENTO) AS PREVIEW,
+                NULL AS ULTIMO_MEDIA_TYPE,
+                MAX(PUSHNAME) AS NOME_WHATSAPP,
+                0 AS QT_NAO_LIDAS
+            FROM ProcessedMsgs
+            GROUP BY INSTANCENAME, QUEM_RECEBEU
+            ORDER BY ULTIMA_MENSAGEM DESC
         `;
 
         const result = await connection.execute(sql);
@@ -244,10 +276,40 @@ router.get('/todas-mensagens', async (req, res) => {
         });
 
         const sql = `
-            SELECT ID_MENSAGEM, SENTIDO, TEXTO, DATA_HORA, MEDIA_URL, MEDIA_TYPE, MEDIA_MIMETYPE
-            FROM CANAL_MENSAGENS
-            WHERE CODUSUR = :codusur AND TELEFONE_CLIENTE = :telefone
-              AND DATA_HORA >= SYSDATE - 3
+            WITH RawMsgs AS (
+                SELECT
+                  C.DATA_RECEBIMENTO,
+                  JSON_VALUE(C.CONTEUDO, '$.instanceName') AS INSTANCENAME,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.ID') AS ID_MENSAGEM,
+                  COALESCE(
+                      JSON_VALUE(C.CONTEUDO, '$.data.Message.conversation'),
+                      JSON_VALUE(C.CONTEUDO, '$.data.Message.extendedTextMessage.text'),
+                      JSON_VALUE(C.CONTEUDO, '$.data.Message.imageMessage.caption'),
+                      JSON_VALUE(C.CONTEUDO, '$.data.Message.videoMessage.caption'),
+                      '[Mídia/Documento]'
+                  ) AS TEXTO,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.IsFromMe' RETURNING VARCHAR2(5)) AS IS_FROM_ME,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.Chat') AS CHAT_JID,
+                  JSON_VALUE(C.CONTEUDO, '$.data.Info.RecipientAlt') AS RECIPIENT_ALT
+                FROM CANAL_WEBHOOK C
+                WHERE C.DATA_RECEBIMENTO >= SYSDATE - 7
+                  AND JSON_VALUE(C.CONTEUDO, '$.instanceName') = :codusur
+            ),
+            ProcessedMsgs AS (
+                SELECT 
+                    DATA_RECEBIMENTO AS DATA_HORA,
+                    ID_MENSAGEM,
+                    TEXTO,
+                    CASE WHEN IS_FROM_ME = 'true' THEN 'OUT' ELSE 'IN' END AS SENTIDO,
+                    REPLACE(
+                        CASE WHEN IS_FROM_ME = 'true' THEN COALESCE(RECIPIENT_ALT, CHAT_JID) ELSE CHAT_JID END,
+                        '@s.whatsapp.net', ''
+                    ) AS QUEM_RECEBEU
+                FROM RawMsgs
+            )
+            SELECT ID_MENSAGEM, SENTIDO, TEXTO, DATA_HORA, NULL AS MEDIA_URL, NULL AS MEDIA_TYPE, NULL AS MEDIA_MIMETYPE
+            FROM ProcessedMsgs
+            WHERE QUEM_RECEBEU = :telefone
             ORDER BY DATA_HORA ASC
         `;
         
