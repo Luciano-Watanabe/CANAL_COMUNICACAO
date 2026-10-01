@@ -155,7 +155,7 @@ router.get('/todas-conversas', async (req, res) => {
                   JSON_VALUE(C.CONTEUDO, '$.data.Info.Sender') AS SENDER_JID,
                   JSON_VALUE(C.CONTEUDO, '$.data.Info.RecipientAlt') AS RECIPIENT_ALT
                 FROM CANAL_WEBHOOK C
-                WHERE C.DATA_RECEBIMENTO >= SYSDATE - 7
+                WHERE C.DATA_RECEBIMENTO >= SYSDATE - 30
                   AND JSON_VALUE(C.CONTEUDO, '$.data.Info.Chat') IS NOT NULL
             ),
             ProcessedMsgs AS (
@@ -292,7 +292,7 @@ router.get('/todas-mensagens', async (req, res) => {
                   JSON_VALUE(C.CONTEUDO, '$.data.Info.Chat') AS CHAT_JID,
                   JSON_VALUE(C.CONTEUDO, '$.data.Info.RecipientAlt') AS RECIPIENT_ALT
                 FROM CANAL_WEBHOOK C
-                WHERE C.DATA_RECEBIMENTO >= SYSDATE - 7
+                WHERE C.DATA_RECEBIMENTO >= SYSDATE - 30
                   AND JSON_VALUE(C.CONTEUDO, '$.instanceName') = :codusur
             ),
             ProcessedMsgs AS (
