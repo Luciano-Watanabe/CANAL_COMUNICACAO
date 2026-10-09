@@ -10,6 +10,8 @@ try {
     console.error('Erro ao inicializar Oracle Client (Thick mode):', err.message);
 }
 require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const { exec, execFile } = require('child_process');
 
 const app = express();

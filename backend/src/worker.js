@@ -1,4 +1,7 @@
+const path = require('path');
 require('dotenv').config();
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 const oracledb = require('oracledb');
 try {
     oracledb.initOracleClient({ libDir: '/opt/oracle/instantclient_19_21' });

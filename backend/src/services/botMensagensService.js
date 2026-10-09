@@ -202,6 +202,48 @@ const DEFAULTS = {
         bot_tipo: 'PESQUISA',
         template: 'Local registrado: *{{local}}*.\n\n_(Para trocar de local depois, digite "trocar local")_'
     },
+    PESQUISA_CONCORRENTES_ENCONTRADOS: {
+        descricao: 'Lista opções de concorrentes cadastrados encontrados por aproximação',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Encontrei os seguintes concorrentes cadastrados para "*{{termo}}*":\n\n{{opcoes}}\n0️⃣ - *Nenhum destes (Cadastrar Novo Concorrente)*\n\nDigite o *número da opção* desejada (ou digite *VOLTAR*):'
+    },
+    PESQUISA_CONCORRENTE_NAO_ENCONTRADO: {
+        descricao: 'Aviso quando nenhum concorrente é encontrado e solicita cadastro',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Não encontrei nenhum concorrente cadastrado com o nome "*{{termo}}*".\n\nVamos cadastrá-lo como um novo concorrente!\n\nPor favor, informe a *CIDADE* onde este local fica:'
+    },
+    PESQUISA_PEDIR_CIDADE_NOVO: {
+        descricao: 'Solicita cidade para novo concorrente',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Certo! Vamos cadastrar um novo concorrente para "*{{nome}}*".\n\nPor favor, informe a *CIDADE* onde este local fica (ou digite *VOLTAR*):'
+    },
+    PESQUISA_PEDIR_BAIRRO_NOVO: {
+        descricao: 'Solicita bairro para novo concorrente',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Cidade: *{{cidade}}*.\n\nAgora informe o *BAIRRO* para identificar este novo {{nome}}:'
+    },
+    PESQUISA_NOVO_CONCORRENTE_SUCESSO: {
+        descricao: 'Confirmação de novo concorrente cadastrado na PCCONCOR',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: '✅ *Novo concorrente cadastrado com sucesso!*\n🏢 *{{nome}}* (Cód: {{codigo}})\n📍 {{bairro}}, {{cidade}}\n\n_(Para trocar de local depois, digite "trocar local")_'
+    },
+    PESQUISA_CONCORRENTE_CONFIRMADO: {
+        descricao: 'Confirmação de concorrente selecionado da lista',
+        grupo: 'Fluxo Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: '🏢 Concorrente selecionado: *{{nome}}* (Cód: {{codigo}})\n{{detalhes}}\n_(Para trocar de local depois, digite "trocar local")_'
+    },
+    PESQUISA_OPCAO_INVALIDA: {
+        descricao: 'Aviso de opção de menu inválida na escolha de concorrente',
+        grupo: 'Erros Pesquisa',
+        bot_tipo: 'PESQUISA',
+        template: 'Opção inválida. Por favor, digite o *número* correspondente a uma das opções listadas (ou 0 para cadastrar novo):'
+    },
     PESQUISA_PEDIR_FOTO_EAN: {
         descricao: 'Pede foto ou código EAN',
         grupo: 'Fluxo Pesquisa',
