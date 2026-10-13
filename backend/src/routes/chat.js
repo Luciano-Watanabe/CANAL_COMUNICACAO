@@ -1286,5 +1286,445 @@ router.post('/transcribe', async (req, res) => {
     }
 });
 
+// Endpoint para gravar Pedido / Orçamento Força de Vendas (PCPEDCFV e PCPEDIFV) a partir do Chat
+// Suporta a escolha de tipo: 'ORCAMENTO' ou 'CARRINHO'
+router.post('/pedido-fv', async (req, res) => {
+    const {
+        tipo,              // 'ORCAMENTO' ou 'CARRINHO'
+        codcli,            // Código do cliente (PCCLIENT.CODCLI)
+        codusur,           // Código do RCA (se omitido, busca da PCCLIENT)
+        codcob,            // Código de cobrança (opcional)
+        codplpag,          // Código do plano de pagamento (opcional)
+        codfilial,         // Filial (opcional)
+        codfilialnf,       // Filial NF (opcional)
+        codfilialretira,   // Filial Retira (opcional)
+        condvenda,         // Condição de venda (default 1)
+        vlfrete,           // Frete (default 0)
+        obs1,              // Observação 1
+        obs2,              // Observação 2
+        obsEntrega,        // Observação de entrega (OBSENTREGA1)
+        importarImediato,  // Se true (default), dispara AGDIST.INTEGRADORA.IMPORTARPEDIDO
+        itens              // Array de itens: [{ codprod, qt/qtd, pvenda/preco, percdescedi/perc, bonific, ean/codauxiliar, unidade }]
+    } = req.body;
+
+    if (!codcli) {
+        return res.status(400).json({ success: false, error: 'Código do cliente (codcli) é obrigatório.' });
+    }
+
+    if (!itens || !Array.isArray(itens) || itens.length === 0) {
+        return res.status(400).json({ success: false, error: 'Lista de itens é obrigatória e deve conter ao menos um produto.' });
+    }
+
+    const tipoNormalizado = String(tipo || 'CARRINHO').trim().toUpperCase();
+    const isOrcamento = tipoNormalizado === 'ORCAMENTO';
+
+    let connection;
+    try {
+        connection = await oracledb.getConnection({
+            user: process.env.ORACLE_USER,
+            password: process.env.ORACLE_PASS,
+            connectString: process.env.ORACLE_CONN_STR
+        });
+
+        // 1. Buscar dados do cliente
+        const sqlClient = `
+            SELECT CGCENT, CODUSUR1, CODCOB, CODPLPAG, CODFILIALNF, CLIENTE, BLOQUEIO
+            FROM PCCLIENT
+            WHERE CODCLI = :codcli
+        `;
+        const resClient = await connection.execute(sqlClient, { codcli: Number(codcli) });
+        if (!resClient.rows || resClient.rows.length === 0) {
+            return res.status(404).json({ success: false, error: `Cliente ${codcli} não encontrado no ERP.` });
+        }
+
+        const [cgccliRaw, cliCodusur, cliCodcob, cliCodplpag, cliFilialNf, cliNome, cliBloqueio] = resClient.rows[0];
+        const cgccli = String(cgccliRaw || '').trim();
+        const activeCodusur = Number(codusur || cliCodusur);
+        if (!activeCodusur) {
+            return res.status(400).json({ success: false, error: 'Vendedor (codusur) não informado e não vinculado ao cliente.' });
+        }
+
+        const activeCodcob = String(codcob || cliCodcob || '237').trim();
+        const activeCodplpag = Number(codplpag || cliCodplpag || 1);
+        const activeCondvenda = Number(condvenda || 1);
+        const activeCodfilial = String(codfilial || cliFilialNf || process.env.ESTOQUE_CODFILIAL || '1').trim();
+        const activeCodfilialnf = String(codfilialnf || cliFilialNf || activeCodfilial).trim();
+        const activeCodfilialretira = String(codfilialretira || activeCodfilial).trim();
+        const activeVlfrete = Number(vlfrete || 0);
+
+        // 2. Obter e reservar NUMPEDRCA na PCUSUARI
+        let numpedrca;
+        const sqlSeqUsur = `
+            SELECT PROXNUMPEDFORCA, PROXNUMPEDWEB
+            FROM PCUSUARI
+            WHERE CODUSUR = :codusur
+            FOR UPDATE
+        `;
+        const resSeqUsur = await connection.execute(sqlSeqUsur, { codusur: activeCodusur });
+        if (resSeqUsur.rows && resSeqUsur.rows.length > 0) {
+            const [proxForca, proxWeb] = resSeqUsur.rows[0];
+            if (proxForca && Number(proxForca) > 0) {
+                numpedrca = Number(proxForca);
+                await connection.execute(`
+                    UPDATE PCUSUARI
+                    SET PROXNUMPEDFORCA = :nextnum
+                    WHERE CODUSUR = :codusur
+                `, { nextnum: numpedrca + 1, codusur: activeCodusur });
+            } else if (proxWeb && Number(proxWeb) > 0) {
+                numpedrca = Number(proxWeb);
+                await connection.execute(`
+                    UPDATE PCUSUARI
+                    SET PROXNUMPEDWEB = :nextnum
+                    WHERE CODUSUR = :codusur
+                `, { nextnum: numpedrca + 1, codusur: activeCodusur });
+            }
+        }
+
+        if (!numpedrca) {
+            numpedrca = (activeCodusur * 100000000) + 1;
+        }
+
+        // Garantir unicidade na PCPEDCFV
+        const sqlCheckDup = `
+            SELECT NVL(MAX(NUMPEDRCA), :numpedrca)
+            FROM PCPEDCFV
+            WHERE CODUSUR = :codusur AND NUMPEDRCA >= :numpedrca
+        `;
+        const resDup = await connection.execute(sqlCheckDup, { codusur: activeCodusur, numpedrca });
+        if (resDup.rows && resDup.rows.length > 0 && resDup.rows[0][0] >= numpedrca) {
+            numpedrca = Number(resDup.rows[0][0]) + 1;
+        }
+
+        // 3. Obter data/hora sincronizada do banco
+        const resSysdate = await connection.execute(`SELECT SYSDATE FROM DUAL`);
+        const dtAbertura = resSysdate.rows[0][0];
+        const dtFechamento = dtAbertura;
+
+        // 4. Inserir Cabeçalho na PCPEDCFV
+        const flagOrcamento = isOrcamento ? 'S' : 'N';
+        const defaultObs1 = isOrcamento ? 'Orçamento via Chat' : 'Pedido de Venda via Chat';
+        const finalObs1 = String(obs1 || defaultObs1).substring(0, 50);
+        const finalObs2 = obs2 ? String(obs2).substring(0, 50) : null;
+        const finalObsEntrega = obsEntrega ? String(obsEntrega).substring(0, 75) : null;
+
+        const sqlInsertCabFV = `
+            INSERT INTO PCPEDCFV (
+                IMPORTADO,
+                NUMPEDRCA,
+                CODUSUR,
+                CGCCLI,
+                CODCLI,
+                DTABERTURAPEDPALM,
+                DTFECHAMENTOPEDPALM,
+                CODFILIAL,
+                CODFILIALNF,
+                CODFILIALRETIRA,
+                CODCOB,
+                CODPLPAG,
+                CONDVENDA,
+                ORIGEMPED,
+                TIPOFV,
+                ORCAMENTO,
+                OBS1,
+                OBS2,
+                OBSENTREGA1,
+                VLFRETE,
+                ENVIADONV
+            ) VALUES (
+                1,
+                :numpedrca,
+                :codusur,
+                :cgccli,
+                :codcli,
+                :dtabertura,
+                :dtfechamento,
+                :codfilial,
+                :codfilialnf,
+                :codfilialretira,
+                :codcob,
+                :codplpag,
+                :condvenda,
+                'F',
+                'FV',
+                :orcamento,
+                :obs1,
+                :obs2,
+                :obsentrega1,
+                :vlfrete,
+                'N'
+            )
+        `;
+
+        await connection.execute(sqlInsertCabFV, {
+            numpedrca,
+            codusur: activeCodusur,
+            cgccli,
+            codcli: Number(codcli),
+            dtabertura: dtAbertura,
+            dtfechamento: dtFechamento,
+            codfilial: activeCodfilial,
+            codfilialnf: activeCodfilialnf,
+            codfilialretira: activeCodfilialretira,
+            codcob: activeCodcob,
+            codplpag: activeCodplpag,
+            condvenda: activeCondvenda,
+            orcamento: flagOrcamento,
+            obs1: finalObs1,
+            obs2: finalObs2,
+            obsentrega1: finalObsEntrega,
+            vlfrete: activeVlfrete
+        });
+
+        // 5. Inserir Itens na PCPEDIFV
+        let seq = 1;
+        let valorTotal = 0;
+
+        for (const item of itens) {
+            const codprod = Number(item.codprod);
+            const qt = Number(item.qt || item.qtd || 1);
+            const pvenda = Number(item.pvenda || item.preco || 0);
+            const percdescedi = Number(item.percdescedi || item.perc || 0);
+            const bonific = String(item.bonific || 'N').trim().toUpperCase() === 'S' ? 'S' : null;
+            const unidade = item.unidade ? String(item.unidade).substring(0, 2) : null;
+            
+            valorTotal += (qt * pvenda);
+
+            // Obter CODAUXILIAR (código de barras) se não enviado
+            let codauxiliar = item.ean || item.codauxiliar || null;
+            if (!codauxiliar) {
+                const resAux = await connection.execute(
+                    `SELECT CODAUXILIAR FROM PCPRODUT WHERE CODPROD = :codprod`,
+                    { codprod }
+                );
+                if (resAux.rows && resAux.rows.length > 0) {
+                    codauxiliar = resAux.rows[0][0];
+                }
+            }
+
+            const sqlInsertItemFV = `
+                INSERT INTO PCPEDIFV (
+                    NUMPEDRCA,
+                    CODUSUR,
+                    CGCCLI,
+                    DTABERTURAPEDPALM,
+                    NUMSEQ,
+                    CODPROD,
+                    QT,
+                    PVENDA,
+                    CODFILIALRETIRA,
+                    CODAUXILIAR,
+                    BONIFIC,
+                    PERCDESCEDI,
+                    UNIDADE_FRIOS
+                ) VALUES (
+                    :numpedrca,
+                    :codusur,
+                    :cgccli,
+                    :dtabertura,
+                    :numseq,
+                    :codprod,
+                    :qt,
+                    :pvenda,
+                    :codfilialretira,
+                    :codauxiliar,
+                    :bonific,
+                    :percdescedi,
+                    :unidade
+                )
+            `;
+
+            await connection.execute(sqlInsertItemFV, {
+                numpedrca,
+                codusur: activeCodusur,
+                cgccli,
+                dtabertura: dtAbertura,
+                numseq: seq * 2, // padrão WinThor par (2, 4, 6...)
+                codprod,
+                qt,
+                pvenda,
+                codfilialretira: activeCodfilialretira,
+                codauxiliar: codauxiliar ? Number(codauxiliar) : null,
+                bonific,
+                percdescedi,
+                unidade
+            });
+
+            seq++;
+        }
+
+        // Se for orçamento, espelhar também em CANAL_ORCAC / CANAL_ORCAI para histórico interno
+        if (isOrcamento) {
+            try {
+                await connection.execute(`
+                    INSERT INTO CANAL_ORCAC (
+                        NUMPEDRCA, CODUSUR, CODCLI, CGCCLI, DTABERTURAPEDPALM, DTFECHAMENTOPEDPALM,
+                        CODFILIAL, CODCOB, CODPLPAG, CONDVENDA, OBS1, VLFRETE, ORIGEMPED, STATUS_INTEGRACAO, DTINCLUSAO
+                    ) VALUES (
+                        :numpedrca, :codusur, :codcli, :cgccli, :dtabertura, :dtfechamento,
+                        :codfilial, :codcob, :codplpag, :condvenda, :obs1, :vlfrete, 'F', 'PENDENTE', SYSDATE
+                    )
+                `, {
+                    numpedrca,
+                    codusur: activeCodusur,
+                    codcli: Number(codcli),
+                    cgccli,
+                    dtabertura: dtAbertura,
+                    dtfechamento: dtFechamento,
+                    codfilial: activeCodfilial,
+                    codcob: activeCodcob,
+                    codplpag: activeCodplpag,
+                    condvenda: activeCondvenda,
+                    obs1: finalObs1,
+                    vlfrete: activeVlfrete
+                });
+
+                let orcSeq = 1;
+                for (const item of itens) {
+                    await connection.execute(`
+                        INSERT INTO CANAL_ORCAI (
+                            NUMPEDRCA, NUMSEQ, CODUSUR, CGCCLI, DTABERTURAPEDPALM, CODPROD, QT, PVENDA, DTINCLUSAO
+                        ) VALUES (
+                            :numpedrca, :numseq, :codusur, :cgccli, :dtabertura, :codprod, :qt, :pvenda, SYSDATE
+                        )
+                    `, {
+                        numpedrca,
+                        numseq: orcSeq,
+                        codusur: activeCodusur,
+                        cgccli,
+                        dtabertura: dtAbertura,
+                        codprod: Number(item.codprod),
+                        qt: Number(item.qt || item.qtd || 1),
+                        pvenda: Number(item.pvenda || item.preco || 0)
+                    });
+                    orcSeq++;
+                }
+            } catch (errOrcLocal) {
+                console.warn('Aviso ao gravar em CANAL_ORCAC:', errOrcLocal.message);
+            }
+        }
+
+        // Commit da inserção nas tabelas de Força de Vendas
+        await connection.commit();
+
+        let resultadoImportacao = {
+            executado: false,
+            importado: 1, // 1 = Gravado na PCPEDCFV / Aguardando integradora
+            numped: null,
+            posicao: null,
+            retorno: null,
+            observacaoPc: null,
+            logs: []
+        };
+
+        // 6. Importação Imediata para o ERP (se habilitada, default = true)
+        const deveImportar = importarImediato !== false;
+        if (deveImportar) {
+            try {
+                // Executar procedure oficial da integradora WinThor
+                await connection.execute(`
+                    BEGIN
+                        AGDIST.INTEGRADORA.IMPORTARPEDIDO(
+                            p_tipoleitura => 1,
+                            p_datainicial => TRUNC(SYSDATE),
+                            p_datafinal   => TRUNC(SYSDATE),
+                            p_codfilial   => '99',
+                            p_tiporeg     => NULL,
+                            p_codusur     => :codusur,
+                            p_numpedrca   => :numpedrca
+                        );
+                    END;
+                `, {
+                    codusur: activeCodusur,
+                    numpedrca
+                });
+
+                resultadoImportacao.executado = true;
+
+                // Consultar resultado na PCPEDCFV
+                const sqlVerif = `
+                    SELECT IMPORTADO, NUMPED, POSICAO_ATUAL, RETORNO, OBSERVACAO_PC
+                    FROM PCPEDCFV
+                    WHERE NUMPEDRCA = :numpedrca
+                      AND CODUSUR = :codusur
+                      AND CGCCLI = :cgccli
+                      AND DTABERTURAPEDPALM = :dtabertura
+                `;
+                const resVerif = await connection.execute(sqlVerif, {
+                    numpedrca,
+                    codusur: activeCodusur,
+                    cgccli,
+                    dtabertura: dtAbertura
+                });
+
+                if (resVerif.rows && resVerif.rows.length > 0) {
+                    const [vImportado, vNumped, vPosicao, vRetorno, vObsPc] = resVerif.rows[0];
+                    resultadoImportacao.importado = vImportado;
+                    resultadoImportacao.numped = vNumped;
+                    resultadoImportacao.posicao = vPosicao;
+                    resultadoImportacao.retorno = vRetorno;
+                    resultadoImportacao.observacaoPc = vObsPc;
+                }
+
+                // Consultar mensagens geradas na PCLOG_INTEGRADORA
+                const sqlLogs = `
+                    SELECT MSG, TO_CHAR(DATA, 'DD/MM/YYYY HH24:MI:SS') AS DATA_LOG, PVENDA, PTABELA, PBASE
+                    FROM PCLOG_INTEGRADORA
+                    WHERE NUMPEDRCA = :numpedrca
+                      AND CODUSUR = :codusur
+                      AND CGCCLI = :cgccli
+                      AND DTABERTURAPEDPALM = :dtabertura
+                    ORDER BY SEQ ASC
+                `;
+                const resLogs = await connection.execute(sqlLogs, {
+                    numpedrca,
+                    codusur: activeCodusur,
+                    cgccli,
+                    dtabertura: dtAbertura
+                });
+
+                if (resLogs.rows) {
+                    resultadoImportacao.logs = resLogs.rows.map(r => ({
+                        msg: r[0],
+                        data: r[1],
+                        pvenda: r[2],
+                        ptabela: r[3],
+                        pbase: r[4]
+                    }));
+                }
+
+            } catch (errInteg) {
+                console.error('Erro na execução imediata da INTEGRADORA.IMPORTARPEDIDO:', errInteg);
+                resultadoImportacao.erroIntegracao = errInteg.message;
+            }
+        }
+
+        res.json({
+            success: true,
+            tipo: isOrcamento ? 'ORCAMENTO' : 'CARRINHO',
+            numpedrca,
+            codcli: Number(codcli),
+            cliente: cliNome,
+            codusur: activeCodusur,
+            totalItens: itens.length,
+            valorTotal: Number(valorTotal.toFixed(2)),
+            resultadoImportacao
+        });
+
+    } catch (err) {
+        console.error('Erro ao gravar pedido/orçamento FV:', err);
+        if (connection) {
+            try { await connection.rollback(); } catch (e) {}
+        }
+        res.status(500).json({
+            success: false,
+            error: 'Erro interno ao gravar pedido/orçamento no ERP: ' + err.message
+        });
+    } finally {
+        if (connection) {
+            try { await connection.close(); } catch (e) {}
+        }
+    }
+});
+
 module.exports = router;
 

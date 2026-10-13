@@ -739,6 +739,72 @@ export default function Chat() {
     setRightPanelTab('cart');
   };
 
+  const handleGravarOrcamentoERP = async () => {
+    if (!activeChatData) return;
+    const selected = Object.entries(orcamentoItems)
+      .filter(([_, data]) => data.selecionado)
+      .map(([codprod, data]) => {
+         const p = orcamentoProdutos.find(prod => String(prod.codprod) === codprod);
+         return { ...p, qtd: data.qtd, perc: data.perc };
+      }).filter(p => p.codprod);
+
+    if (selected.length === 0) {
+      alert('Selecione ao menos um produto para o orçamento.');
+      return;
+    }
+
+    setOrcamentoGerando(true);
+    try {
+      const codcli = activeChatData.id.split('_')[0];
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      const matricula = user?.matricula;
+
+      const payload = {
+        tipo: 'ORCAMENTO',
+        codcli: codcli,
+        codusur: matricula,
+        importarImediato: true,
+        itens: selected.map(item => {
+          const precoFinal = item.preco - (item.preco * (item.perc || 0) / 100);
+          return {
+            codprod: item.codprod,
+            qt: Number(item.qtd),
+            pvenda: Number(precoFinal.toFixed(2)),
+            percdescedi: Number(item.perc || 0),
+            ean: item.ean
+          };
+        })
+      };
+
+      const res = await fetch('/api/chat/pedido-fv', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert(`Erro ao gravar orçamento: ${data.error || 'Erro desconhecido'}`);
+        return;
+      }
+
+      const { numpedrca, resultadoImportacao } = data;
+      let msg = `✅ Orçamento RCA #${numpedrca} gravado com sucesso no ERP!`;
+      if (resultadoImportacao?.numped) {
+        msg += `\n📦 Número ERP: ${resultadoImportacao.numped} (Posição: ${resultadoImportacao.posicao || 'L'})`;
+      } else {
+        msg += `\n⏳ Registrado na PCPEDCFV / PCPEDIFV para processamento do WinThor.`;
+      }
+      alert(msg);
+      setIsOrcamentoModalOpen(false);
+    } catch (err) {
+      console.error('Erro ao gravar orçamento no ERP:', err);
+      alert('Erro de conexão ao gravar orçamento no ERP.');
+    } finally {
+      setOrcamentoGerando(false);
+    }
+  };
+
   const handleGerarOrcamentoPDF = async (downloadOnly = false) => {
     if (!activeChatData) return;
     setOrcamentoGerando(true);
@@ -2319,10 +2385,18 @@ export default function Chat() {
                   </button>
                   <button
                     onClick={handleAdicionarOrcamentoAoCarrinho}
-                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
                   >
                     <ShoppingCart size={18} />
                     Enviar p/ Carrinho
+                  </button>
+                  <button
+                    onClick={handleGravarOrcamentoERP}
+                    disabled={orcamentoGerando}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center gap-2 shadow-sm"
+                  >
+                    {orcamentoGerando ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+                    Gravar no WinThor
                   </button>
                 </div>
             </div>
