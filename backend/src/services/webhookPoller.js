@@ -475,15 +475,71 @@ class WebhookPoller {
     }
 
     async findVendedorPorTelefone(telefone, conn) {
-        const result = await conn.execute(`
-            SELECT CODUSUR FROM PCUSUARI
-            WHERE TELEFONE1 IS NOT NULL
-              AND (REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE1, ' ', ''), '-', ''), '(', ''), ')', '') = :tel
-               OR  REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE2, ' ', ''), '-', ''), '(', ''), ')', '') = :tel)
-            ORDER BY CODUSUR ASC
-            FETCH FIRST 1 ROWS ONLY
-        `, { tel: telefone });
-        if (result.rows.length > 0) return result.rows[0][0];
+        if (!telefone) return null;
+        const clean = String(telefone).replace(/\D/g, '');
+        if (!clean) return null;
+
+        const sem55 = (clean.startsWith('55') && clean.length >= 12) ? clean.substring(2) : clean;
+        const com55 = clean.startsWith('55') ? clean : '55' + clean;
+        const ultimos8 = clean.slice(-8);
+
+        let sem9 = null;
+        let com55sem9 = null;
+        if (sem55.length === 11) {
+            sem9 = sem55.substring(0, 2) + sem55.substring(3);
+            com55sem9 = '55' + sem9;
+        }
+
+        const variations = Array.from(new Set([clean, sem55, com55, sem9, com55sem9].filter(Boolean)));
+
+        // 1. Busca diretamente no banco de dados primeiro (evita cache defasado entre containers backend e worker)
+        try {
+            const binds = {};
+            const conds = [];
+            variations.forEach((v, idx) => {
+                binds[`v${idx}`] = v;
+                conds.push(`REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE1, ' ', ''), '-', ''), '(', ''), ')', '') = :v${idx}`);
+                conds.push(`REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE2, ' ', ''), '-', ''), '(', ''), ')', '') = :v${idx}`);
+            });
+            binds.ult8 = ultimos8;
+
+            const sql = `
+                SELECT CODUSUR FROM PCUSUARI
+                WHERE (BLOQUEIO = 'N' OR BLOQUEIO IS NULL)
+                  AND (TELEFONE1 IS NOT NULL OR TELEFONE2 IS NOT NULL)
+                  AND (
+                    ${conds.join(' OR ')}
+                    OR SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE1, ' ', ''), '-', ''), '(', ''), ')', ''), -8) = :ult8
+                    OR SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(TELEFONE2, ' ', ''), '-', ''), '(', ''), ')', ''), -8) = :ult8
+                  )
+                ORDER BY CODUSUR ASC
+                FETCH FIRST 1 ROWS ONLY
+            `;
+            const result = await conn.execute(sql, binds);
+            if (result.rows && result.rows.length > 0) return String(result.rows[0][0]);
+            return null;
+        } catch (e) {
+            console.error('[WebhookPoller] Erro ao buscar vendedor por telefone no banco:', e);
+        }
+
+        // 2. Fallback: busca no cache em memória caso a consulta ao banco falhe
+        try {
+            const cacheService = require('./cacheService');
+            const vendedoresCache = cacheService.getVendedores();
+            if (vendedoresCache && vendedoresCache.length > 0) {
+                for (const v of vendedoresCache) {
+                    const t1 = (v.TELEFONE1 || '').replace(/\D/g, '');
+                    const t2 = (v.TELEFONE2 || '').replace(/\D/g, '');
+                    if (t1 && (variations.includes(t1) || (t1.length >= 8 && t1.slice(-8) === ultimos8))) {
+                        return v.CODUSUR;
+                    }
+                    if (t2 && (variations.includes(t2) || (t2.length >= 8 && t2.slice(-8) === ultimos8))) {
+                        return v.CODUSUR;
+                    }
+                }
+            }
+        } catch (e) {}
+
         return null;
     }
 

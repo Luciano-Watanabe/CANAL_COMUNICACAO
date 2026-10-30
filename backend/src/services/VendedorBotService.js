@@ -105,7 +105,8 @@ class VendedorBotService {
 
         console.log(`${TAG} Mensagem de ${telefone} (Vendedor: ${codvendedor}) | Estado: ${estado} | Texto: ${text}`);
 
-        if (cmd === 'cancelar' || cmd === 'menu' || cmd === 'voltar' || cmd === 'sair') {
+        const saudacoes = ['oi', 'ola', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'opa', 'e ai', 'e aí', 'menu', 'voltar', 'cancelar', 'sair', 'inicio', 'iniciar', 'começar'];
+        if (saudacoes.includes(cmd)) {
             await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
             return await this.enviarMenuPrincipal(telefone, instanceName, conn);
         }
@@ -145,6 +146,9 @@ class VendedorBotService {
                 case 'VENDEDOR_CONSULTAR_CNPJ':
                     return await this.processarConsultarCnpj(telefone, text, instanceName, conn, dados, codvendedor);
 
+                case 'VENDEDOR_CATALOGO_BUSCA':
+                    return await this.processarCatalogoBusca(telefone, text, instanceName, conn, dados, codvendedor);
+
                 default:
                     await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
                     return await this.enviarMenuPrincipal(telefone, instanceName, conn);
@@ -164,14 +168,29 @@ class VendedorBotService {
             }
         } catch(e) {}
 
-        const menuTextRaw = botMsgs.getMsg('VEND_MENU_PRINCIPAL')
+        let menuTextRaw = botMsgs.getMsg('VEND_MENU_PRINCIPAL')
             .replace(/\{\{nome_empresa\}\}/g, nomeEmpresa);
+
+        // Se o template personalizado no banco ainda não contiver a opção 6 de Catálogo, insere antes do 0
+        if (!menuTextRaw.includes('Catálogo') && !menuTextRaw.includes('Catalogo') && !menuTextRaw.includes('catálogo') && !menuTextRaw.includes('catalogo')) {
+            const linhas = menuTextRaw.split('\n');
+            const idxZero = linhas.findIndex(l => /^\s*0/i.test(l));
+            if (idxZero !== -1) {
+                linhas.splice(idxZero, 0, '6️⃣ - 📦 Catálogo');
+                menuTextRaw = linhas.join('\n');
+            } else {
+                menuTextRaw += '\n6️⃣ - 📦 Catálogo';
+            }
+        }
             
-        let menuAtivos = '1,2,3,4,5,0';
+        let menuAtivos = '1,2,3,4,5,6,0';
         try {
             const resCfg = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'VEND_MENU_ATIVOS'`);
             if (resCfg.rows.length > 0 && resCfg.rows[0][0]) {
                 menuAtivos = resCfg.rows[0][0];
+                if (!menuAtivos.split(',').map(s => s.trim()).includes('6')) {
+                    menuAtivos += ',6';
+                }
             }
         } catch(e) {}
         const ativosArray = menuAtivos.split(',').map(s => s.trim());
@@ -189,23 +208,31 @@ class VendedorBotService {
 
     async processarMenuPrincipal(telefone, text, instanceName, conn, codvendedor) {
         const opcao = (text || '').trim();
+        const saudacoes = ['oi', 'ola', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'opa', 'e ai', 'e aí', 'menu', 'voltar', 'cancelar', 'sair', 'inicio', 'iniciar', 'começar'];
         
+        if (saudacoes.includes(opcao.toLowerCase())) {
+            return await this.enviarMenuPrincipal(telefone, instanceName, conn);
+        }
+
         // Verifica configurações de opções ativas
-        let menuAtivos = '1,2,3,4,5,0';
+        let menuAtivos = '1,2,3,4,5,6,0';
         try {
             const resCfg = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'VEND_MENU_ATIVOS'`);
             if (resCfg.rows.length > 0 && resCfg.rows[0][0]) {
                 menuAtivos = resCfg.rows[0][0];
+                if (!menuAtivos.split(',').map(s => s.trim()).includes('6')) {
+                    menuAtivos += ',6';
+                }
             }
         } catch(e) {}
         const ativosArray = menuAtivos.split(',').map(s => s.trim());
 
-        if (opcao !== '' && !ativosArray.includes(opcao)) {
+        if (opcao !== '' && !ativosArray.includes(opcao) && !['catalogo', 'catálogo'].includes(opcao.toLowerCase())) {
             await this.webhookPoller.enviarMensagemBot(telefone, "Opção indisponível no momento. Por favor, escolha outra opção.", conn, instanceName);
             return await this.enviarMenuPrincipal(telefone, instanceName, conn);
         }
 
-        switch (opcao) {
+        switch (opcao.toLowerCase()) {
             case '1':
                 await this.setState(telefone, 'VENDEDOR_ASSISTENTE_COMUNICACAO_BUSCA_CLIENTE', {}, conn);
                 await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_ASSIST_BUSCA_CLIENTE'), conn, instanceName);
@@ -225,6 +252,11 @@ class VendedorBotService {
             case '5':
                 await this.setState(telefone, 'VENDEDOR_CONSULTAR_CNPJ', {}, conn);
                 await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('VEND_CNPJ_CONSULTA'), conn, instanceName);
+                break;
+            case '6':
+            case 'catalogo':
+            case 'catálogo':
+                await this.iniciarFluxoCatalogo(telefone, instanceName, conn, codvendedor);
                 break;
             case '0':
                 await conn.execute(`DELETE FROM CANAL_BOT_STATE WHERE TELEFONE = :tel`, [telefone]);
@@ -1013,6 +1045,437 @@ Aja sempre em tom motivador para o Vendedor! Não use muitas hashtags. Seja obje
             await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao realizar a consulta. Tente novamente.", conn, instanceName);
         }
 
+        await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
+        await this.enviarMenuPrincipal(telefone, instanceName, conn);
+    }
+
+    async getRamosCarteiraVendedor(codvendedor, conn) {
+        try {
+            const hierarchySellers = await this.getHierarchySellers(codvendedor, conn);
+            const validSellers = (hierarchySellers || []).map(s => parseInt(s, 10)).filter(s => !isNaN(s));
+
+            if (validSellers.length > 0) {
+                const binds = {};
+                const placeholders = validSellers.map((cod, idx) => {
+                    const param = `cod${idx}`;
+                    binds[param] = cod;
+                    return `:${param}`;
+                }).join(', ');
+
+                const sqlRamos = `
+                    SELECT DISTINCT A.CODATIV, TRIM(A.RAMO) AS RAMO
+                    FROM PCCLIENT C
+                    JOIN PCATIVI A ON C.CODATV1 = A.CODATIV
+                    WHERE C.CODUSUR1 IN (${placeholders})
+                      AND A.RAMO IS NOT NULL
+                    ORDER BY TRIM(A.RAMO)
+                `;
+
+                const res = await conn.execute(sqlRamos, binds);
+                if (res.rows && res.rows.length > 0) {
+                    return res.rows.map(r => ({
+                        codativ: r[0],
+                        ramo: r[1]
+                    }));
+                }
+            }
+
+            // Fallback: caso o vendedor ainda não tenha clientes com ramo vinculado, lista os ramos ativos da empresa
+            const sqlFallback = `
+                SELECT DISTINCT A.CODATIV, TRIM(A.RAMO) AS RAMO
+                FROM PCATIVI A
+                WHERE EXISTS (SELECT 1 FROM PCCLIENT C WHERE C.CODATV1 = A.CODATIV)
+                  AND A.RAMO IS NOT NULL
+                ORDER BY TRIM(A.RAMO)
+                FETCH FIRST 15 ROWS ONLY
+            `;
+            const resFb = await conn.execute(sqlFallback);
+            return resFb.rows.map(r => ({
+                codativ: r[0],
+                ramo: r[1]
+            }));
+        } catch (e) {
+            console.error(`${TAG} Erro ao buscar ramos da carteira do vendedor ${codvendedor}:`, e);
+            return [];
+        }
+    }
+
+    async iniciarFluxoCatalogo(telefone, instanceName, conn, codvendedor) {
+        const ramos = await this.getRamosCarteiraVendedor(codvendedor, conn);
+
+        let ramosListaTxt = '';
+        if (ramos && ramos.length > 0) {
+            ramosListaTxt = ramos.map((r, i) => `${i + 1} - ${r.ramo}`).join('\n');
+        } else {
+            ramosListaTxt = '_(Nenhum segmento encontrado no momento)_';
+        }
+
+        const msgTpl = botMsgs.getMsg('VEND_CATALOGO_SOLICITAR');
+        const msg = msgTpl.replace('{{ramos_lista}}', ramosListaTxt);
+
+        await this.setState(telefone, 'VENDEDOR_CATALOGO_BUSCA', { ramos }, conn);
+        await this.webhookPoller.enviarMensagemBot(telefone, msg, conn, instanceName);
+    }
+
+    async processarCatalogoBusca(telefone, text, instanceName, conn, dados, codvendedor) {
+        const input = (text || '').trim();
+        if (!input) return;
+
+        const cmd = input.toLowerCase();
+        if (cmd === 'voltar' || cmd === 'cancelar' || cmd === 'menu' || cmd === 'sair') {
+            await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
+            return await this.enviarMenuPrincipal(telefone, instanceName, conn);
+        }
+
+        const ramos = (dados && dados.ramos) ? dados.ramos : [];
+
+        // 1. O vendedor digitou um número da lista de segmentos exibida?
+        const numOption = parseInt(input, 10);
+        if (!isNaN(numOption) && numOption >= 1 && numOption <= ramos.length && String(numOption) === input) {
+            const ramoEscolhido = ramos[numOption - 1];
+            return await this.gerarEEnviarCatalogo(telefone, ramoEscolhido.codativ, ramoEscolhido.ramo, instanceName, conn);
+        }
+
+        // 2. O vendedor digitou CNPJ/CPF ou CODCLI?
+        const cleanDigits = input.replace(/[^0-9]/g, '');
+        if (cleanDigits.length > 0) {
+            try {
+                const sqlCli = `
+                    SELECT C.CODCLI, NVL(C.FANTASIA, C.CLIENTE) AS NOME, C.CODATV1, A.RAMO, C.CODUSUR1
+                    FROM PCCLIENT C
+                    LEFT JOIN PCATIVI A ON C.CODATV1 = A.CODATIV
+                    WHERE C.CODCLI = :busca OR REPLACE(REPLACE(REPLACE(C.CGCENT, '.', ''), '/', ''), '-', '') = :busca
+                    FETCH FIRST 1 ROWS ONLY
+                `;
+                const resCli = await conn.execute(sqlCli, { busca: cleanDigits });
+
+                if (resCli.rows && resCli.rows.length > 0) {
+                    const codcli = resCli.rows[0][0];
+                    const nomeCli = (resCli.rows[0][1] || '').trim();
+                    const codatv = resCli.rows[0][2];
+                    const nomeRamo = resCli.rows[0][3] ? resCli.rows[0][3].trim() : '';
+
+                    if (!codatv || !nomeRamo) {
+                        await this.webhookPoller.enviarMensagemBot(
+                            telefone,
+                            `Cliente identificado: *${codcli} - ${nomeCli}*, mas ele não possui um Ramo de Atividade (Segmento) cadastrado.\n\nPor favor, escolha um dos segmentos da lista digitando o número correspondente.`,
+                            conn,
+                            instanceName
+                        );
+                        return;
+                    }
+
+                    await this.webhookPoller.enviarMensagemBot(
+                        telefone,
+                        `Cliente identificado: *${codcli} - ${nomeCli}*\nSegmento: *${nomeRamo}*`,
+                        conn,
+                        instanceName
+                    );
+                    return await this.gerarEEnviarCatalogo(telefone, codatv, nomeRamo, instanceName, conn);
+                }
+            } catch (errCli) {
+                console.error(`${TAG} Erro ao buscar cliente por CODCLI/CNPJ:`, errCli);
+            }
+        }
+
+        // 3. O vendedor digitou o nome do segmento/ramo (texto) ou código da atividade?
+        // 3.1. Primeiro busca nos ramos da carteira
+        const searchNorm = input.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        let ramoEncontrado = ramos.find(r => {
+            const rNorm = (r.ramo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            return rNorm === searchNorm || rNorm.includes(searchNorm) || String(r.codativ) === input;
+        });
+
+        // 3.2. Se não encontrou na lista da carteira, busca na tabela geral de ramos (PCATIVI)
+        if (!ramoEncontrado) {
+            try {
+                const sqlBuscaRamo = `
+                    SELECT CODATIV, TRIM(RAMO) AS RAMO
+                    FROM PCATIVI
+                    WHERE UPPER(RAMO) LIKE UPPER('%' || :txt || '%')
+                       OR TO_CHAR(CODATIV) = :exact
+                    ORDER BY CASE WHEN UPPER(TRIM(RAMO)) = UPPER(:exact) THEN 0 ELSE 1 END, RAMO
+                    FETCH FIRST 1 ROWS ONLY
+                `;
+                const resAtv = await conn.execute(sqlBuscaRamo, { txt: input, exact: input });
+                if (resAtv.rows && resAtv.rows.length > 0) {
+                    ramoEncontrado = {
+                        codativ: resAtv.rows[0][0],
+                        ramo: resAtv.rows[0][1]
+                    };
+                }
+            } catch (e) {
+                console.error(`${TAG} Erro ao buscar ramo na PCATIVI:`, e);
+            }
+        }
+
+        if (ramoEncontrado) {
+            return await this.gerarEEnviarCatalogo(telefone, ramoEncontrado.codativ, ramoEncontrado.ramo, instanceName, conn);
+        }
+
+        // Se nada foi encontrado:
+        await this.webhookPoller.enviarMensagemBot(
+            telefone,
+            `⚠️ Não encontramos nenhum cliente (CODCLI/CNPJ) ou segmento correspondente a "*${input}*".\n\nPor favor, digite o número do segmento da lista, o nome do ramo, ou o CNPJ/CODCLI do cliente.\n\nDigite *VOLTAR* para retornar ao menu.`,
+            conn,
+            instanceName
+        );
+    }
+
+    async gerarEEnviarCatalogo(telefone, codatv, nomeRamo, instanceName, conn) {
+        console.log(`${TAG} [Catálogo] Gerando catálogo para Segmento: ${codatv} - ${nomeRamo} (Telefone: ${telefone})`);
+
+        await this.webhookPoller.enviarMensagemBot(
+            telefone,
+            `⏳ Gerando o catálogo em PDF para o segmento *${nomeRamo}*... Aguarde alguns instantes.`,
+            conn,
+            instanceName
+        );
+
+        try {
+            // 1. Busca produtos mais comprados por clientes deste segmento nos últimos 180 dias
+            const sqlProdutos = `
+                WITH CLIENTES_ATIVIDADE AS (
+                    SELECT CODCLI FROM PCCLIENT WHERE CODATV1 = :codatv
+                ),
+                COMPRAS_GERAIS AS (
+                    SELECT M.CODPROD
+                    FROM PCMOV M
+                    JOIN CLIENTES_ATIVIDADE CA ON CA.CODCLI = M.CODCLI
+                    WHERE M.CODOPER = 'S' AND M.DTMOV >= SYSDATE - 180
+                    GROUP BY M.CODPROD
+                )
+                SELECT 
+                    A.CODPROD,
+                    P.DESCRICAO,
+                    NVL(B.PRECOFIXO, C.PTABELA) AS PVENDA,
+                    A.UNIDADE,
+                    A.CODAUXILIAR,
+                    CASE WHEN B.PRECOFIXO IS NOT NULL THEN 'OPORTUNIDADE' ELSE '' END AS TIPO_PRECO
+                FROM PCEMBALAGEM A
+                JOIN COMPRAS_GERAIS CG ON CG.CODPROD = A.CODPROD
+                LEFT JOIN PCPRECOPROM B 
+                       ON A.CODAUXILIAR = B.CODAUXILIAR 
+                      AND B.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                      AND TRUNC(SYSDATE) BETWEEN B.DTINICIOVIGENCIA AND B.DTFIMVIGENCIA
+                      AND B.DTINICIOVIGENCIA IS NOT NULL
+                      AND B.DTFIMVIGENCIA IS NOT NULL
+                LEFT JOIN PCTABPR C 
+                       ON A.CODPROD = C.CODPROD 
+                      AND C.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                JOIN PCPRODUT P 
+                  ON A.CODPROD = P.CODPROD
+                JOIN PCEST E 
+                  ON A.CODPROD = E.CODPROD 
+                 AND A.CODFILIAL = E.CODFILIAL 
+                 AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' 
+                 AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
+                WHERE A.ENVIAFV = 'S'
+                  AND A.DTINATIVO IS NULL
+                  AND NVL(P.OBS2, 'X') NOT IN ('FL')
+                ORDER BY 
+                    CASE WHEN B.PRECOFIXO IS NOT NULL THEN 0 ELSE 1 END,
+                    A.CODPROD
+                FETCH FIRST 50 ROWS ONLY
+            `;
+            let resProd = await conn.execute(sqlProdutos, { codatv });
+
+            // 2. Se não houver compras recentes desse ramo específico, faz fallback para produtos gerais disponíveis
+            if (resProd.rows.length === 0) {
+                const sqlProdutosGerais = `
+                    SELECT 
+                        A.CODPROD,
+                        P.DESCRICAO,
+                        NVL(B.PRECOFIXO, C.PTABELA) AS PVENDA,
+                        A.UNIDADE,
+                        A.CODAUXILIAR,
+                        CASE WHEN B.PRECOFIXO IS NOT NULL THEN 'OPORTUNIDADE' ELSE '' END AS TIPO_PRECO
+                    FROM PCEMBALAGEM A
+                    LEFT JOIN PCPRECOPROM B 
+                           ON A.CODAUXILIAR = B.CODAUXILIAR 
+                          AND B.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                          AND TRUNC(SYSDATE) BETWEEN B.DTINICIOVIGENCIA AND B.DTFIMVIGENCIA
+                          AND B.DTINICIOVIGENCIA IS NOT NULL
+                          AND B.DTFIMVIGENCIA IS NOT NULL
+                    LEFT JOIN PCTABPR C 
+                           ON A.CODPROD = C.CODPROD 
+                          AND C.NUMREGIAO = ${process.env.TABPR_NUMREGIAO || 1}
+                    JOIN PCPRODUT P 
+                      ON A.CODPROD = P.CODPROD
+                    JOIN PCEST E 
+                      ON A.CODPROD = E.CODPROD 
+                     AND A.CODFILIAL = E.CODFILIAL 
+                     AND E.CODFILIAL = '${process.env.ESTOQUE_CODFILIAL || 1}' 
+                     AND (E.QTESTGER - E.QTBLOQUEADA - E.QTRESERV) > 0
+                    WHERE A.ENVIAFV = 'S'
+                      AND A.DTINATIVO IS NULL
+                      AND NVL(P.OBS2, 'X') NOT IN ('FL')
+                    ORDER BY 
+                        CASE WHEN B.PRECOFIXO IS NOT NULL THEN 0 ELSE 1 END,
+                        A.CODPROD
+                    FETCH FIRST 50 ROWS ONLY
+                `;
+                resProd = await conn.execute(sqlProdutosGerais);
+            }
+
+            if (resProd.rows.length === 0) {
+                await this.webhookPoller.enviarMensagemBot(
+                    telefone,
+                    `Nenhum produto com estoque disponível encontrado no momento para o segmento *${nomeRamo}*.`,
+                    conn,
+                    instanceName
+                );
+                await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
+                return await this.enviarMenuPrincipal(telefone, instanceName, conn);
+            }
+
+            // 3. Verifica exibição de preço
+            let catalogoComPreco = true;
+            try {
+                const resConf = await conn.execute(`SELECT VALOR FROM CANAL_CONFIGURACOES WHERE CHAVE = 'BOT_CATALOGO_COM_PRECO'`);
+                if (resConf.rows.length > 0 && resConf.rows[0][0] === 'OFF') {
+                    catalogoComPreco = false;
+                }
+            } catch (e) {
+                console.error(`${TAG} [Catálogo] Erro ao ler conf BOT_CATALOGO_COM_PRECO:`, e);
+            }
+
+            // 4. Gera PDF usando PDFKit
+            const PDFDocument = require('pdfkit');
+            const fs = require('fs');
+            const path = require('path');
+
+            const pdfBase64 = await new Promise((resolve, reject) => {
+                const doc = new PDFDocument({ margin: 30, size: 'A4' });
+                let buffers = [];
+
+                doc.on('data', buffers.push.bind(buffers));
+                doc.on('end', () => {
+                    const pdfData = Buffer.concat(buffers).toString('base64');
+                    resolve(pdfData);
+                });
+                doc.on('error', reject);
+
+                const margin = 30;
+                const pageWidth = 595.28;
+                const pageHeight = 841.89;
+                const usableWidth = pageWidth - margin * 2;
+                const cols = 3;
+                const colWidth = usableWidth / cols;
+                const colPadding = 15;
+                const rowHeight = 200;
+                const imagesDir = process.env.IMAGES_DIR || path.join(__dirname, '../../imagens_produtos');
+                const extensions = ['.jpg', '.jpeg', '.png', '.webp', '.JPG', '.JPEG', '.PNG'];
+
+                const drawHeader = () => {
+                    doc.rect(0, 0, pageWidth, 80).fill('#dc2626'); // red-600
+                    doc.fillColor('white').fontSize(24).font('Helvetica-Bold').text('Catálogo de Ofertas', 0, 20, { align: 'center' });
+                    doc.fillColor('#fde047').fontSize(14).font('Helvetica').text(`- ${nomeRamo} -`, 0, 50, { align: 'center' });
+                    doc.fillColor('black'); // Reset
+                };
+
+                drawHeader();
+                let currentY = 100;
+                let currentCol = 0;
+
+                resProd.rows.forEach(r => {
+                    if (currentCol >= cols) {
+                        currentCol = 0;
+                        currentY += rowHeight;
+                    }
+
+                    if (currentY + rowHeight > pageHeight - margin) {
+                        doc.addPage();
+                        drawHeader();
+                        currentY = 100;
+                        currentCol = 0;
+                    }
+
+                    const x = margin + (currentCol * colWidth) + (colPadding / 2);
+                    const cellW = colWidth - colPadding;
+                    const codprod = r[0];
+                    const descricao = r[1] || '';
+                    const precoVal = catalogoComPreco ? (r[2] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '';
+                    const unidade = r[3] ? r[3].trim() : 'UN';
+                    const ean = r[4] ? String(r[4]).trim() : '';
+
+                    let imagePath = null;
+                    if (fs.existsSync(imagesDir)) {
+                        for (let ext of extensions) {
+                            const fp = path.join(imagesDir, `${codprod}${ext}`);
+                            if (fs.existsSync(fp)) {
+                                imagePath = fp;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Background da célula
+                    doc.rect(x, currentY, cellW, rowHeight - 15).fillAndStroke('#ffffff', '#e2e8f0');
+
+                    if (imagePath) {
+                        try {
+                            doc.image(imagePath, x + 5, currentY + 5, { fit: [cellW - 10, 100], align: 'center', valign: 'center' });
+                        } catch (err) {
+                            doc.rect(x + 5, currentY + 5, cellW - 10, 100).fill('#f1f5f9');
+                            doc.fillColor('#94a3b8').fontSize(10).font('Helvetica').text('Erro Imagem', x, currentY + 50, { width: cellW, align: 'center' });
+                        }
+                    } else {
+                        doc.rect(x + 5, currentY + 5, cellW - 10, 100).fill('#f1f5f9');
+                        doc.fillColor('#94a3b8').fontSize(10).font('Helvetica').text('Sem Imagem', x, currentY + 50, { width: cellW, align: 'center' });
+                    }
+
+                    // Textos
+                    const subtitle = ean ? `Cód: ${codprod} | EAN: ${ean}` : `Cód: ${codprod}`;
+                    doc.fillColor('#94a3b8').fontSize(8).font('Helvetica').text(subtitle, x + 5, currentY + 115, { width: cellW - 10 });
+                    doc.fillColor('#1e293b').fontSize(10).font('Helvetica-Bold').text(descricao, x + 5, currentY + 128, { width: cellW - 10, height: 25, ellipsis: true });
+
+                    // Preço e unidade
+                    if (catalogoComPreco) {
+                        doc.fillColor('#0284c7').fontSize(14).font('Helvetica-Bold').text(precoVal, x + 5, currentY + 160, { width: cellW - 10, align: 'left' });
+                        doc.fillColor('#64748b').fontSize(9).font('Helvetica-Bold').text(`/ ${unidade}`, x + 5, currentY + 164, { width: cellW - 10, align: 'right' });
+                    } else {
+                        doc.fillColor('#64748b').fontSize(10).font('Helvetica-Bold').text('Consulte condições', x + 5, currentY + 160, { width: cellW - 10, align: 'center' });
+                    }
+
+                    // Badge de Oportunidade
+                    const tipoPreco = r[5] || '';
+                    if (tipoPreco === 'OPORTUNIDADE') {
+                        doc.rect(x + cellW - 55, currentY + 10, 50, 15).fill('#ef4444');
+                        doc.fillColor('white').fontSize(8).font('Helvetica-Bold').text('OFERTA', x + cellW - 55, currentY + 14, { width: 50, align: 'center' });
+                    }
+
+                    doc.fillColor('black');
+                    currentCol++;
+                });
+
+                doc.end();
+            });
+
+            // 5. Salva em disco (se diretório existir ou puder ser criado)
+            let uploadCatDir = '/app/SAC/UPLOAD/Catalogo';
+            if (!fs.existsSync(uploadCatDir)) {
+                uploadCatDir = path.join(__dirname, '../../SAC/UPLOAD/Catalogo');
+            }
+            try {
+                if (!fs.existsSync(uploadCatDir)) fs.mkdirSync(uploadCatDir, { recursive: true });
+                const fileNameCat = `Catalogo_${nomeRamo.replace(/[^a-zA-Z0-9]/g, '')}_${Date.now()}.pdf`;
+                fs.writeFileSync(path.join(uploadCatDir, fileNameCat), Buffer.from(pdfBase64, 'base64'));
+            } catch (errSave) {
+                console.warn(`${TAG} [Catálogo] Aviso ao salvar cópia em disco:`, errSave.message);
+            }
+
+            // 6. Envia documento via WhatsApp
+            const fileNameDoc = `Catalogo_${nomeRamo.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+            await this.webhookPoller.enviarDocumentoBot(telefone, pdfBase64, fileNameDoc, 'application/pdf', conn, instanceName);
+            await this.webhookPoller.enviarMensagemBot(telefone, `✅ *Catálogo (${nomeRamo})* enviado com sucesso!`, conn, instanceName);
+
+        } catch (err) {
+            console.error(`${TAG} [Catálogo] Erro ao gerar catálogo:`, err);
+            await this.webhookPoller.enviarMensagemBot(telefone, 'Ocorreu um erro ao gerar o catálogo em PDF. Tente novamente mais tarde.', conn, instanceName);
+        }
+
+        // 7. Retorna ao menu principal
         await this.setState(telefone, 'VENDEDOR_MENU_PRINCIPAL', {}, conn);
         await this.enviarMenuPrincipal(telefone, instanceName, conn);
     }

@@ -31,9 +31,10 @@ export default function Configuracoes() {
 
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
-  const isGerente = user?.role?.toUpperCase() === 'GERENTE';
-  const isBotGestor = user?.role?.toUpperCase() === 'BOT_GESTOR';
-  const hasAccess = isGerente || isBotGestor;
+  const userRole = user?.role ? user.role.trim().toUpperCase() : 'VENDEDOR';
+  const isGerente = userRole === 'GERENTE';
+  const isBotGestor = userRole === 'BOT_GESTOR';
+  const [hasAccess, setHasAccess] = useState(isGerente || isBotGestor);
 
   const [modoTeste, setModoTeste] = useState(false);
   const [numeroTeste, setNumeroTeste] = useState('');
@@ -64,18 +65,42 @@ export default function Configuracoes() {
   const [iaUsage, setIaUsage] = useState<any>(null);
 
   useEffect(() => {
-    if (!hasAccess) return;
+    let isMounted = true;
 
     const fetchData = async () => {
       try {
+        // Fetch Globals first to verify permissions
+        const resGlob = await fetch('/api/config/global');
+        const dataGlob = await resGlob.json();
+
+        let allowed = isGerente || isBotGestor;
+        if (dataGlob.success && dataGlob.configs && dataGlob.configs['MENU_PERMISSIONS']) {
+          try {
+            const perms = JSON.parse(dataGlob.configs['MENU_PERMISSIONS']);
+            const roleMenus = perms[userRole]?.menus || [];
+            if (roleMenus.includes('Configurações')) {
+              allowed = true;
+            }
+          } catch (e) {}
+        }
+
+        if (!allowed) {
+          if (isMounted) {
+            setHasAccess(false);
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (isMounted) {
+          setHasAccess(true);
+        }
+
         // Fetch Vendedores
         const resVend = await fetch('/api/config/vendedores');
         const dataVend = await resVend.json();
-        if (dataVend.success) setVendedores(dataVend.vendedores);
+        if (dataVend.success && isMounted) setVendedores(dataVend.vendedores);
 
-        // Fetch Globals
-        const resGlob = await fetch('/api/config/global');
-        const dataGlob = await resGlob.json();
         if (dataGlob.success) {
           if (dataGlob.configs['GROQ_API_KEY']) {
             setGroqApiKey(dataGlob.configs['GROQ_API_KEY']);

@@ -40,6 +40,9 @@ router.post('/geral', async (req, res) => {
             `, { chave, valor: String(valor) }, { autoCommit: false });
         }
         await connection.commit();
+        for (const [chave, valor] of Object.entries(configs)) {
+            cacheService.updateConfigCache(chave, String(valor));
+        }
         res.json({ success: true });
     } catch (err) {
         console.error('Erro ao salvar config geral:', err);
@@ -168,6 +171,10 @@ router.post('/global', async (req, res) => {
 
             if (chave === 'PRIVACY_MODE' && global.io) {
                 global.io.emit('privacy_mode_changed', { mode: valor === 'S' });
+            }
+
+            if (chave === 'MENU_PERMISSIONS' && global.io) {
+                global.io.emit('menu_permissions_changed', { permissions: valor });
             }
         }
 

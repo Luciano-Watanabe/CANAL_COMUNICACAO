@@ -1,40 +1,106 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSocket } from '../contexts/SocketContext';
 import clsx from 'clsx';
-import { LayoutDashboard, Users, MessageSquare, Settings, Menu, X, LogOut, ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, BookOpen, Target, Headset, ShieldAlert, Smartphone, Search } from 'lucide-react';
+import { 
+  LayoutDashboard, Users, MessageSquare, Settings, Menu, X, LogOut, 
+  ChevronLeft, ChevronRight, ImagePlus, Contact, Calendar, Building, 
+  BookOpen, Target, Headset, ShieldAlert, Smartphone, Search, MapPin, Radio 
+} from 'lucide-react';
 import { usePrivacy } from '../contexts/PrivacyContext';
 
 const DEFAULT_PERMISSIONS: any = {
   GERENTE: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Pesquisa/Concorrência', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Campanhas (Oportunidades)', 'Monitor Conversas', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
+    menus: [
+      'Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo',
+      'Pesquisa/Concorrência', 'Logs Identificação', 'Configurações', 'Objetivos',
+      'Campanhas (Status)', 'Campanhas (Oportunidades)', 'Rotas de Visitas',
+      'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização',
+      'Radar de Leads', 'Gestão de Vendedores', 'Automação de Mensagens',
+      'Monitor Conversas', 'Agendamentos de vendedores'
+    ],
+    dashboard: [
+      'Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes',
+      'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica',
+      'Radar Positivação', 'Meus Clientes Recentes'
+    ]
   },
   SUPERVISOR: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Pesquisa/Concorrência', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Campanhas (Oportunidades)', 'Monitor Conversas', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
+    menus: [
+      'Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo',
+      'Pesquisa/Concorrência', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)',
+      'Campanhas (Oportunidades)', 'Rotas de Visitas', 'Clientes Inativos',
+      'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads',
+      'Gestão de Vendedores', 'Monitor Conversas', 'Agendamentos de vendedores'
+    ],
+    dashboard: [
+      'Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes',
+      'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica',
+      'Radar Positivação', 'Meus Clientes Recentes'
+    ]
   },
   VENDEDOR: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Pesquisa/Concorrência'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Radar Positivação', 'Meus Clientes Recentes']
+    menus: [
+      'Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo'
+    ],
+    dashboard: [
+      'Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes',
+      'Ranking de Produtos', 'Atividade por Hora', 'Radar Positivação', 'Meus Clientes Recentes'
+    ]
   },
   ATENDENTE: {
-    menus: ['Dashboard', 'Chat (Atendimento)', 'SAC', 'Catálogo'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos']
+    menus: [
+      'Dashboard', 'Chat (Atendimento)', 'SAC', 'Catálogo'
+    ],
+    dashboard: [
+      'Métricas SAC', 'Mural de Avisos'
+    ]
   }
 };
+
+const ALL_NAV_ITEMS = [
+  { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+  { name: 'Carteira de Clientes', path: '/clientes', icon: Users },
+  { name: 'Chat (Atendimento)', path: '/chat', icon: MessageSquare },
+  { name: 'SAC', path: '/sac', icon: Headset },
+  { name: 'Catálogo', path: '/catalogo', icon: BookOpen },
+  { name: 'Pesquisa/Concorrência', path: '/pesquisa-precos', icon: Search },
+  { name: 'Logs Identificação', path: '/logs-identificacao', icon: ShieldAlert },
+  { name: 'Configurações', path: '/configuracoes', icon: Settings },
+  { name: 'Objetivos', path: '/objetivos', icon: Target },
+  { name: 'Campanhas (Status)', path: '/campanhas', icon: ImagePlus },
+  { name: 'Campanhas (Oportunidades)', path: '/campanhas-oportunidades', icon: ImagePlus },
+  { name: 'Rotas de Visitas', path: '/rotas', icon: Calendar },
+  { name: 'Clientes Inativos', path: '/inativos', icon: Users },
+  { name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building },
+  { name: 'Análise de I.E.', path: '/analise-ie', icon: Building },
+  { name: 'Geolocalização', path: '/geolocalizacao', icon: MapPin },
+  { name: 'Radar de Leads', path: '/prospeccao', icon: Radio },
+  { name: 'Gestão de Vendedores', path: '/vendedores', icon: Contact },
+  { name: 'Automação de Mensagens', path: '/mensagens', icon: MessageSquare },
+  { name: 'Monitor Conversas', path: '/monitor-conversas', icon: Smartphone },
+  { name: 'Agendamentos de vendedores', path: '/visitas', icon: Calendar },
+];
 
 const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { socket } = useSocket();
 
   const handleLogout = () => {
     localStorage.removeItem('user');
     navigate('/login');
   };
 
-  const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
+  const user = useMemo(() => {
+    try {
+      const userStr = localStorage.getItem('user');
+      return userStr ? JSON.parse(userStr) : null;
+    } catch (e) {
+      return null;
+    }
+  }, [location.pathname]);
+
   const { maskData } = usePrivacy();
   const userName = maskData(user?.nome || 'Usuário');
   const userInitials = userName.substring(0, 2).toUpperCase();
@@ -42,6 +108,7 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
   const userCode = user?.matricula || '';
 
   const [permissions, setPermissions] = useState<any>(DEFAULT_PERMISSIONS);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [moduloPesquisaAtivo, setModuloPesquisaAtivo] = useState(false);
 
   useEffect(() => {
@@ -49,104 +116,93 @@ const Sidebar = ({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }: any) => {
       try {
         const res = await fetch('/api/config/global');
         const data = await res.json();
-          if (data.success) {
-            if (data.configs['MENU_PERMISSIONS']) {
-              try {
-                const serverPerms = JSON.parse(data.configs['MENU_PERMISSIONS']);
-                setPermissions((prev: any) => ({ ...prev, ...serverPerms }));
-              } catch (e) {
-                console.error('Erro ao fazer parse de MENU_PERMISSIONS', e);
-              }
-            }
-            if (data.configs['MODULO_PESQUISA_ATIVO'] === 'S') {
-              setModuloPesquisaAtivo(true);
+        if (data.success) {
+          if (data.configs['MENU_PERMISSIONS']) {
+            try {
+              const serverPerms = JSON.parse(data.configs['MENU_PERMISSIONS']);
+              setPermissions((prev: any) => ({ ...prev, ...serverPerms }));
+            } catch (e) {
+              console.error('Erro ao fazer parse de MENU_PERMISSIONS', e);
             }
           }
+          if (data.configs['MODULO_PESQUISA_ATIVO'] === 'S') {
+            setModuloPesquisaAtivo(true);
+          }
+        }
       } catch (e) {
         console.error('Erro ao buscar permissões', e);
+      } finally {
+        setPermissionsLoaded(true);
       }
     };
     fetchPermissoes();
+
+    const handlePermissionsSaved = (e: any) => {
+      if (e.detail) {
+        setPermissions((prev: any) => ({ ...prev, ...e.detail }));
+      }
+    };
+    window.addEventListener('menu_permissions_updated', handlePermissionsSaved);
+
+    return () => {
+      window.removeEventListener('menu_permissions_updated', handlePermissionsSaved);
+    };
   }, []);
 
-  const links = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { name: 'Carteira de Clientes', path: '/clientes', icon: Users },
-    { name: 'Chat (Atendimento)', path: '/chat', icon: MessageSquare },
-    { name: 'SAC', path: '/sac', icon: Headset },
-    { name: 'Catálogo', path: '/catalogo', icon: BookOpen },
-  ];
+  // Real-time synchronization across sockets
+  useEffect(() => {
+    if (!socket) return;
+    const handleSocketPerms = (data: any) => {
+      if (data && data.permissions) {
+        try {
+          const parsed = typeof data.permissions === 'string' ? JSON.parse(data.permissions) : data.permissions;
+          setPermissions((prev: any) => ({ ...prev, ...parsed }));
+        } catch (e) {}
+      }
+    };
+    socket.on('menu_permissions_changed', handleSocketPerms);
+    return () => {
+      socket.off('menu_permissions_changed', handleSocketPerms);
+    };
+  }, [socket]);
 
-  if (moduloPesquisaAtivo) {
-    links.push({ name: 'Pesquisa/Concorrência', path: '/pesquisa-precos', icon: Search });
-  }
+  // Derive allowed menus from RBAC configuration
+  const rolePerms = permissions[userRole] || permissions['VENDEDOR'] || { menus: [] };
+  let allowedMenus = Array.isArray(rolePerms.menus) ? [...rolePerms.menus] : [];
 
-  if (userRole === 'GERENTE' || userRole === 'BOT_GESTOR' || userRole === 'SUPERVISOR') {
-    links.push({ name: 'Logs Identificação', path: '/logs-identificacao', icon: ShieldAlert });
-  }
-
-  if (userRole === 'GERENTE' || userRole === 'BOT_GESTOR') {
-    links.push({ name: 'Configurações', path: '/configuracoes', icon: Settings });
-    if (!links.some(l => l.path === '/monitor-conversas')) {
-      links.push({ name: 'Monitor Conversas', path: '/monitor-conversas', icon: Smartphone });
+  // Filter links: BOT_GESTOR gets all links; other roles get permitted menus
+  const filteredLinks = ALL_NAV_ITEMS.filter((link) => {
+    // Hide Pesquisa if global module is inactive
+    if (link.name === 'Pesquisa/Concorrência' && !moduloPesquisaAtivo) {
+      return false;
     }
-  }
-  
-  if (userRole === 'GERENTE' || userRole === 'SUPERVISOR') {
-    links.push({ name: 'Objetivos', path: '/objetivos', icon: Target });
-    links.push({ name: 'Campanhas (Status)', path: '/campanhas', icon: ImagePlus });
-    links.push({ name: 'Campanhas (Oportunidades)', path: '/campanhas-oportunidades', icon: ImagePlus });
-    links.push({ name: 'Rotas de Visitas', path: '/rotas', icon: Calendar });
-    links.push({ name: 'Clientes Inativos', path: '/inativos', icon: Users });
-    links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
-    links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
-  }
-
-  if (userRole === 'BOT_GESTOR') {
-    links.push({ name: 'Objetivos', path: '/objetivos', icon: Target });
-    links.push({ name: 'Gestão de Vendedores', path: '/vendedores', icon: Contact });
-    links.push({ name: 'Automação de Mensagens', path: '/mensagens', icon: MessageSquare });
-    links.push({ name: 'Campanhas (Status)', path: '/campanhas', icon: ImagePlus });
-    links.push({ name: 'Campanhas (Oportunidades)', path: '/campanhas-oportunidades', icon: ImagePlus });
-    if (!links.some(l => l.path === '/monitor-conversas')) {
-      links.push({ name: 'Monitor Conversas', path: '/monitor-conversas', icon: Smartphone });
+    if (userRole === 'BOT_GESTOR') {
+      return true;
     }
-    links.push({ name: 'Agendamentos de vendedores', path: '/visitas', icon: Users });
-    links.push({ name: 'Clientes Inativos', path: '/inativos', icon: Users });
-    links.push({ name: 'Rotas de Visitas', path: '/rotas', icon: Calendar });
-    links.push({ name: 'Análise de CNPJ', path: '/analisecnpj', icon: Building });
-    links.push({ name: 'Análise de I.E.', path: '/analise-ie', icon: Building });
-  }
-
-  // Filter links based on RBAC permissions
-  let filteredLinks = links;
-  if (userRole !== 'BOT_GESTOR') {
-    const rolePerms = permissions[userRole] || permissions['VENDEDOR'];
-    let allowedMenus = rolePerms.menus ? [...rolePerms.menus] : [];
-    
-    // Auto-allow when the module is toggled ON to prevent it from disappearing 
-    // for users who had their permissions saved previously.
-    if (moduloPesquisaAtivo && !allowedMenus.includes('Pesquisa/Concorrência')) {
-      allowedMenus.push('Pesquisa/Concorrência');
-    }
-    
-    filteredLinks = links.filter(link => allowedMenus.includes(link.name));
-  }
+    return allowedMenus.includes(link.name);
+  });
 
   useEffect(() => {
-    // Route blocking logic
+    // Only check route blocking once server permissions are loaded
+    if (!permissionsLoaded) return;
+
     if (userRole !== 'BOT_GESTOR') {
-      const rolePerms = permissions[userRole] || permissions['VENDEDOR'];
-      let allowedMenus = rolePerms.menus ? [...rolePerms.menus] : [];
-      if (moduloPesquisaAtivo && !allowedMenus.includes('Pesquisa/Concorrência')) {
-        allowedMenus.push('Pesquisa/Concorrência');
-      }
-      const currentLink = links.find(l => l.path !== '/' ? location.pathname.startsWith(l.path) : location.pathname === '/');
-      if (currentLink && !allowedMenus.includes(currentLink.name) && location.pathname !== '/') {
-        navigate('/');
+      const currentRolePerms = permissions[userRole] || permissions['VENDEDOR'] || { menus: [] };
+      let currentAllowedMenus = Array.isArray(currentRolePerms.menus) ? [...currentRolePerms.menus] : [];
+      
+      const currentLink = ALL_NAV_ITEMS.find((l) =>
+        l.path !== '/' ? location.pathname.startsWith(l.path) : location.pathname === '/'
+      );
+      if (currentLink) {
+        const isBlocked = (currentLink.name === 'Pesquisa/Concorrência' && !moduloPesquisaAtivo) ||
+                          !currentAllowedMenus.includes(currentLink.name);
+        if (isBlocked && location.pathname !== '/') {
+          console.warn(`[RBAC] Rota bloqueada para cargo ${userRole}: ${location.pathname}`);
+          navigate('/');
+        }
       }
     }
-  }, [location.pathname, permissions, userRole, navigate, links, moduloPesquisaAtivo]);
+  }, [location.pathname, permissions, permissionsLoaded, userRole, navigate, moduloPesquisaAtivo]);
 
   return (
     <>

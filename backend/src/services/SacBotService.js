@@ -291,7 +291,7 @@ class SacBotService {
                 break;
             case '2':
                 if (isCliente && contato.cnpj) {
-                    await this.processarFinanceiro(telefone, contato.cnpj, instanceName, conn, {});
+                    await this.processarFinanceiro(telefone, contato.cnpj, instanceName, conn, { codcliAutenticado: contato.codcli });
                 } else {
                     await this.setState(telefone, 'AGUARDANDO_NOTA_FINANCEIRO', {}, conn);
                     await this.webhookPoller.enviarMensagemBot(telefone, botMsgs.getMsg('SAC_FINANCEIRO_PEDIR_NOTA'), conn, instanceName);
@@ -451,30 +451,250 @@ class SacBotService {
         await this.webhookPoller.enviarMensagemBot(telefone, resposta, conn, instanceName);
     }
 
-    async processarFinanceiro(telefone, text, instanceName, conn, dados) {
-        const busca = text.replace(/[^0-9]/g, '');
-        console.log(`${TAG} [Financeiro] ${telefone} buscando nota: "${busca}"`);
+    localizarPdfDanfeBoletos({ cgcFilial, ano, mes, dia, numcar, numnota, numtransvenda, chaveNFe }) {
+        const t0 = Date.now();
+        const cgcLimpo = (cgcFilial || '').replace(/[^0-9]/g, '');
+        const candidatosBase = ['/app/danfe_boletos', '/mnt/danfe_boletos'];
+        
+        let baseDir = '/app/danfe_boletos';
+        for (const cand of candidatosBase) {
+            try {
+                if (cgcLimpo && fs.existsSync(path.join(cand, cgcLimpo))) {
+                    baseDir = cand;
+                    break;
+                }
+                if (fs.existsSync(cand)) {
+                    baseDir = cand;
+                }
+            } catch (e) {}
+        }
 
-        if (!busca) {
+        const mergeExactName = (numnota && numtransvenda) ? `merge-${numnota}-${numtransvenda}.pdf` : null;
+        const danfeExactName = chaveNFe ? `${chaveNFe}.pdf` : null;
+        const carPreferido = (!numcar || Number(numcar) === 0) ? 'semcarregamento' : String(numcar);
+
+        // Verifica o dia da saída (e opcionalmente o dia seguinte caso o PDF tenha sido gerado após meia-noite)
+        const datasBusca = [];
+        if (ano && mes && dia) {
+            datasBusca.push({ a: String(ano), m: String(mes).padStart(2, '0'), d: String(dia).padStart(2, '0') });
+            const dtNext = new Date(Number(ano), Number(mes) - 1, Number(dia) + 1);
+            if (!isNaN(dtNext.getTime())) {
+                datasBusca.push({
+                    a: String(dtNext.getFullYear()),
+                    m: String(dtNext.getMonth() + 1).padStart(2, '0'),
+                    d: String(dtNext.getDate()).padStart(2, '0')
+                });
+            }
+        }
+
+        for (const dt of datasBusca) {
+            const dateDir = path.join(baseDir, cgcLimpo, dt.a, dt.m, dt.d);
+            if (!fs.existsSync(dateDir)) continue;
+
+            let carFolders = [];
+            try {
+                const entries = fs.readdirSync(dateDir, { withFileTypes: true });
+                const dirs = entries.filter(e => e.isDirectory()).map(e => e.name);
+                if (dirs.includes(carPreferido)) {
+                    carFolders = [carPreferido, ...dirs.filter(d => d !== carPreferido)];
+                } else {
+                    carFolders = dirs;
+                }
+            } catch (e) {
+                console.error(`${TAG} [Financeiro] Erro ao ler diretório ${dateDir}:`, e.message);
+                continue;
+            }
+
+            let foundDanfe = null;
+            let foundBoleto = null;
+
+            // 1ª Passada rápida: busca direta pelo nome exato do arquivo (sem listar subpastas)
+            for (const car of carFolders) {
+                const carDir = path.join(dateDir, car);
+
+                if (mergeExactName) {
+                    const pMerge = path.join(carDir, 'merge', mergeExactName);
+                    if (fs.existsSync(pMerge)) {
+                        return {
+                            found: true,
+                            tipo: 'merge',
+                            filePath: pMerge,
+                            boletoPath: null,
+                            ms: Date.now() - t0
+                        };
+                    }
+                }
+
+                if (!foundDanfe && danfeExactName) {
+                    const pDanfe = path.join(carDir, 'danfe', danfeExactName);
+                    if (fs.existsSync(pDanfe)) {
+                        foundDanfe = pDanfe;
+                    }
+                }
+            }
+
+            // 2ª Passada (fallback no dia): caso o nome do merge varie (ex: prefixo merge-NUMNOTA-)
+            for (const car of carFolders) {
+                const mergeDir = path.join(dateDir, car, 'merge');
+                try {
+                    if (fs.existsSync(mergeDir)) {
+                        const arqMerge = fs.readdirSync(mergeDir).find(f =>
+                            f.toLowerCase().endsWith('.pdf') &&
+                            (f.startsWith(`merge-${numnota}-`) || f.includes(`-${numnota}-`) || f.includes(String(numnota)))
+                        );
+                        if (arqMerge) {
+                            return {
+                                found: true,
+                                tipo: 'merge',
+                                filePath: path.join(mergeDir, arqMerge),
+                                boletoPath: null,
+                                ms: Date.now() - t0
+                            };
+                        }
+                    }
+                } catch (e) {}
+
+                if (!foundBoleto) {
+                    const bolDir = path.join(dateDir, car, 'boleto');
+                    try {
+                        if (fs.existsSync(bolDir)) {
+                            const arqBol = fs.readdirSync(bolDir).find(f =>
+                                f.toLowerCase().endsWith('.pdf') && f.includes(String(numnota))
+                            );
+                            if (arqBol) foundBoleto = path.join(bolDir, arqBol);
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            if (foundDanfe) {
+                return {
+                    found: true,
+                    tipo: 'danfe',
+                    filePath: foundDanfe,
+                    boletoPath: foundBoleto,
+                    ms: Date.now() - t0
+                };
+            }
+        }
+
+        // Fallback para arquivos antigos salvos diretamente na raiz de danfe_boletos ({CHAVENFE}.pdf)
+        if (danfeExactName) {
+            const rootDanfe = path.join(baseDir, danfeExactName);
+            if (fs.existsSync(rootDanfe)) {
+                return {
+                    found: true,
+                    tipo: 'danfe_raiz',
+                    filePath: rootDanfe,
+                    boletoPath: null,
+                    ms: Date.now() - t0
+                };
+            }
+        }
+
+        return { found: false, ms: Date.now() - t0 };
+    }
+
+    async processarFinanceiro(telefone, text, instanceName, conn, dados) {
+        const buscaInput = (text || '').replace(/[^0-9]/g, '');
+        console.log(`${TAG} [Financeiro] ${telefone} buscando nota: "${buscaInput}"`);
+
+        if (!buscaInput) {
             await this.webhookPoller.enviarMensagemBot(telefone, "Não identifiquei números na sua resposta. Por favor, digite o número da nota (apenas números).\n\nSe a sua solicitação já foi finalizada ou se deseja cancelar, digite *VOLTAR* para o menu ou *0* para encerrar o atendimento.", conn, instanceName);
             return;
         }
 
+        let busca = buscaInput;
+        let selecionouDaLista = false;
+
+        // Se o cliente estava diante da lista de NFs em aberto e escolheu uma opção (pelo índice 1..N ou pelo próprio número da NF)
+        if (dados && Array.isArray(dados.notasEmAberto) && dados.notasEmAberto.length > 0) {
+            if (dados.notasEmAberto.includes(buscaInput)) {
+                busca = buscaInput;
+                selecionouDaLista = true;
+            } else {
+                const idx = parseInt(buscaInput, 10);
+                if (!isNaN(idx) && idx >= 1 && idx <= dados.notasEmAberto.length) {
+                    busca = String(dados.notasEmAberto[idx - 1]);
+                    selecionouDaLista = true;
+                } else {
+                    await this.webhookPoller.enviarMensagemBot(
+                        telefone,
+                        `Opção inválida. Por favor, digite o *número da Nota Fiscal* ou o *número da opção* (1 a ${dados.notasEmAberto.length}) da lista informada.\n\nPara retornar ao menu anterior, use *VOLTAR* ou *0* para encerrar.`,
+                        conn,
+                        instanceName
+                    );
+                    return;
+                }
+            }
+        }
+
+        const dadosMenuReset = (dados && dados.codcliAutenticado) ? { codcliAutenticado: dados.codcliAutenticado } : {};
+
+        const filtroBusca = selecionouDaLista
+            ? `N.NUMNOTA = :busca`
+            : `(N.NUMNOTA = :busca OR N.NUMPED = :busca OR REPLACE(REPLACE(REPLACE(C.CGCENT, '.', ''), '/', ''), '-', '') = :busca)`;
+
         let sqlNF = `
-            SELECT N.NUMNOTA, N.VLTOTAL, F.CGC, F.RAZAOSOCIAL, F.CIDADE, N.CHAVENFE, N.NUMPED, N.CODCLI, N.CODCOB
+            SELECT N.NUMNOTA,
+                   N.VLTOTAL,
+                   F.CGC,
+                   F.RAZAOSOCIAL,
+                   F.CIDADE,
+                   N.CHAVENFE,
+                   N.NUMPED,
+                   N.CODCLI,
+                   NVL(MIN(P.CODCOB), N.CODCOB) AS CODCOB,
+                   N.NUMTRANSVENDA,
+                   N.NUMCAR,
+                   TO_CHAR(N.DTSAIDA, 'YYYY') AS ANO,
+                   TO_CHAR(N.DTSAIDA, 'MM') AS MES,
+                   TO_CHAR(N.DTSAIDA, 'DD') AS DIA,
+                   SUM(P.VALOR) AS VALOR_ABERTO,
+                   TO_CHAR(MIN(P.DTVENC), 'DD/MM/YYYY') AS PROX_VENCIMENTO
             FROM PCNFSAID N
             JOIN PCFILIAL F ON F.CODIGO = N.CODFILIAL
             JOIN PCCLIENT C ON C.CODCLI = N.CODCLI
-            WHERE (N.NUMNOTA = :busca OR N.NUMPED = :busca OR REPLACE(REPLACE(REPLACE(C.CGCENT, '.', ''), '/', ''), '-', '') = :busca)
-            ORDER BY N.DTSAIDA DESC
-            FETCH FIRST 1 ROWS ONLY
+            JOIN PCPREST P ON P.NUMTRANSVENDA = N.NUMTRANSVENDA
+            WHERE P.DTPAG IS NULL
+              AND P.DTCANCEL IS NULL
+              AND N.DTCANCEL IS NULL
+              AND ${filtroBusca}
+            GROUP BY N.NUMNOTA, N.VLTOTAL, F.CGC, F.RAZAOSOCIAL, F.CIDADE, N.CHAVENFE,
+                     N.NUMPED, N.CODCLI, N.CODCOB, N.NUMTRANSVENDA, N.NUMCAR, N.DTSAIDA
+            ORDER BY MIN(P.DTVENC) ASC, N.DTSAIDA DESC, N.NUMNOTA DESC
+            FETCH FIRST 20 ROWS ONLY
         `;
         
         try {
             const result = await conn.execute(sqlNF, { busca });
-            console.log(`${TAG} [Financeiro] Query NF retornou ${result.rows.length} linha(s) para "${busca}"`);
+            console.log(`${TAG} [Financeiro] Query NF em aberto (DTPAG IS NULL) retornou ${result.rows.length} linha(s) para "${busca}"`);
 
-            if (result.rows.length > 0) {
+            // Caso possua mais de 1 NF em aberto (e ainda não tenha escolhido qual quer)
+            if (result.rows.length > 1 && !selecionouDaLista) {
+                let msgLista = `📋 *Encontrei ${result.rows.length} Notas Fiscais em aberto:*\n\n`;
+                const notasEmAberto = [];
+
+                result.rows.forEach((row, idx) => {
+                    const numnotaItem = row[0];
+                    const anoItem = row[11];
+                    const mesItem = row[12];
+                    const diaItem = row[13];
+                    const valorAbertoItem = Number(row[14] || row[1] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                    const vencItem = row[15] || 'N/A';
+
+                    notasEmAberto.push(String(numnotaItem));
+                    msgLista += `*${idx + 1}* - *NF:* ${numnotaItem} | *Emissão:* ${diaItem}/${mesItem}/${anoItem} | *Venc:* ${vencItem} | *Valor:* ${valorAbertoItem}\n`;
+                });
+
+                msgLista += `\nPor favor, digite o *número da Nota Fiscal* (ex: ${notasEmAberto[0]}) ou o *número da opção* (1 a ${notasEmAberto.length}) que deseja consultar.\n\nPara retornar ao menu anterior, use *VOLTAR*.\nPara finalizar o atendimento use *0*.`;
+
+                await this.setState(telefone, 'AGUARDANDO_NOTA_FINANCEIRO', { ...dadosMenuReset, notasEmAberto }, conn);
+                await this.webhookPoller.enviarMensagemBot(telefone, msgLista, conn, instanceName);
+                return;
+            }
+
+            if (result.rows.length === 1 || (result.rows.length > 0 && selecionouDaLista)) {
                 const numnota = result.rows[0][0];
                 const vltotal = result.rows[0][1];
                 const cgc = result.rows[0][2];
@@ -484,7 +704,14 @@ class SacBotService {
                 const numped = result.rows[0][6] || '';
                 const codcli = result.rows[0][7] || '';
                 const codcob = result.rows[0][8] ? String(result.rows[0][8]).trim() : '';
-                console.log(`${TAG} [Financeiro] NF encontrada: ${numnota} | R$ ${vltotal} | ${razao} | COB: ${codcob}`);
+                const numtransvenda = result.rows[0][9] || '';
+                const numcar = result.rows[0][10];
+                const ano = result.rows[0][11];
+                const mes = result.rows[0][12];
+                const dia = result.rows[0][13];
+                const valorAberto = result.rows[0][14] || vltotal;
+                const proxVenc = result.rows[0][15] || '';
+                console.log(`${TAG} [Financeiro] NF em aberto selecionada: ${numnota} | R$ ${valorAberto} | ${razao} | COB: ${codcob} | Data: ${dia}/${mes}/${ano} | Car: ${numcar || 'S/C'}`);
                 
                 let pixCopiaCola = '';
                 const isBoleto = codcob === '237' || codcob === '341';
@@ -492,7 +719,7 @@ class SacBotService {
                 if (!isBoleto) {
                     try {
                         const pixRes = await conn.execute(`SELECT GERA_PIX(:cgc, :numnota, :vltotal, :razao, :cidade) FROM DUAL`, {
-                            cgc: cgc, numnota: numnota.toString(), vltotal: vltotal, razao: razao, cidade: cidade
+                            cgc: cgc, numnota: numnota.toString(), vltotal: valorAberto, razao: razao, cidade: cidade
                         });
                         pixCopiaCola = pixRes.rows[0][0];
                         console.log(`${TAG} [Financeiro] PIX gerado: ${pixCopiaCola ? 'sim' : 'não (sem função GERA_PIX?)'}`);
@@ -501,7 +728,8 @@ class SacBotService {
                     }
                 }
 
-                let msg = `🧾 *Nota Fiscal Localizada!*\n\n*Número:* ${numnota}\n*Valor:* R$ ${vltotal}\n*Chave NFe:* ${chaveNFe}\n\n`;
+                const valorFormatado = Number(valorAberto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                let msg = `🧾 *Nota Fiscal em Aberto Localizada!*\n\n*Número:* ${numnota}\n*Valor em Aberto:* ${valorFormatado}${proxVenc ? `\n*Vencimento:* ${proxVenc}` : ''}\n*Chave NFe:* ${chaveNFe}\n\n`;
                 
                 if (pixCopiaCola) {
                     msg += `📲 *PIX Copia e Cola:*\n\n${pixCopiaCola}\n\nO QR Code será enviado em seguida!\n\nPor favor, envie o comprovante do PIX por ticket na Opção 7 do menu principal (Financeiro > Comprovante PIX) ou envie ao vendedor que o atende.`;
@@ -521,82 +749,139 @@ class SacBotService {
                     }
                 }
 
-                const PdfGeneratorService = require('./PdfGeneratorService');
-                
-                try {
-                    // Buscar o XML da NFe no banco
-                    let sqlXml = `
-                        SELECT PCDOCELETRONICO.XMLNFE 
-                        FROM PCDOCELETRONICO 
-                        JOIN PCNFSAID ON PCNFSAID.NUMTRANSVENDA = PCDOCELETRONICO.NUMTRANSACAO
-                        WHERE PCNFSAID.NUMNOTA = :numnota 
-                        FETCH FIRST 1 ROWS ONLY
-                    `;
-                    const resXml = await conn.execute(sqlXml, { numnota });
-                    if (resXml.rows.length > 0 && resXml.rows[0][0]) {
-                        const xmlString = resXml.rows[0][0];
-                        const pdfBase64 = await PdfGeneratorService.gerarDanfe(xmlString);
-                        await this.enviarDocumentoBase64(telefone, pdfBase64, 'application/pdf', `DANFE_${numnota}.pdf`, instanceName, conn);
-                        console.log(`${TAG} [Financeiro] DANFE da NFe enviada para ${telefone} (Gerada Dinamicamente)`);
-                    } else {
-                        await this.webhookPoller.enviarMensagemBot(telefone, "O arquivo PDF desta Nota Fiscal ainda não está disponível no sistema (XML não encontrado).", conn, instanceName);
-                    }
-                } catch (err) {
-                    console.error(`${TAG} [Financeiro] Erro ao gerar DANFE:`, err);
-                    await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao tentar gerar o PDF da Nota Fiscal.", conn, instanceName);
-                }
+                // 1. Busca prioritária na pasta mapeada (/app/danfe_boletos)
+                const buscaPasta = this.localizarPdfDanfeBoletos({
+                    cgcFilial: cgc,
+                    ano,
+                    mes,
+                    dia,
+                    numcar,
+                    numnota,
+                    numtransvenda,
+                    chaveNFe
+                });
 
-                // Gerar Boleto se for aplicável
-                if (isBoleto) {
+                if (buscaPasta.found && buscaPasta.filePath) {
                     try {
-                        let sqlBoleto = `
-                            SELECT P.VALOR, P.DTVENC, P.DTEMISSAO, P.NOSSONUMBCO, P.LINHADIG, P.CODBARRA, P.CODBANCO,
-                                   B.AGENCIA, B.CONTA, B.NUMCARTEIRA
-                            FROM PCPREST P
-                            LEFT JOIN PCBANCO B ON P.CODBANCO = B.CODBANCO
-                            WHERE P.DUPLIC = :numnota AND P.DTBAIXA IS NULL
-                            ORDER BY P.PREST
-                            FETCH FIRST 1 ROWS ONLY
-                        `;
-                        const resBoleto = await conn.execute(sqlBoleto, { numnota });
-                        if (resBoleto.rows.length > 0) {
-                            const [valorBoleto, dtVenc, dtEmissao, nossoNum, linhaDig, codBarra, codBanco, agencia, conta, carteira] = resBoleto.rows[0];
-                            // Chama a geração do PDF do Boleto
-                            const pdfBoletoBase64 = await PdfGeneratorService.gerarBoleto({
-                                valor: valorBoleto,
-                                dataVencimento: dtVenc,
-                                dataEmissao: dtEmissao,
-                                nossoNumero: nossoNum,
-                                linhaDigitavel: linhaDig,
-                                codigoBarras: codBarra,
-                                banco: codBanco,
-                                numnota: numnota,
-                                razao: razao,
-                                cgc: cgc,
-                                dtVencimento: dtVenc,
-                                agencia: agencia,
-                                conta: conta,
-                                carteira: carteira
-                            });
+                        const pdfBase64 = fs.readFileSync(buscaPasta.filePath, { encoding: 'base64' });
+                        const nomeArquivoEnvio = buscaPasta.tipo === 'merge' ? `NFe_Boleto_${numnota}.pdf` : `DANFE_${numnota}.pdf`;
+                        await this.enviarDocumentoBase64(telefone, pdfBase64, 'application/pdf', nomeArquivoEnvio, instanceName, conn);
+                        console.log(`${TAG} [Financeiro] PDF (${buscaPasta.tipo}) enviado da pasta mapeada em ${buscaPasta.ms}ms: ${buscaPasta.filePath}`);
 
-                            
-                            if (pdfBoletoBase64) {
-                                await this.enviarDocumentoBase64(telefone, pdfBoletoBase64, 'application/pdf', `Boleto_${numnota}.pdf`, instanceName, conn);
-                                console.log(`${TAG} [Financeiro] Boleto enviado para ${telefone}`);
-                            }
+                        if (buscaPasta.boletoPath) {
+                            const bolBase64 = fs.readFileSync(buscaPasta.boletoPath, { encoding: 'base64' });
+                            await this.enviarDocumentoBase64(telefone, bolBase64, 'application/pdf', `Boleto_${numnota}.pdf`, instanceName, conn);
+                            console.log(`${TAG} [Financeiro] Boleto separado enviado da pasta mapeada: ${buscaPasta.boletoPath}`);
                         }
                     } catch (err) {
-                        console.error(`${TAG} [Financeiro] Erro ao gerar Boleto:`, err);
-                        await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao tentar gerar o PDF do Boleto.", conn, instanceName);
+                        console.error(`${TAG} [Financeiro] Erro ao ler/enviar PDF da pasta mapeada (${buscaPasta.filePath}):`, err);
+                        await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao tentar enviar o PDF da Nota Fiscal.", conn, instanceName);
+                    }
+                } else {
+                    console.log(`${TAG} [Financeiro] PDF não encontrado em danfe_boletos (${buscaPasta.ms}ms). Tentando geração dinâmica via XML...`);
+                    const PdfGeneratorService = require('./PdfGeneratorService');
+                    
+                    try {
+                        // Fallback: Buscar o XML da NFe no banco
+                        let sqlXml = `
+                            SELECT PCDOCELETRONICO.XMLNFE 
+                            FROM PCDOCELETRONICO 
+                            JOIN PCNFSAID ON PCNFSAID.NUMTRANSVENDA = PCDOCELETRONICO.NUMTRANSACAO
+                            WHERE PCNFSAID.NUMNOTA = :numnota 
+                            FETCH FIRST 1 ROWS ONLY
+                        `;
+                        const resXml = await conn.execute(sqlXml, { numnota });
+                        if (resXml.rows.length > 0 && resXml.rows[0][0]) {
+                            const xmlString = resXml.rows[0][0];
+                            const pdfBase64 = await PdfGeneratorService.gerarDanfe(xmlString);
+                            await this.enviarDocumentoBase64(telefone, pdfBase64, 'application/pdf', `DANFE_${numnota}.pdf`, instanceName, conn);
+                            console.log(`${TAG} [Financeiro] DANFE da NFe enviada para ${telefone} (Gerada Dinamicamente)`);
+                        } else {
+                            await this.webhookPoller.enviarMensagemBot(telefone, "O arquivo PDF desta Nota Fiscal ainda não está disponível no sistema.", conn, instanceName);
+                        }
+                    } catch (err) {
+                        console.error(`${TAG} [Financeiro] Erro ao gerar DANFE:`, err);
+                        await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao tentar gerar o PDF da Nota Fiscal.", conn, instanceName);
+                    }
+
+                    // Fallback: Gerar Boleto se for aplicável e não tinha merge na pasta
+                    if (isBoleto) {
+                        try {
+                            let sqlBoleto = `
+                                SELECT P.VALOR, P.DTVENC, P.DTEMISSAO, P.NOSSONUMBCO, P.LINHADIG, P.CODBARRA, P.CODBANCO,
+                                       B.AGENCIA, B.CONTA, B.NUMCARTEIRA
+                                FROM PCPREST P
+                                LEFT JOIN PCBANCO B ON P.CODBANCO = B.CODBANCO
+                                WHERE P.DUPLIC = :numnota AND P.DTPAG IS NULL
+                                ORDER BY P.PREST
+                                FETCH FIRST 1 ROWS ONLY
+                            `;
+                            const resBoleto = await conn.execute(sqlBoleto, { numnota });
+                            if (resBoleto.rows.length > 0) {
+                                const [valorBoleto, dtVenc, dtEmissao, nossoNum, linhaDig, codBarra, codBanco, agencia, conta, carteira] = resBoleto.rows[0];
+                                const pdfBoletoBase64 = await PdfGeneratorService.gerarBoleto({
+                                    valor: valorBoleto,
+                                    dataVencimento: dtVenc,
+                                    dataEmissao: dtEmissao,
+                                    nossoNumero: nossoNum,
+                                    linhaDigitavel: linhaDig,
+                                    codigoBarras: codBarra,
+                                    banco: codBanco,
+                                    numnota: numnota,
+                                    razao: razao,
+                                    cgc: cgc,
+                                    dtVencimento: dtVenc,
+                                    agencia: agencia,
+                                    conta: conta,
+                                    carteira: carteira
+                                });
+
+                                if (pdfBoletoBase64) {
+                                    await this.enviarDocumentoBase64(telefone, pdfBoletoBase64, 'application/pdf', `Boleto_${numnota}.pdf`, instanceName, conn);
+                                    console.log(`${TAG} [Financeiro] Boleto enviado para ${telefone} (Gerado Dinamicamente)`);
+                                }
+                            }
+                        } catch (err) {
+                            console.error(`${TAG} [Financeiro] Erro ao gerar Boleto:`, err);
+                            await this.webhookPoller.enviarMensagemBot(telefone, "Ocorreu um erro ao tentar gerar o PDF do Boleto.", conn, instanceName);
+                        }
                     }
                 }
 
-
                 await this.webhookPoller.enviarMensagemBot(telefone, "Para retornar ao menu anterior, use VOLTAR.\nPara finalizar o atendimento use 0.", conn, instanceName);
-                await this.setState(telefone, 'MENU_PRINCIPAL', {}, conn);
+                await this.setState(telefone, 'MENU_PRINCIPAL', dadosMenuReset, conn);
 
             } else {
-                 await this.webhookPoller.enviarMensagemBot(telefone, `Não encontrei nenhuma Nota Fiscal para o número *${busca}*.\nVerifique e tente novamente.\n\nSe a sua solicitação já foi finalizada ou se deseja cancelar, digite *VOLTAR* para o menu ou *0* para encerrar o atendimento.`, conn, instanceName);
+                // Nenhuma NF com DTPAG IS NULL encontrada: verificar se existe NF já paga (DTPAG IS NOT NULL)
+                const sqlPago = `
+                    SELECT N.NUMNOTA, TO_CHAR(MAX(P.DTPAG), 'DD/MM/YYYY') AS DTPAG
+                    FROM PCNFSAID N
+                    JOIN PCCLIENT C ON C.CODCLI = N.CODCLI
+                    JOIN PCPREST P ON P.NUMTRANSVENDA = N.NUMTRANSVENDA
+                    WHERE N.DTCANCEL IS NULL
+                      AND P.DTCANCEL IS NULL
+                      AND P.DTPAG IS NOT NULL
+                      AND (N.NUMNOTA = :busca OR N.NUMPED = :busca OR REPLACE(REPLACE(REPLACE(C.CGCENT, '.', ''), '/', ''), '-', '') = :busca)
+                    GROUP BY N.NUMNOTA
+                    ORDER BY MAX(P.DTPAG) DESC
+                    FETCH FIRST 1 ROWS ONLY
+                `;
+                const resPago = await conn.execute(sqlPago, { busca });
+
+                if (resPago.rows.length > 0 || busca.length >= 11) {
+                    let msgNadaAberto;
+                    if (busca.length < 11 && resPago.rows.length > 0) {
+                        const nfPaga = resPago.rows[0][0];
+                        const dtPag = resPago.rows[0][1];
+                        msgNadaAberto = `✅ A Nota Fiscal *${nfPaga}* já consta como paga${dtPag ? ` (em ${dtPag})` : ''} e não possui nenhum título em aberto.\n\nPara retornar ao menu anterior, use *VOLTAR*.\nPara finalizar o atendimento use *0*.`;
+                    } else {
+                        msgNadaAberto = `✅ Não consta nenhuma Nota Fiscal ou título em aberto para o seu cadastro no momento.\n\nPara retornar ao menu anterior, use *VOLTAR*.\nPara finalizar o atendimento use *0*.`;
+                    }
+                    await this.webhookPoller.enviarMensagemBot(telefone, msgNadaAberto, conn, instanceName);
+                    await this.setState(telefone, 'MENU_PRINCIPAL', dadosMenuReset, conn);
+                } else {
+                    await this.webhookPoller.enviarMensagemBot(telefone, `Não encontrei nenhuma Nota Fiscal em aberto para o número *${busca}*.\nVerifique e tente novamente.\n\nSe a sua solicitação já foi finalizada ou se deseja cancelar, digite *VOLTAR* para o menu ou *0* para encerrar o atendimento.`, conn, instanceName);
+                }
             }
         } catch(e) {
             console.error(`${TAG} [Financeiro] Erro:`, e);

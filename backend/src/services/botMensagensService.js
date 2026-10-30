@@ -125,7 +125,13 @@ const DEFAULTS = {
         descricao: 'Menu principal do Copiloto do Vendedor',
         grupo: 'Menu Principal Vendedor',
         bot_tipo: 'VENDEDOR',
-        template: '💼 *Copiloto do Vendedor*\n\nOlá! Como posso te ajudar hoje?\n\n1️⃣ - 💬 Assistente de Comunicação\n2️⃣ - 📊 Meus Objetivos\n3️⃣ - 🎫 Consultar Tickets da Carteira\n4️⃣ - 🎫 Abrir ticket para cliente\n5️⃣ - 🔍 Consultar CNPJ/CPF\n0️⃣ - Finalizar'
+        template: '💼 *Copiloto do Vendedor*\n\nOlá! Como posso te ajudar hoje?\n\n1️⃣ - 💬 Assistente de Comunicação\n2️⃣ - 📊 Meus Objetivos\n3️⃣ - 🎫 Consultar Tickets da Carteira\n4️⃣ - 🎫 Abrir ticket para cliente\n5️⃣ - 🔍 Consultar CNPJ/CPF\n6️⃣ - 📦 Catálogo\n0️⃣ - Finalizar'
+    },
+    VEND_CATALOGO_SOLICITAR: {
+        descricao: 'Solicita Segmento, CNPJ ou CODCLI para emissão do catálogo',
+        grupo: 'Catálogo Vendedor',
+        bot_tipo: 'VENDEDOR',
+        template: '📦 *Catálogo de Produtos*\n\nPor favor, informe o *Segmento*, *CNPJ* ou *CODCLI* do cliente:\n\n*Segmentos disponíveis na sua carteira:*\n{{ramos_lista}}\n\n👉 Digite o número do segmento da lista acima, o nome do ramo, ou o CNPJ/CODCLI do cliente.\n\nDigite *VOLTAR* para retornar ao menu.'
     },
     VEND_ENCERRAR_ATENDIMENTO: {
         descricao: 'Mensagem de encerramento do atendimento do Vendedor Bot',
@@ -369,17 +375,33 @@ function startAutoRefresh() {
  * @returns {string}
  */
 function getMsg(chave, fallbackOverride) {
+    let tpl = '';
     if (_cache[chave] !== undefined && _cache[chave] !== null) {
-        return _cache[chave];
+        tpl = _cache[chave];
+    } else if (fallbackOverride !== undefined) {
+        tpl = fallbackOverride;
+    } else if (DEFAULTS[chave]) {
+        tpl = DEFAULTS[chave].template;
+    } else {
+        console.warn(`[BOT-MSGS] Chave desconhecida: "${chave}". Retornando string vazia.`);
+        return '';
     }
-    if (fallbackOverride !== undefined) {
-        return fallbackOverride;
+
+    // Se for o menu do vendedor e não tiver a opção de catálogo, insere automaticamente antes da opção 0
+    if (chave === 'VEND_MENU_PRINCIPAL') {
+        if (!tpl.includes('Catálogo') && !tpl.includes('Catalogo') && !tpl.includes('catálogo') && !tpl.includes('catalogo')) {
+            const linhas = tpl.split('\n');
+            const idxZero = linhas.findIndex(l => /^\s*0/i.test(l));
+            if (idxZero !== -1) {
+                linhas.splice(idxZero, 0, '6️⃣ - 📦 Catálogo');
+                tpl = linhas.join('\n');
+            } else {
+                tpl += '\n6️⃣ - 📦 Catálogo';
+            }
+        }
     }
-    if (DEFAULTS[chave]) {
-        return DEFAULTS[chave].template;
-    }
-    console.warn(`[BOT-MSGS] Chave desconhecida: "${chave}". Retornando string vazia.`);
-    return '';
+
+    return tpl;
 }
 
 /**

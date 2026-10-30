@@ -282,7 +282,7 @@ export default function ConfigMensagens() {
 
   // ── Estado do Menu Principal ──
   const [sacMenuAtivos, setSacMenuAtivos] = useState<string[]>(['1','2','3','4','5','6','7','8','9','0']);
-  const [vendMenuAtivos, setVendMenuAtivos] = useState<string[]>(['1','2','3','4','5','0']);
+  const [vendMenuAtivos, setVendMenuAtivos] = useState<string[]>(['1','2','3','4','5','6','0']);
   const [loadingMenu, setLoadingMenu] = useState(false);
   const [savingMenu, setSavingMenu] = useState(false);
 
@@ -1022,6 +1022,7 @@ export default function ConfigMensagens() {
                   { id: '3', label: '3 - Consultar Tickets da Carteira' },
                   { id: '4', label: '4 - Abrir ticket para cliente' },
                   { id: '5', label: '5 - Consultar CNPJ/CPF' },
+                  { id: '6', label: '6 - Catálogo de Produtos' },
                   { id: '0', label: '0 - Finalizar' },
                 ].map(opt => (
                   <div key={opt.id} className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">

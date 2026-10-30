@@ -12,12 +12,33 @@ import { usePrivacy } from '../contexts/PrivacyContext';
 
 const DEFAULT_PERMISSIONS: any = {
   GERENTE: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Configurações', 'Objetivos', 'Campanhas (Status)', 'Status Whats', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
+    menus: [
+      'Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo',
+      'Pesquisa/Concorrência', 'Logs Identificação', 'Configurações', 'Objetivos',
+      'Campanhas (Status)', 'Campanhas (Oportunidades)', 'Rotas de Visitas',
+      'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização',
+      'Radar de Leads', 'Gestão de Vendedores', 'Automação de Mensagens',
+      'Monitor Conversas', 'Agendamentos de vendedores'
+    ],
+    dashboard: [
+      'Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes',
+      'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica',
+      'Radar Positivação', 'Meus Clientes Recentes'
+    ]
   },
   SUPERVISOR: {
-    menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)', 'Status Whats', 'Rotas de Visitas', 'Clientes Inativos', 'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads'],
-    dashboard: ['Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes', 'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica', 'Radar Positivação', 'Meus Clientes Recentes']
+    menus: [
+      'Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo',
+      'Pesquisa/Concorrência', 'Logs Identificação', 'Objetivos', 'Campanhas (Status)',
+      'Campanhas (Oportunidades)', 'Rotas de Visitas', 'Clientes Inativos',
+      'Análise de CNPJ', 'Análise de I.E.', 'Geolocalização', 'Radar de Leads',
+      'Gestão de Vendedores', 'Monitor Conversas', 'Agendamentos de vendedores'
+    ],
+    dashboard: [
+      'Métricas SAC', 'Mural de Avisos', 'Ranking de Vendas', 'Ranking de Clientes',
+      'Ranking de Produtos', 'Atividade por Hora', 'Adesão ao Mix', 'Visão Hierárquica',
+      'Radar Positivação', 'Meus Clientes Recentes'
+    ]
   },
   VENDEDOR: {
     menus: ['Dashboard', 'Carteira de Clientes', 'Chat (Atendimento)', 'SAC', 'Catálogo'],
@@ -557,7 +578,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {userRole !== 'VENDEDOR' && hasDashboardPermission('Ranking de Vendas') && (
+      {hasDashboardPermission('Ranking de Vendas') && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
           <div className="glass-card rounded-2xl p-6">
             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
