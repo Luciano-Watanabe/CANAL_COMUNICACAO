@@ -3,19 +3,21 @@ import { Smartphone, RefreshCw, QrCode, X } from 'lucide-react';
 
 interface WhatsAppMonitorProps {
   codusur: number;
+  cargo?: string;
 }
 
-export function WhatsAppMonitor({ codusur }: WhatsAppMonitorProps) {
+export function WhatsAppMonitor({ codusur, cargo }: WhatsAppMonitorProps) {
   const [status, setStatus] = useState<'LOADING' | 'CONNECTED' | 'DISCONNECTED' | 'NOT_CONFIGURED' | 'ERROR'>('LOADING');
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const getToken = () => localStorage.getItem('token');
+  const cargoQuery = cargo ? `&cargo=${encodeURIComponent(cargo)}` : '';
 
   const fetchStatus = async () => {
     setStatus('LOADING');
     try {
-      const res = await fetch(`/api/whatsapp/status?codusur=${codusur}`, {
+      const res = await fetch(`/api/whatsapp/status?codusur=${codusur}${cargoQuery}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       });
       const data = await res.json();
@@ -44,7 +46,7 @@ export function WhatsAppMonitor({ codusur }: WhatsAppMonitorProps) {
     setIsModalOpen(true);
     setQrCode(null); // Reset
     try {
-      const res = await fetch(`/api/whatsapp/connect?codusur=${codusur}&_t=${Date.now()}`, {
+      const res = await fetch(`/api/whatsapp/connect?codusur=${codusur}${cargoQuery}&_t=${Date.now()}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       });
       const data = await res.json();
@@ -78,7 +80,7 @@ export function WhatsAppMonitor({ codusur }: WhatsAppMonitorProps) {
     if (isModalOpen && status !== 'CONNECTED') {
       modalInterval = setInterval(async () => {
         try {
-          const res = await fetch(`/api/whatsapp/status?codusur=${codusur}`, {
+          const res = await fetch(`/api/whatsapp/status?codusur=${codusur}${cargoQuery}`, {
             headers: { Authorization: `Bearer ${getToken()}` }
           });
           const data = await res.json();

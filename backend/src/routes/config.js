@@ -241,7 +241,7 @@ router.post('/token', async (req, res) => {
         `;
         
         await connection.execute(sql, {
-            codusur, 
+            codusur: String(codusur), 
             cargo: cargoFinal,
             api_token: api_token || '', 
             instance_name: instance_name || '', 
@@ -274,10 +274,20 @@ router.get('/funcionarios', async (req, res) => {
         connection = await oraclePool.getConnection();
 
         const sql = `
-            SELECT MATRICULA, NOME, NOME_GUERRA 
-            FROM PCEMPR 
-            WHERE SITUACAO = 'A'
-            ORDER BY NOME
+            SELECT 
+                E.MATRICULA, 
+                E.NOME, 
+                E.NOME_GUERRA,
+                T.INSTANCE_NAME,
+                T.API_TOKEN,
+                T.API_URL,
+                T.NOME_ATENDENTE
+            FROM PCEMPR E
+            LEFT JOIN CANAL_TOKENS_EVOLUTION T
+                ON TO_CHAR(E.MATRICULA) = TO_CHAR(T.CODUSUR)
+                AND UPPER(TRIM(T.CARGO)) = 'ATENDENTE'
+            WHERE E.SITUACAO = 'A'
+            ORDER BY E.NOME
         `;
         const result = await connection.execute(sql, [], { outFormat: 4002 /* OBJECT */ });
         res.json(result.rows);

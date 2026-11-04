@@ -43,24 +43,59 @@ export function ControleAcessoSAC() {
         if (!res.ok) throw new Error('Falha acessos');
         return res.json();
       })
-    ]).then(([fData, vData, dData, aData]) => {
+    ]).then(async ([fData, vData, dData, aData]) => {
       setFuncionarios(fData || []);
       setVendedores(vData.success ? vData.vendedores : []);
       setDepartamentos(dData || []);
       setAcessos(aData || {});
-      // Pré-preenche instância/token a partir da mesma base usada na lista de Vendedor/Gestor
+      // Pré-preenche instância/token dos atendentes (PCEMPR / CARGO = ATENDENTE)
       const initialWa: Record<number, { instance_name: string; api_token: string; linked: boolean }> = {};
-      if (vData && vData.vendedores) {
-        vData.vendedores.forEach((v: any) => {
-          if (v.codusur != null) {
-            initialWa[Number(v.codusur)] = {
-              instance_name: v.instance_name || '',
-              api_token: v.api_token || '',
-              linked: !!(v.instance_name && v.api_token)
+      if (Array.isArray(fData)) {
+        fData.forEach((f: any) => {
+          if (f.MATRICULA != null) {
+            const inst = f.INSTANCE_NAME || f.instance_name || '';
+            const tok = f.API_TOKEN || f.api_token || '';
+            initialWa[Number(f.MATRICULA)] = {
+              instance_name: inst,
+              api_token: tok,
+              linked: !!(inst && tok)
             };
           }
         });
       }
+
+      // Busca tokens diretamente de /api/config/tokens/:codusur para todos os atendentes com acesso
+      const atendenteIds = Object.keys(aData || {})
+        .filter(k => (aData[k] || []).length > 0 && k.endsWith(':PCEMPR'))
+        .map(k => Number(k.split(':')[0]))
+        .filter(id => !isNaN(id));
+
+      await Promise.all(
+        atendenteIds.map(async (id) => {
+          try {
+            const resTok = await fetch(`/api/config/tokens/${id}`);
+            if (!resTok.ok) return;
+            const dataTok = await resTok.json();
+            if (dataTok && dataTok.success && Array.isArray(dataTok.tokens) && dataTok.tokens.length > 0) {
+              const atendenteToken =
+                dataTok.tokens.find((t: any) => String(t.cargo || t.tipo || '').trim().toUpperCase() === 'ATENDENTE') ||
+                dataTok.tokens[0];
+              if (atendenteToken) {
+                const inst = atendenteToken.instance_name || '';
+                const tok = atendenteToken.api_token || '';
+                initialWa[id] = {
+                  instance_name: inst,
+                  api_token: tok,
+                  linked: !!(inst && tok)
+                };
+              }
+            }
+          } catch (e) {
+            console.error(`Erro ao carregar token do atendente ${id}:`, e);
+          }
+        })
+      );
+
       setWaForm(initialWa);
       setErrorMsg(null);
     }).catch(err => {
@@ -114,10 +149,11 @@ export function ControleAcessoSAC() {
   };
 
   const handleBindWhats = async (id: number) => {
-    const row = waForm[id];
-    if (!row) return;
-    if (!row.instance_name.trim() || !row.api_token.trim()) {
-      alert('Informe o Nome da Instância e o Token para vincular o WhatsApp.');
+    const row = waForm[id] || { instance_name: '', api_token: '', linked: false };
+    const instanceName = row.instance_name.trim();
+    const apiToken = row.api_token.trim();
+    if (!instanceName || !apiToken) {
+      alert('Informe o Nome da Instância e o Token para salvar.');
       return;
     }
     setSavingWa(id);
@@ -126,21 +162,27 @@ export function ControleAcessoSAC() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          codusur: id,
-          api_token: row.api_token,
-          instance_name: row.instance_name
+          codusur: String(id),
+          api_token: apiToken,
+          instance_name: instanceName,
+          cargo: 'ATENDENTE',
+          tipo: 'ATENDENTE',
+          is_atendente: true
         })
       });
       if (res.ok) {
-        setWaForm(prev => ({ ...prev, [id]: { ...row, linked: true } }));
-        alert('Instância vinculada com sucesso! Abra o modal do QR Code para conectar.');
+        setWaForm(prev => ({
+          ...prev,
+          [id]: { instance_name: instanceName, api_token: apiToken, linked: true }
+        }));
+        alert('Dados de Nome da Instância e Token salvos com sucesso!');
       } else {
         const err = await res.json();
-        alert('Erro ao vincular: ' + (err.message || err.error || 'erro desconhecido'));
+        alert('Erro ao salvar: ' + (err.message || err.error || 'erro desconhecido'));
       }
     } catch (err) {
       console.error(err);
-      alert('Erro de comunicação ao vincular.');
+      alert('Erro de comunicação ao salvar.');
     } finally {
       setSavingWa(null);
     }
@@ -187,19 +229,15 @@ export function ControleAcessoSAC() {
                   <th className="py-2 px-4 font-semibold text-slate-500">Tipo</th>
                   <th className="py-2 px-4 font-semibold text-slate-500">Usuário</th>
                   <th className="py-2 px-4 font-semibold text-slate-500">Departamentos Permitidos</th>
-                  {(usuariosComAcesso.some(u => u.tipo === 'Atendente')) && (
-                    <>
-                      <th className="py-2 px-4 font-semibold text-slate-500">Nome da Instância</th>
-                      <th className="py-2 px-4 font-semibold text-slate-500">Token (Evolution)</th>
-                      <th className="py-2 px-4 font-semibold text-slate-500 text-center">WhatsApp</th>
-                    </>
-                  )}
+                  <th className="py-2 px-4 font-semibold text-slate-500">Nome da Instância</th>
+                  <th className="py-2 px-4 font-semibold text-slate-500">Token (Evolution)</th>
+                  <th className="py-2 px-4 font-semibold text-slate-500 text-center">WhatsApp</th>
                   <th className="py-2 px-4 font-semibold text-slate-500 text-right">Ação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {usuariosComAcesso.map(u => (
-                  <tr key={u.key} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 align-top">
+                  <tr key={u.key} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 align-middle">
                     <td className="py-2 px-4 text-slate-600 dark:text-slate-400">{u.tipo}</td>
                     <td className="py-2 px-4 font-medium text-slate-800 dark:text-slate-200">{u.nome} (Cód: {u.id})</td>
                     <td className="py-2 px-4 text-slate-600 dark:text-slate-400">
@@ -227,7 +265,11 @@ export function ControleAcessoSAC() {
                         </td>
                         <td className="py-2 px-4 text-center">
                           {waForm[u.id]?.linked ? (
-                            <WhatsAppMonitor codusur={u.id} />
+                            <WhatsAppMonitor
+                              key={`${u.id}-${waForm[u.id]?.instance_name}-${waForm[u.id]?.api_token}`}
+                              codusur={u.id}
+                              cargo="ATENDENTE"
+                            />
                           ) : (
                             <button
                               onClick={() => handleBindWhats(u.id)}
@@ -249,15 +291,28 @@ export function ControleAcessoSAC() {
                       </>
                     )}
                     <td className="py-2 px-4 text-right">
-                      <button 
-                        onClick={() => {
-                          setTipoUsuario(u.tipo === 'Vendedor' ? 'vendedor' : 'atendente');
-                          setSelectedKey(u.key);
-                        }}
-                        className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-medium"
-                      >
-                        Editar
-                      </button>
+                      <div className="inline-flex items-center justify-end gap-2">
+                        {u.tipo === 'Atendente' && (
+                          <button
+                            onClick={() => handleBindWhats(u.id)}
+                            disabled={savingWa === u.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white rounded-lg text-xs font-medium transition-colors"
+                            title="Salvar Nome da Instância e Token"
+                          >
+                            <Save size={14} />
+                            {savingWa === u.id ? 'Salvando...' : 'Salvar'}
+                          </button>
+                        )}
+                        <button 
+                          onClick={() => {
+                            setTipoUsuario(u.tipo === 'Vendedor' ? 'vendedor' : 'atendente');
+                            setSelectedKey(u.key);
+                          }}
+                          className="px-2 py-1.5 text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-medium"
+                        >
+                          Editar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

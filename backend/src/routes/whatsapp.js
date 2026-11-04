@@ -4,7 +4,7 @@ const oracledb = require('oracledb');
 const axios = require('axios');
 
 // Busca a instância do usuário logado
-async function getInstanceConfig(codusur) {
+async function getInstanceConfig(codusur, cargo) {
     let connection;
     try {
         connection = await oracledb.getConnection({
@@ -13,16 +13,21 @@ async function getInstanceConfig(codusur) {
             connectString: process.env.ORACLE_CONN_STR
         });
 
-        const sql = `
+        let sql = `
             SELECT 
                 T.INSTANCE_NAME, 
                 T.API_TOKEN, 
                 COALESCE(T.API_URL, G.VALOR) AS URL_BASE
             FROM CANAL_TOKENS_EVOLUTION T
             LEFT JOIN CANAL_CONFIGURACOES G ON G.CHAVE = 'EVOLUTION_API_URL'
-            WHERE T.CODUSUR = :codusur
+            WHERE TO_CHAR(T.CODUSUR) = TO_CHAR(:codusur)
         `;
-        const result = await connection.execute(sql, { codusur }, { outFormat: oracledb.OUT_FORMAT_OBJECT });
+        const binds = { codusur: String(codusur) };
+        if (cargo) {
+            sql += ` AND UPPER(TRIM(T.CARGO)) = UPPER(TRIM(:cargo))`;
+            binds.cargo = String(cargo);
+        }
+        const result = await connection.execute(sql, binds, { outFormat: oracledb.OUT_FORMAT_OBJECT });
         
         if (result.rows.length === 0) return null;
 
@@ -50,10 +55,10 @@ async function getInstanceConfig(codusur) {
 }
 
 router.get('/whatsapp/status', async (req, res) => {
-    const { codusur } = req.query;
+    const { codusur, cargo } = req.query;
     if (!codusur) return res.status(400).json({ success: false, error: 'codusur é obrigatório' });
 
-    const config = await getInstanceConfig(codusur);
+    const config = await getInstanceConfig(codusur, cargo);
     if (!config) {
         return res.json({ success: true, state: 'NOT_CONFIGURED', status: 'Instância não configurada.' });
     }
@@ -120,10 +125,10 @@ router.get('/whatsapp/status', async (req, res) => {
 });
 
 router.get('/whatsapp/connect', async (req, res) => {
-    const { codusur } = req.query;
+    const { codusur, cargo } = req.query;
     if (!codusur) return res.status(400).json({ success: false, error: 'codusur é obrigatório' });
 
-    const config = await getInstanceConfig(codusur);
+    const config = await getInstanceConfig(codusur, cargo);
     if (!config) {
         return res.status(404).json({ success: false, error: 'Instância não configurada.' });
     }
